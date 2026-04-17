@@ -1,0 +1,1077 @@
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { 
+  MapPin, 
+  Search, 
+  Filter, 
+  Mail, 
+  Phone, 
+  ExternalLink, 
+  ChevronRight,
+  TrendingUp,
+  ShoppingBag,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  Users,
+  Plus,
+  Zap,
+  X,
+  Copy,
+  Terminal,
+  Instagram,
+  Flame,
+  Brain,
+  Sparkles,
+  Loader2,
+  Upload,
+  FileText,
+  Database,
+  Monitor,
+  Trash2,
+  RefreshCw
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { cn } from '../lib/utils';
+import { suggestOutreachStrategy } from '../lib/gemini';
+import { toast } from 'sonner';
+import { useCRM } from '../contexts/CRMContext';
+import { useDropzone } from 'react-dropzone';
+import Papa from 'papaparse';
+
+const states = [
+  'All Places', 
+  'AZ', 'CA', 'FL', 'NY', 'TX', 'NV', 'WA', 'IL', 'GA', 'PA', // US States
+  'UK', 'AU', 'CA_INTL', 'DE', 'FR', 'IT', 'ES', 'JP', 'KR', 'BR' // Countries
+];
+
+export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) => void }) {
+  const { 
+    artists, 
+    pagination,
+    globalStats,
+    loadData,
+    importCSV, 
+    syncShopifySales, 
+    bulkEnrichArtists, 
+    clearAllData, 
+    isScanning, 
+    scanProgress,
+    pinnedCount,
+    persona, 
+    mockMode,
+    assignTaskToAccount,
+    assignments,
+    startAutomationSequence,
+    deleteArtist,
+    moveArtist
+  } = useCRM();
+  const [selectedState, setSelectedState] = useState('All Places');
+  const [search, setSearch] = useState('');
+  const [activeStage, setActiveStage] = useState('all');
+  const [accountTagFilter, setAccountTagFilter] = useState('all');
+  const [accountTag, setAccountTag] = useState('default');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
+
+  // Redundant loadData call removed as CRMContext handles it
+  const [isGeneratingStrategy, setIsGeneratingStrategy] = useState(false);
+  const [strategy, setStrategy] = useState<string | null>(null);
+  const [showImport, setShowImport] = useState(false);
+  const [importTab, setImportTab] = useState<'magic' | 'csv' | 'shopify'>('magic');
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const cleanDisplay = (text: any) => {
+    if (typeof text !== 'string') return String(text || '');
+    return text.replace(/\uFFFD/g, '');
+  };
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const file = acceptedFiles[0];
+    setUploadError(null);
+
+    // Column Mapping Dictionary
+    const headerMap: Record<string, string> = {
+      'Shop Name': 'name', 'Business Name': 'name', 'Name': 'name', 'shopName': 'name', 'shop_name': 'name', 'Default Address Company': 'name', 'Title': 'name', 'title': 'name', 'Place Name': 'name',
+      '店名': 'name', '名称': 'name', '商家名称': 'name', '标题': 'name',
+      'Instagram': 'ig_handle', 'IG': 'ig_handle', 'IG_Handle': 'ig_handle', 'igLink': 'ig_handle', 'ig_link': 'ig_handle', 'Instagram Handle': 'ig_handle', 'Instagram URL': 'ig_handle', 'instagram': 'ig_handle', 'Instagram_Handle': 'ig_handle',
+      'Facebook': 'facebook_id', 'FB': 'facebook_id', 'Facebook URL': 'facebook_id', 'facebook': 'facebook_id',
+      'Address': 'address', 'Street': 'address', 'Location_Address': 'address', 'Default Address Address1': 'address', 'Full Address': 'address', 'Formatted Address': 'address', 'address': 'address', 'Full_Address': 'address',
+      '地址': 'address', '街道': 'address', '详细地址': 'address',
+      'City': 'location_tag', 'City_Name': 'location_tag', 'Default Address City': 'location_tag', 'State': 'location_tag', 'city': 'location_tag', 'state': 'location_tag', 'Province': 'location_tag',
+      '城市': 'location_tag', '省份': 'location_tag', '州': 'location_tag',
+      'Phone': 'phone', 'Phone_Number': 'phone', 'Contact_Phone': 'phone', 'Default Address Phone': 'phone', 'phone': 'phone', 'Phone Number': 'phone',
+      '电话': 'phone', '手机': 'phone', '联系电话': 'phone',
+      'Website': 'website', 'Web_URL': 'website', 'Site': 'website', 'website': 'website', 'link': 'website', 'URL': 'website',
+      '网站': 'website', '网址': 'website',
+      'Email': 'email', 'Contact_Email': 'email', 'email': 'email', 'E-mail': 'email',
+      '邮箱': 'email', '电子邮件': 'email',
+      'Reviews': 'rating', 'Rating': 'rating', 'mapsRating': 'rating', 'Avg Rating': 'rating', 'rating': 'rating', 'Rating_Value': 'rating',
+      '评分': 'rating', '星级': 'rating',
+      'Followers': 'followers', 'Follower Count': 'followers', 'followers': 'followers', 'followers_count': 'followers',
+      '粉丝': 'followers', '粉丝数': 'followers',
+      'Country': 'country', 'Nation': 'country', 'country': 'country', 'Default Address Country': 'country',
+      '国家': 'country', '地区': 'country',
+      'Place ID': 'place_id', 'place_id': 'place_id', 'CID': 'cid', 'cid': 'cid'
+    };
+
+    if (mockMode) {
+      toast.info('Mock Mode: Simulating CSV processing...');
+      setTimeout(() => {
+        const mockData = [
+          { name: "Ink Masters", rating: "4.8", ig_handle: "@inkmasters", address: "123 Tattoo St, Phoenix, AZ" },
+          { name: "Vivid Skin", rating: "4.5", ig_handle: "@vividskin", address: "456 Art Ave, Miami, FL" },
+          { name: "Eternal Ink", rating: "4.9", ig_handle: "@eternalink", address: "789 Needle Rd, Austin, TX" },
+          { name: "Black Rose", rating: "4.7", ig_handle: "@blackrose", address: "101 Thorn Ln, Los Angeles, CA" },
+          { name: "Urban Canvas", rating: "4.6", ig_handle: "@urbancanvas", address: "202 City Blvd, New York, NY" },
+          { name: "Desert Soul", rating: "4.4", ig_handle: "@desertsoul", address: "303 Sand Dr, Las Vegas, NV" },
+          { name: "Iron & Ink", rating: "4.8", ig_handle: "@ironink", address: "404 Metal St, Phoenix, AZ" },
+          { name: "Sacred Geometry", rating: "5.0", ig_handle: "@sacredgeo", address: "505 Pattern Rd, Miami, FL" },
+          { name: "Old School", rating: "4.3", ig_handle: "@oldschool", address: "606 Retro Way, Austin, TX" },
+          { name: "Neon Dream", rating: "4.9", ig_handle: "@neondream", address: "707 Glow Ave, Los Angeles, CA" }
+        ];
+        importCSV(mockData, selectedState, accountTag);
+        setShowImport(false);
+      }, 2000);
+      return;
+    }
+
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result as string;
+      
+      // Check for the Unicode Replacement Character (U+FFFD) which indicates decoding failure
+      if (text.includes('\uFFFD')) {
+        console.warn("UTF-8 decoding failed (found replacement characters). Retrying with Windows-1252...");
+        const reader2 = new FileReader();
+        reader2.onload = (e2) => {
+          parseCSV(e2.target.result as string);
+        };
+        reader2.readAsText(file, 'windows-1252');
+      } else {
+        parseCSV(text);
+      }
+    };
+
+    const parseCSV = (csvText: string) => {
+      if (importTab === 'shopify') {
+        Papa.parse(csvText, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => {
+            syncShopifySales(results.data, accountTag);
+            setShowImport(false);
+          },
+          error: (err) => {
+            setUploadError(`Failed to parse Shopify CSV: ${err.message}`);
+          }
+        });
+        return;
+      }
+
+      Papa.parse(csvText, {
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: 'greedy',
+        transformHeader: (h) => h.trim(),
+        complete: (results) => {
+          const rawData = results.data as any[];
+          const mappedData = rawData.map(row => {
+            const normalized: any = { metadata: {} };
+            
+            Object.keys(row).forEach(key => {
+              const trimmedKey = key.trim();
+              let value = row[key];
+              
+              // Clean up strings from any remaining garbage characters
+              if (typeof value === 'string') {
+                value = value.trim().replace(/\uFFFD/g, '');
+              }
+              
+              const mappedField = headerMap[trimmedKey];
+
+              if (mappedField) {
+                normalized[mappedField] = value;
+              } else {
+                normalized.metadata[trimmedKey] = value;
+              }
+            });
+
+            // Fallback for Name if not directly mapped
+            if (!normalized.name) {
+              const firstName = row['First Name'] || row['first_name'] || '';
+              const lastName = row['Last Name'] || row['last_name'] || '';
+              if (firstName || lastName) {
+                normalized.name = `${firstName} ${lastName}`.trim();
+              } else if (row['Default Address Company']) {
+                normalized.name = row['Default Address Company'];
+              }
+            }
+
+            // Data Cleaning for IG Handle
+            if (normalized.ig_handle) {
+              // Extract handle from URL if necessary
+              if (normalized.ig_handle.includes('instagram.com/')) {
+                normalized.ig_handle = normalized.ig_handle.split('instagram.com/').pop()?.split('/')[0] || normalized.ig_handle;
+              }
+              // Ensure @ prefix
+              if (!normalized.ig_handle.startsWith('@')) {
+                normalized.ig_handle = `@${normalized.ig_handle}`;
+              }
+              // Remove any non-standard characters from handle
+              normalized.ig_handle = normalized.ig_handle.replace(/[^\w@.]/g, '');
+            }
+
+            return normalized;
+          });
+
+          // Validation: Allow importing if at least Name is present. 
+          // Contact info is preferred but not strictly required for initial import
+          const validData = mappedData.filter(d => d.name);
+          
+          if (validData.length > 0) {
+            importCSV(validData, selectedState === 'All Places' ? undefined : selectedState, accountTag);
+            setShowImport(false);
+            if (validData.length < mappedData.length) {
+              toast.warning(`Imported ${validData.length} leads. Some rows were skipped due to missing Name.`);
+            }
+          } else {
+            const errMsg = "Error: Could not find 'Name' (or Title/Shop Name) in your CSV.";
+            setUploadError(errMsg);
+            toast.error(errMsg);
+          }
+        },
+        error: (error) => {
+          const errMsg = `Error parsing CSV: ${error.message}`;
+          setUploadError(errMsg);
+          toast.error(errMsg);
+        }
+      });
+    };
+
+    reader.readAsText(file, 'UTF-8');
+  }, [importCSV, selectedState, mockMode]);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ 
+    onDrop,
+    accept: {
+      'text/csv': ['.csv'],
+      'application/vnd.ms-excel': ['.csv']
+    },
+    multiple: false
+  } as any);
+
+  const filteredShops = useMemo(() => {
+    return artists
+      .filter(artist => {
+        const matchesStage = artist.stage === 'outreach';
+        const matchesLocation = selectedState === 'All Places' || 
+                               artist.location === selectedState || 
+                               (typeof artist.address === 'string' && artist.address.includes(selectedState));
+        const matchesSearch = (artist.username?.toLowerCase() || '').includes(search.toLowerCase()) || 
+                             (artist.fullName?.toLowerCase() || '').includes(search.toLowerCase()) ||
+                             (artist.shopName?.toLowerCase() || '').includes(search.toLowerCase());
+        const matchesAccountTag = accountTagFilter === 'all' || artist.account_tag === accountTagFilter;
+        
+        return matchesStage && matchesLocation && matchesSearch && matchesAccountTag;
+      })
+      .sort((a, b) => {
+        let aScore = (a.heatScore || 0) + (a.similarityScore || 0);
+        let bScore = (b.heatScore || 0) + (b.similarityScore || 0);
+        
+        // Massive boost for "Just Followed Back"
+        if (a.hasFollowedBack) aScore += 100;
+        if (b.hasFollowedBack) bScore += 100;
+        
+        return bScore - aScore;
+      });
+  }, [artists, selectedState, search, accountTagFilter]);
+
+  const paginatedShops = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredShops.slice(start, start + itemsPerPage);
+  }, [filteredShops, currentPage]);
+
+  const totalPages = Math.ceil(filteredShops.length / itemsPerPage);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedState, search, accountTagFilter]);
+
+  const handleGenerateStrategy = async () => {
+    setIsGeneratingStrategy(true);
+    setStrategy(null);
+    
+    try {
+      const result = await suggestOutreachStrategy(selectedState, filteredShops);
+      setStrategy(result);
+    } catch (error) {
+      console.error('Strategy generation failed:', error);
+    } finally {
+      setIsGeneratingStrategy(false);
+    }
+  };
+
+  const handleMagicPaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) {
+        toast.error("Clipboard is empty!");
+        return;
+      }
+
+      // Simple parser for the scraper output
+      const lines = text.split('\n').filter(l => l.includes('|'));
+      if (lines.length === 0) {
+        toast.error("No valid shop data found in clipboard. Use the scraper script first!");
+        return;
+      }
+
+      const newShops = lines.map((line, i) => {
+        const [name, ratingPart, address, website] = line.split('|').map(s => s.trim());
+        const rating = ratingPart?.replace('Rating:', '').trim() || 'N/A';
+        
+        return {
+          shopName: name,
+          mapsRating: rating,
+          address: address || `${selectedState}, USA`,
+          location: selectedState,
+          igLink: website || `https://instagram.com/${name.toLowerCase().replace(/\s+/g, '_')}`
+        };
+      });
+
+      await importCSV(newShops, selectedState);
+      setShowImport(false);
+    } catch (err) {
+      toast.error("Please allow clipboard access or paste manually.");
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      {isScanning && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-rose-600/10 border border-rose-500/30 p-4 rounded-2xl flex flex-col gap-3"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 text-rose-500 animate-spin" />
+              <p className="text-sm font-black text-rose-100">
+                {scanProgress.total > 0 
+                  ? `Processing: ${scanProgress.current} / ${scanProgress.total} leads...`
+                  : `Scanning 52,000 artists based on conversion model... ${pinnedCount} high-match targets pinned for you.`
+                }
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-1 bg-rose-600 text-[10px] font-black rounded-lg uppercase tracking-widest">
+                {scanProgress.total > 0 ? 'Importing' : 'Scanning'}
+              </span>
+            </div>
+          </div>
+          {scanProgress.total > 0 && (
+            <div className="w-full h-1.5 bg-zinc-900 rounded-full overflow-hidden">
+              <motion.div 
+                className="h-full bg-rose-500"
+                initial={{ width: 0 }}
+                animate={{ width: `${(scanProgress.current / scanProgress.total) * 100}%` }}
+                transition={{ duration: 0.5 }}
+              />
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* State Selector & Search */}
+      <div className="bg-[#111] border border-zinc-800/50 p-8 rounded-[2.5rem] relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-rose-600/5 blur-[80px] -mr-32 -mt-32 rounded-full" />
+        
+        <div className="flex flex-col md:flex-row gap-6 items-center justify-between mb-10 relative z-10">
+          <div className="flex items-center gap-5">
+            <div className="w-14 h-14 bg-rose-600 rounded-2xl flex items-center justify-center shadow-lg shadow-rose-600/20">
+              <MapPin className="w-8 h-8 text-white" />
+            </div>
+            <div>
+              <h3 className="text-2xl font-black tracking-tight text-white">Shop Outreach Manager</h3>
+              <div className="flex items-center gap-3 mt-1">
+                <p className="text-zinc-500 text-sm font-medium">Manage and approach tattoo shops by state.</p>
+                <button 
+                  onClick={() => onNavigate?.('automation')}
+                  className="flex items-center gap-1.5 px-2 py-0.5 bg-blue-500/10 border border-blue-500/20 rounded-full hover:bg-blue-500/20 transition-all group"
+                >
+                  <Monitor className="w-3 h-3 text-blue-500 group-hover:scale-110 transition-transform" />
+                  <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">
+                    {assignments.filter(a => a.status === 'pending').length} Tasks Pending
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={async () => {
+                toast.info("Synchronizing with cloud...");
+                await loadData();
+                toast.success("Cloud data synchronized!");
+              }}
+              className="p-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 rounded-2xl transition-all"
+              title="Sync with Cloud"
+            >
+              <RefreshCw className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={() => setShowImport(true)}
+              className="px-8 py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl flex items-center gap-3 transition-all text-sm font-black shadow-lg shadow-rose-600/20"
+            >
+              <Plus className="w-5 h-5" />
+              Import Shop Data
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-col md:flex-row gap-6 relative z-10">
+          <div className="flex bg-zinc-900/50 p-1.5 rounded-2xl border border-zinc-800/50 overflow-x-auto no-scrollbar">
+            {states.map(state => (
+              <button
+                key={state}
+                onClick={() => setSelectedState(state)}
+                className={cn(
+                  "px-8 py-3 rounded-xl text-xs font-black transition-all whitespace-nowrap uppercase tracking-widest",
+                  selectedState === state 
+                    ? "bg-rose-600 text-white shadow-lg shadow-rose-600/20" 
+                    : "text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                {state}
+              </button>
+            ))}
+          </div>
+          <div className="relative flex-1 flex gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+              <input 
+                type="text" 
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search shops, artists, or handles in state..."
+                className="w-full pl-14 pr-6 py-4 bg-zinc-900/50 border border-zinc-800 focus:border-rose-500 rounded-2xl outline-none transition-all text-sm font-medium"
+              />
+            </div>
+            <div className="relative">
+              <Filter className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+              <select
+                value={accountTagFilter}
+                onChange={(e) => setAccountTagFilter(e.target.value)}
+                className="pl-11 pr-8 py-4 bg-zinc-900/50 border border-zinc-800 focus:border-rose-500 rounded-2xl outline-none transition-all text-xs font-black uppercase tracking-widest text-zinc-400 appearance-none cursor-pointer"
+              >
+                <option value="all">All Places</option>
+                <option value="default">Default</option>
+                {/* Dynamically add other tags if available in artists */}
+                {[...new Set(artists.filter(a => a && a.account_tag).map(a => a.account_tag))].map((tag: any) => (
+                  <option key={tag} value={tag}>{tag}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {showImport && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="bg-[#111] border border-rose-500/30 p-10 rounded-[2.5rem] relative overflow-hidden"
+          >
+            <div className="flex items-center justify-between mb-10">
+              <div className="flex items-center gap-5">
+                <div className="w-14 h-14 bg-rose-600/20 rounded-2xl flex items-center justify-center border border-rose-500/30">
+                  <Terminal className="w-8 h-8 text-rose-500" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-2xl font-black tracking-tight text-white">Import Shop Leads</h3>
+                  <p className="text-zinc-500 text-sm font-medium">Choose your preferred method to bring in new potential leads.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="flex flex-col items-end">
+                  <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-1">Account Tag</span>
+                  <input 
+                    type="text"
+                    value={accountTag}
+                    onChange={(e) => setAccountTag(e.target.value)}
+                    placeholder="e.g. main_ig"
+                    className="px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-[10px] font-bold text-zinc-300 focus:outline-none focus:border-rose-500/50 transition-all w-32"
+                  />
+                </div>
+                <button 
+                  onClick={() => setShowImport(false)}
+                  className="p-3 hover:bg-white/10 rounded-xl transition-colors"
+                >
+                  <X className="w-6 h-6 text-zinc-500" />
+                </button>
+              </div>
+            </div>
+              <div className="flex bg-zinc-900/50 p-1 rounded-xl border border-zinc-800/50">
+                <button 
+                  onClick={() => setImportTab('magic')}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                    importTab === 'magic' ? "bg-rose-600 text-white" : "text-zinc-500 hover:text-zinc-300"
+                  )}
+                >
+                  Magic Script
+                </button>
+                <button 
+                  onClick={() => setImportTab('csv')}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                    importTab === 'csv' ? "bg-rose-600 text-white" : "text-zinc-500 hover:text-zinc-300"
+                  )}
+                >
+                  CSV Upload
+                </button>
+                <button 
+                  onClick={() => setImportTab('shopify')}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                    importTab === 'shopify' ? "bg-rose-600 text-white shadow-lg shadow-rose-600/20" : "text-zinc-500 hover:text-zinc-300"
+                  )}
+                >
+                  <ShoppingBag className="w-3 h-3" />
+                  Shopify Import (CSV)
+                </button>
+              </div>
+
+            {importTab === 'magic' ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                <div className="space-y-8">
+                  <div className="flex items-start gap-5">
+                    <div className="w-10 h-10 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm font-black text-rose-500 shrink-0">1</div>
+                    <p className="text-sm text-zinc-400 leading-relaxed">Open <a href="https://www.google.com/maps" target="_blank" rel="noreferrer" className="text-rose-500 hover:underline font-bold">Google Maps</a> in a new tab.</p>
+                  </div>
+                  <div className="flex items-start gap-5">
+                    <div className="w-10 h-10 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm font-black text-rose-500 shrink-0">2</div>
+                    <p className="text-sm text-zinc-400 leading-relaxed">Search for <span className="text-white font-bold">"Tattoo Shops in {selectedState}"</span>.</p>
+                  </div>
+                  <div className="flex items-start gap-5">
+                    <div className="w-10 h-10 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm font-black text-rose-500 shrink-0">3</div>
+                    <p className="text-sm text-zinc-400 leading-relaxed">Scroll down the results list to load all shops.</p>
+                  </div>
+                  <div className="flex items-start gap-5">
+                    <div className="w-10 h-10 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm font-black text-rose-500 shrink-0">4</div>
+                    <p className="text-sm text-zinc-400 leading-relaxed">Copy the script on the right and paste it into the browser console (F12).</p>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="p-6 bg-black rounded-3xl border border-zinc-800 relative group">
+                    <pre className="text-[11px] text-amber-500/80 font-mono overflow-x-auto h-40 no-scrollbar leading-relaxed">
+{`// 🗺️ Google Maps Shop Scraper
+(async function() {
+    let shops = [];
+    const items = document.querySelectorAll('div[role="article"]');
+    items.forEach(item => {
+        try {
+            const name = item.querySelector('.qBF1Pd')?.innerText || "Unknown Shop";
+            const rating = item.querySelector('.MW4T7d')?.innerText || "N/A";
+            const address = item.querySelector('.W4Efsd:last-child')?.innerText || "No Address";
+            const website = item.querySelector('a[aria-label*="website"]')?.href || "No Website";
+            shops.push({ name, rating, address, website });
+        } catch (e) {}
+    });
+    const output = shops.map(s => \`\${s.name} | Rating: \${s.rating} | \${s.address} | \${s.website}\`).join('\\n');
+    copy(output);
+    alert(\`✅ Found \${shops.length} shops! Data copied to clipboard.\`);
+})();`}
+                    </pre>
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(`(async function() { let shops = []; const items = document.querySelectorAll('div[role="article"]'); items.forEach(item => { try { const name = item.querySelector('.qBF1Pd')?.innerText || "Unknown Shop"; const rating = item.querySelector('.MW4T7d')?.innerText || "N/A"; const address = item.querySelector('.W4Efsd:last-child')?.innerText || "No Address"; const website = item.querySelector('a[aria-label*="website"]')?.href || "No Website"; shops.push({ name, rating, address, website }); } catch (e) {} }); const output = shops.map(s => \`\${s.name} | Rating: \${s.rating} | \${s.address} | \${s.website}\`).join('\\n'); copy(output); alert(\`✅ Found \${shops.length} shops! Data copied to clipboard.\`); })();`);
+                        toast.success("Script copied to clipboard!");
+                      }}
+                      className="absolute right-4 top-4 p-3 bg-zinc-800 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-black uppercase tracking-widest flex items-center gap-2"
+                    >
+                      <Copy className="w-4 h-4" />
+                      Copy Script
+                    </button>
+                  </div>
+                  <button 
+                    onClick={handleMagicPaste}
+                    disabled={isScanning}
+                    className="w-full py-5 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 group shadow-lg shadow-rose-600/20 disabled:opacity-50"
+                  >
+                    {isScanning ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5 group-hover:scale-125 transition-transform" />}
+                    Magic Paste Leads
+                  </button>
+                </div>
+              </div>
+            ) : importTab === 'csv' ? (
+              <div className="space-y-8">
+                <div 
+                  {...getRootProps()} 
+                  className={cn(
+                    "border-2 border-dashed rounded-[2.5rem] p-16 flex flex-col items-center justify-center transition-all cursor-pointer",
+                    isDragActive ? "border-rose-500 bg-rose-500/5" : "border-zinc-800 hover:border-zinc-700 bg-zinc-900/20"
+                  )}
+                >
+                  <input {...getInputProps()} />
+                  <div className="w-20 h-20 bg-rose-600/10 rounded-3xl flex items-center justify-center border border-rose-500/20 mb-6">
+                    <Upload className="w-10 h-10 text-rose-500" />
+                  </div>
+                  <h4 className="text-xl font-black text-white mb-2">Drop your CSV file here</h4>
+                  <p className="text-zinc-500 text-sm font-medium mb-4">or click to browse your files</p>
+                  <p className="text-[10px] text-amber-500 font-bold uppercase tracking-widest bg-amber-500/10 px-4 py-2 rounded-full border border-amber-500/20 mb-8">
+                    🚀 Massive Batch Mode: ~3s per 100 rows (Optimized for 2000+ leads)
+                  </p>
+                  
+                  {uploadError && (
+                    <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-rose-500 text-xs font-bold">
+                      <AlertCircle className="w-4 h-4" />
+                      {uploadError}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-3 h-3" />
+                      Supports .csv
+                    </div>
+                    <div className="w-1 h-1 bg-zinc-800 rounded-full" />
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Auto-mapping
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-3xl">
+                  <h5 className="text-xs font-black text-white uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-rose-500" />
+                    CSV Format Requirements
+                  </h5>
+                  <p className="text-xs text-zinc-500 leading-relaxed">
+                    Your CSV should include headers like <span className="text-zinc-300 font-bold">shopName</span>, 
+                    <span className="text-zinc-300 font-bold">mapsRating</span>, 
+                    <span className="text-zinc-300 font-bold">igLink</span>, and 
+                    <span className="text-zinc-300 font-bold">address</span>. 
+                    We'll automatically map similar names (e.g., 'Name' to 'shopName').
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-8">
+                <div 
+                  {...getRootProps()} 
+                  className={cn(
+                    "border-2 border-dashed rounded-[2.5rem] p-16 flex flex-col items-center justify-center transition-all cursor-pointer",
+                    isDragActive ? "border-rose-500 bg-rose-500/5" : "border-zinc-800 hover:border-zinc-700 bg-zinc-900/20"
+                  )}
+                >
+                  <input {...getInputProps()} />
+                  <div className="w-20 h-20 bg-rose-600/10 rounded-3xl flex items-center justify-center border border-rose-500/20 mb-6">
+                    <ShoppingBag className="w-10 h-10 text-rose-500" />
+                  </div>
+                  <h4 className="text-xl font-black text-white mb-2">Drop Shopify Customers CSV</h4>
+                  <p className="text-zinc-500 text-sm font-medium mb-4">Export your customers from Shopify (CSV) and drop them here</p>
+                  
+                  {uploadError && (
+                    <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-rose-500 text-xs font-bold">
+                      <AlertCircle className="w-4 h-4" />
+                      {uploadError}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Auto-match by Email/Phone
+                    </div>
+                    <div className="w-1 h-1 bg-zinc-800 rounded-full" />
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="w-3 h-3" />
+                      Auto-update Conversion DNA
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-3xl">
+                  <h5 className="text-xs font-black text-white uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <ShoppingBag className="w-4 h-4 text-rose-500" />
+                    How Shopify Import Works
+                  </h5>
+                  <p className="text-xs text-zinc-500 leading-relaxed">
+                    Upload your Shopify <span className="text-zinc-300 font-bold">Customers</span> export (CSV). 
+                    We'll automatically match them using <span className="text-rose-500 font-bold">Email</span>, <span className="text-rose-500 font-bold">Phone</span>, or <span className="text-rose-500 font-bold">Default Address Company</span>. 
+                    The system will also sync <span className="text-zinc-300 font-bold">Total Orders</span> and <span className="text-zinc-300 font-bold">Total Spent</span> to your CRM.
+                  </p>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Shop List */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="bg-[#111] border border-zinc-800/50 rounded-[2.5rem] overflow-hidden">
+            <div className="p-8 border-b border-zinc-800/50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-zinc-900 rounded-xl flex items-center justify-center border border-zinc-800">
+                  <Users className="w-5 h-5 text-rose-500" />
+                </div>
+                <h4 className="font-black text-xl text-white">Shops in {selectedState} ({filteredShops.length})</h4>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl">
+                  <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Active Leads</span>
+                </div>
+                <div className="flex items-center gap-3 px-4 py-2 bg-zinc-900/50 border border-zinc-800 rounded-xl">
+                  <Database className="w-3.5 h-3.5 text-rose-500" />
+                  <div className="flex flex-col">
+                    <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Local Library</span>
+                    <span className="text-[10px] font-bold text-zinc-300">{globalStats?.dbSize || '0 MB'}</span>
+                  </div>
+                </div>
+                <button 
+                  onClick={async () => {
+                    const pending = assignments.filter(a => a.status === 'pending');
+                    if (pending.length === 0) {
+                      toast.error("No pending tasks to execute. Assign shops to automation first.");
+                      return;
+                    }
+                    toast.info(`Executing protocol for ${pending.length} shops...`);
+                    for (const a of pending) {
+                      await startAutomationSequence(a.artistId, a.accountId);
+                    }
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 border border-blue-400/20 rounded-xl text-[10px] font-black text-white uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg shadow-blue-600/20"
+                >
+                  <Zap className="w-3 h-3" />
+                  Execute Protocol
+                </button>
+                <button 
+                  onClick={bulkEnrichArtists}
+                  disabled={isScanning}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 border border-rose-400/20 rounded-xl text-[10px] font-black text-white uppercase tracking-widest transition-all flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Brain className="w-3 h-3" />
+                  Deep Scan All
+                </button>
+                <button 
+                  onClick={() => {
+                    const csv = Papa.unparse(artists);
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', `inkflow_backup_${new Date().toISOString().split('T')[0]}.csv`);
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    toast.success("Backup downloaded to your computer!");
+                  }}
+                  className="px-4 py-2 bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-800 rounded-xl text-[10px] font-black text-zinc-500 uppercase tracking-widest transition-all"
+                >
+                  Export Backup
+                </button>
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="px-4 py-2 bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-800 rounded-xl text-[10px] font-black text-zinc-500 uppercase tracking-widest transition-all"
+                >
+                  Refresh
+                </button>
+                <button 
+                  onClick={clearAllData}
+                  className="px-4 py-2 bg-rose-600/10 hover:bg-rose-600/20 border border-rose-500/20 rounded-xl text-[10px] font-black text-rose-500 uppercase tracking-widest transition-all"
+                >
+                  Clear All
+                </button>
+              </div>
+            </div>
+            
+            <div className="overflow-x-auto scrollbar-none border border-zinc-800/50 rounded-2xl bg-[#111]">
+              <table className="w-full text-left border-collapse table-fixed">
+                <thead>
+                  <tr className="border-b border-zinc-800/50 bg-zinc-900/20">
+                    <th className="p-3 text-[9px] font-black text-zinc-400 uppercase tracking-widest w-[22%]">Shop & Handle</th>
+                    <th className="p-3 text-[9px] font-black text-zinc-400 uppercase tracking-widest w-[16%]">Location</th>
+                    <th className="p-3 text-[9px] font-black text-zinc-400 uppercase tracking-widest w-[12%]">Followers</th>
+                    <th className="p-3 text-[9px] font-black text-zinc-400 uppercase tracking-widest w-[15%]">Style</th>
+                    <th className="p-3 text-[9px] font-black text-zinc-400 uppercase tracking-widest text-center w-[10%]">Heat</th>
+                    <th className="p-3 text-[9px] font-black text-zinc-400 uppercase tracking-widest w-[10%]">Status</th>
+                    <th className="p-3 text-[9px] font-black text-zinc-400 uppercase tracking-widest text-right w-[15%]">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/30">
+                  {paginatedShops.length > 0 ? paginatedShops.map(shop => (
+                    <tr key={shop.id} className="hover:bg-zinc-900/30 transition-colors group">
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <img 
+                            src={shop.profilePic || `https://picsum.photos/seed/${shop.username}/100/100`} 
+                            alt={shop.username} 
+                            className="w-8 h-8 rounded-lg border border-zinc-800 object-cover shrink-0"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="min-w-0">
+                            <h5 className="font-black text-white text-[11px] truncate leading-tight">
+                              {cleanDisplay(shop.fullName || 'Unknown Shop')}
+                            </h5>
+                            <p className="text-[9px] text-rose-500 font-bold truncate">
+                              @{cleanDisplay((!shop.username || typeof shop.username !== 'string' || shop.username.startsWith('user_')) ? (shop.fullName || 'artist').toLowerCase().replace(/\s+/g, '_') : shop.username)}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex flex-col gap-0">
+                          <div className="flex items-center gap-1 text-zinc-300 min-w-0">
+                            <MapPin className="w-2 h-2 text-zinc-500 shrink-0" />
+                            <span className="text-[10px] font-bold truncate">{cleanDisplay(shop.location || 'No Location')}</span>
+                          </div>
+                          <span className="text-[7px] text-zinc-500 uppercase tracking-widest ml-3 truncate block">{cleanDisplay(shop.country || 'USA')}</span>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-1">
+                          <Users className="w-2.5 h-2.5 text-zinc-500" />
+                          <span className="text-[11px] font-black text-zinc-300 truncate">
+                            {shop.followers && typeof shop.followers === 'number' ? shop.followers.toLocaleString() : (isScanning ? <Loader2 className="w-2 h-2 animate-spin text-zinc-600" /> : (shop.followers || '0'))}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-1">
+                          <Sparkles className="w-2.5 h-2.5 text-blue-500" />
+                          <span className="px-1 py-0.5 bg-zinc-800/50 text-[8px] font-black rounded text-zinc-400 uppercase tracking-widest border border-zinc-700/30 truncate block">
+                            {shop.style && shop.style !== 'Various' ? cleanDisplay(shop.style) : (isScanning ? <Loader2 className="w-2.5 h-2.5 animate-spin text-zinc-600" /> : 'Various')}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-3 text-center">
+                        <div className="flex flex-col items-center">
+                          <span className={cn(
+                            "text-[10px] font-black",
+                            shop.heatScore >= 80 ? "text-red-600" : "text-zinc-400"
+                          )}>
+                            {shop.heatScore}%
+                          </span>
+                          <div className="w-10 h-0.5 bg-zinc-800 rounded-full mt-0.5 overflow-hidden">
+                            <div 
+                              className={cn("h-full transition-all", shop.heatScore >= 80 ? "bg-red-600" : "bg-rose-600")} 
+                              style={{ width: `${shop.heatScore}%` }} 
+                            />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-1">
+                          <div className={cn(
+                            "w-1 h-1 rounded-full",
+                            shop.stage === 'customers' ? "bg-green-500" :
+                            shop.stage === 'engaged' ? "bg-blue-500" : "bg-zinc-600"
+                          )} />
+                          <span className={cn(
+                            "text-[8px] font-black uppercase tracking-widest",
+                            shop.stage === 'customers' ? "text-green-500" :
+                            shop.stage === 'engaged' ? "text-blue-500" : "text-zinc-500"
+                          )}>
+                            {shop.stage}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-3 text-right transition-colors">
+                        <div className="flex items-center justify-end gap-1">
+                          <button 
+                            onClick={() => assignTaskToAccount(shop.id)}
+                            className="p-1.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-500 hover:text-blue-500 transition-all"
+                            title="Assign"
+                          >
+                            <Monitor className="w-3 h-3" />
+                          </button>
+                          <button 
+                            onClick={() => {
+                              if (confirmDeleteId === shop.id) {
+                                deleteArtist(shop.id);
+                                setConfirmDeleteId(null);
+                              } else {
+                                setConfirmDeleteId(shop.id);
+                                setTimeout(() => setConfirmDeleteId(null), 2000);
+                              }
+                            }}
+                            className={cn(
+                              "p-1.5 border rounded transition-all",
+                              confirmDeleteId === shop.id ? "bg-rose-600 border-rose-500 text-white" : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-rose-500"
+                            )}
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                          <button 
+                            onClick={() => window.open(`https://instagram.com/${shop.username}`, '_blank')}
+                            className="p-1.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-500 hover:text-rose-500 transition-all"
+                          >
+                            <Instagram className="w-3 h-3" />
+                          </button>
+                          <button 
+                            onClick={() => moveArtist(shop.id, 'engaged')}
+                            className="p-1.5 bg-rose-600 text-white rounded hover:bg-rose-500 transition-all shadow-lg shadow-rose-600/20"
+                          >
+                            <ChevronRight className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={7} className="p-32 text-center">
+                        <div className="w-20 h-20 bg-zinc-900 rounded-[2rem] flex items-center justify-center border border-zinc-800 mx-auto mb-6">
+                          <MapPin className="w-10 h-10 text-zinc-700" />
+                        </div>
+                        <h5 className="text-white font-black text-lg mb-2">No leads found</h5>
+                        <p className="text-zinc-500 text-sm max-w-xs mx-auto">Use the Magic Import tool to scrape new shops directly from Google Maps.</p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-8 py-4 border-t border-zinc-800 bg-zinc-900/30 rounded-b-[2.5rem]">
+              <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                Showing {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredShops.length)} of {filteredShops.length}
+              </span>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-[10px] font-black text-zinc-400 uppercase tracking-widest disabled:opacity-30 transition-all"
+                >
+                  Prev
+                </button>
+                <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-[10px] font-black text-zinc-400 uppercase tracking-widest disabled:opacity-30 transition-all"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* AI Strategy */}
+        <div className="lg:col-span-1 space-y-8">
+          <div className="bg-[#111] border border-zinc-800/50 p-8 rounded-[2.5rem] sticky top-8">
+            <div className="flex items-center gap-4 mb-8">
+              <div className="w-12 h-12 bg-rose-600/10 rounded-2xl flex items-center justify-center border border-rose-500/20">
+                <TrendingUp className="w-6 h-6 text-rose-500" />
+              </div>
+              <div>
+                <h4 className="font-black text-xl text-white">AI Strategy</h4>
+                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">Market Intelligence</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-zinc-400 mb-8 leading-relaxed font-medium">
+              Generate a personalized approach for shops in {selectedState} based on current market trends and shop profiles.
+            </p>
+
+            {strategy ? (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="space-y-6"
+              >
+                <div className="p-6 bg-rose-600/5 border border-rose-500/20 rounded-3xl text-sm leading-relaxed text-zinc-300 font-medium italic">
+                  "{strategy}"
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    onClick={handleGenerateStrategy}
+                    className="py-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all text-zinc-300"
+                  >
+                    Regenerate
+                  </button>
+                  <button 
+                    onClick={async () => {
+                      const pending = assignments.filter(a => a.status === 'pending');
+                      if (pending.length === 0) {
+                        toast.error("No pending tasks to execute. Assign shops to automation first.");
+                        return;
+                      }
+                      toast.info(`Executing protocol for ${pending.length} shops...`);
+                      for (const a of pending) {
+                        await startAutomationSequence(a.artistId, a.accountId);
+                      }
+                    }}
+                    className="py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
+                  >
+                    <Zap className="w-3 h-3" />
+                    Execute Protocol
+                  </button>
+                </div>
+              </motion.div>
+            ) : (
+              <button 
+                onClick={handleGenerateStrategy}
+                disabled={isGeneratingStrategy}
+                className="w-full py-5 bg-rose-600 hover:bg-rose-500 disabled:bg-zinc-900 disabled:text-zinc-700 text-white font-black uppercase tracking-widest rounded-2xl transition-all shadow-lg shadow-rose-600/20 flex items-center justify-center gap-3"
+              >
+                {isGeneratingStrategy ? <Loader2 className="w-6 h-6 animate-spin" /> : <Sparkles className="w-6 h-6" />}
+                Generate Strategy
+              </button>
+            )}
+
+            <div className="mt-10 pt-10 border-t border-zinc-800/50 space-y-5">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-2xl bg-green-500/10 flex items-center justify-center border border-green-500/20">
+                  <CheckCircle2 className="w-5 h-5 text-green-500" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Market Analysis</p>
+                  <p className="text-xs text-zinc-300 font-bold">Updated Live</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-2xl bg-rose-500/10 flex items-center justify-center border border-rose-500/20">
+                  <AlertCircle className="w-5 h-5 text-rose-500" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">New Leads</p>
+                  <p className="text-xs text-zinc-300 font-bold">{filteredShops.length} shops found</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-2xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
+                  <Monitor className="w-5 h-5 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Automation</p>
+                  <p className="text-xs text-zinc-300 font-bold">{assignments.length} Active Tasks</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
