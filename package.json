@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "bot:worker": "tsx scripts/bot-worker.ts",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",

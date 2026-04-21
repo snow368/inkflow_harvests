@@ -28,7 +28,10 @@ import {
   Database,
   Monitor,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  Pause,
+  Play,
+  RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
@@ -49,6 +52,12 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
     artists, 
     pagination,
     globalStats,
+    importMetrics,
+    deepScanTask,
+    refreshDeepScanTask,
+    pauseDeepScanTask,
+    resumeDeepScanTask,
+    retryFailedDeepScanTask,
     loadData,
     importCSV, 
     syncShopifySales, 
@@ -69,6 +78,7 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
   const [search, setSearch] = useState('');
   const [activeStage, setActiveStage] = useState('all');
   const [accountTagFilter, setAccountTagFilter] = useState('all');
+  const [sortMode, setSortMode] = useState<'priority' | 'engagement' | 'active_now' | 'tattoo_likelihood'>('priority');
   const [accountTag, setAccountTag] = useState('default');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -80,6 +90,7 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
   const [showImport, setShowImport] = useState(false);
   const [importTab, setImportTab] = useState<'magic' | 'csv' | 'shopify'>('magic');
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [retryReason, setRetryReason] = useState<string>('all');
 
   const cleanDisplay = (text: any) => {
     if (typeof text !== 'string') return String(text || '');
@@ -232,7 +243,12 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
           const validData = mappedData.filter(d => d.name);
           
           if (validData.length > 0) {
-            importCSV(validData, selectedState === 'All Places' ? undefined : selectedState, accountTag);
+            importCSV(
+              validData,
+              selectedState === 'All Places' ? undefined : selectedState,
+              accountTag,
+              { rawRows: mappedData.length, missingNameRows: Math.max(0, mappedData.length - validData.length) }
+            );
             setShowImport(false);
             if (validData.length < mappedData.length) {
               toast.warning(`Imported ${validData.length} leads. Some rows were skipped due to missing Name.`);
@@ -264,6 +280,16 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
   } as any);
 
   const filteredShops = useMemo(() => {
+    const currentHour = new Date().getHours();
+    const hourDistance = (a: number, b: number) => {
+      const raw = Math.abs(a - b);
+      return Math.min(raw, 24 - raw);
+    };
+    const isActiveNow = (hours?: number[]) => {
+      if (!hours || hours.length === 0) return false;
+      return hours.some((h) => Number.isFinite(h) && hourDistance(currentHour, Number(h)) <= 1);
+    };
+
     return artists
       .filter(artist => {
         const matchesStage = artist.stage === 'outreach';
@@ -278,6 +304,19 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
         return matchesStage && matchesLocation && matchesSearch && matchesAccountTag;
       })
       .sort((a, b) => {
+        if (sortMode === 'engagement') {
+          return (b.socialSignals?.engagementRate || 0) - (a.socialSignals?.engagementRate || 0);
+        }
+        if (sortMode === 'active_now') {
+          const aNow = isActiveNow(a.socialSignals?.postingHours) ? 1 : 0;
+          const bNow = isActiveNow(b.socialSignals?.postingHours) ? 1 : 0;
+          if (bNow !== aNow) return bNow - aNow;
+          return (b.socialSignals?.postsPerWeek || 0) - (a.socialSignals?.postsPerWeek || 0);
+        }
+        if (sortMode === 'tattoo_likelihood') {
+          return (b.socialSignals?.tattooLikelihood || 0) - (a.socialSignals?.tattooLikelihood || 0);
+        }
+
         let aScore = (a.heatScore || 0) + (a.similarityScore || 0);
         let bScore = (b.heatScore || 0) + (b.similarityScore || 0);
         
@@ -287,7 +326,7 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
         
         return bScore - aScore;
       });
-  }, [artists, selectedState, search, accountTagFilter]);
+  }, [artists, selectedState, search, accountTagFilter, sortMode]);
 
   const paginatedShops = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -299,7 +338,7 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedState, search, accountTagFilter]);
+  }, [selectedState, search, accountTagFilter, sortMode]);
 
   const handleGenerateStrategy = async () => {
     setIsGeneratingStrategy(true);
@@ -350,8 +389,190 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
     }
   };
 
+  const handleRefreshDeepScan = async () => {
+    try {
+      const status = await refreshDeepScanTask();
+      if (!status) {
+        toast.info('No active deep scan task found.');
+        return;
+      }
+      toast.success(`Task ${status.id} is ${status.status}.`);
+    } catch (e) {
+      toast.error('Failed to refresh deep scan status.');
+    }
+  };
+
+  const handlePauseDeepScan = async () => {
+    try {
+      const status = await pauseDeepScanTask();
+      if (!status) {
+        toast.info('No task to pause.');
+        return;
+      }
+      toast.success(`Task paused: ${status.id}`);
+    } catch {
+      toast.error('Failed to pause task.');
+    }
+  };
+
+  const handleResumeDeepScan = async () => {
+    try {
+      const status = await resumeDeepScanTask();
+      if (!status) {
+        toast.info('No paused task to resume.');
+        return;
+      }
+      toast.success(`Task resumed: ${status.id}`);
+      if (!isScanning) {
+        await bulkEnrichArtists();
+      }
+    } catch {
+      toast.error('Failed to resume task.');
+    }
+  };
+
+  const handleRetryFailedDeepScan = async () => {
+    try {
+      const reason = retryReason === 'all' ? undefined : retryReason;
+      const status = await retryFailedDeepScanTask(undefined, reason);
+      if (!status) {
+        toast.info('No failed items to retry.');
+        return;
+      }
+      toast.success(`Retry queued${reason ? ` for ${reason}` : ''}. Failed backlog now: ${status.failed}`);
+      if (!isScanning) {
+        await bulkEnrichArtists();
+      }
+    } catch {
+      toast.error('Failed to retry failed items.');
+    }
+  };
+
+  const handleExportFailedCsv = async () => {
+    if (!deepScanTask?.id) return;
+    try {
+      const resp = await fetch(`/api/deep-scan/failed/${deepScanTask.id}`);
+      if (!resp.ok) throw new Error('Failed to fetch failed items');
+      const payload = await resp.json();
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      if (items.length === 0) {
+        toast.info('No failed items to export.');
+        return;
+      }
+      const csv = Papa.unparse(items);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `deep_scan_failed_${deepScanTask.id}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success(`Exported ${items.length} failed rows.`);
+    } catch {
+      toast.error('Failed to export failed CSV.');
+    }
+  };
+
   return (
     <div className="space-y-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+        {[
+          { label: 'Raw Rows', value: importMetrics.rawRows, tone: 'text-zinc-300 border-zinc-800' },
+          { label: 'Valid Rows', value: importMetrics.validRows, tone: 'text-emerald-300 border-emerald-500/20' },
+          { label: 'Deduped', value: importMetrics.dedupedRows, tone: 'text-amber-300 border-amber-500/20' },
+          { label: 'DeepScan', value: importMetrics.deepScanTargets, tone: 'text-rose-300 border-rose-500/20' },
+          { label: 'Enrich OK', value: importMetrics.enrichSuccess, tone: 'text-blue-300 border-blue-500/20' },
+          { label: 'Enrich Fail', value: importMetrics.enrichFailed, tone: 'text-red-300 border-red-500/20' },
+          { label: 'No Name', value: importMetrics.skipReasons.missingName, tone: 'text-zinc-400 border-zinc-800' },
+          { label: 'Identical', value: importMetrics.skipReasons.identical, tone: 'text-zinc-400 border-zinc-800' }
+        ].map((item) => (
+          <div key={item.label} className={`bg-zinc-900/40 border rounded-xl p-3 ${item.tone}`}>
+            <p className="text-[9px] font-black uppercase tracking-widest opacity-80">{item.label}</p>
+            <p className="text-sm font-black mt-1">{Number(item.value || 0).toLocaleString()}</p>
+          </div>
+        ))}
+      </div>
+      <div className="text-[10px] font-bold text-zinc-500 px-1">
+        Skips: already enriched {Number(importMetrics.skipReasons.alreadyEnriched || 0).toLocaleString()} | mapping errors {Number(importMetrics.skipReasons.mappingError || 0).toLocaleString()}
+      </div>
+
+      {deepScanTask && (
+        <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-4 space-y-3">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Deep Scan Task</p>
+              <p className="text-xs font-bold text-zinc-200">taskId: <span className="text-rose-400">{deepScanTask.id}</span></p>
+              <p className="text-[11px] text-zinc-400">
+                status <span className="text-zinc-200 font-bold">{deepScanTask.status}</span> | pending {deepScanTask.pending} | leased {deepScanTask.leased} | failed {deepScanTask.failed} | completed {deepScanTask.completed}/{deepScanTask.total}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={retryReason}
+                onChange={(e) => setRetryReason(e.target.value)}
+                className="px-2.5 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-[10px] font-black text-zinc-300 uppercase tracking-widest"
+              >
+                <option value="all">all reasons</option>
+                {Object.keys(deepScanTask.failedReasonStats || {}).map((reason) => (
+                  <option key={reason} value={reason}>
+                    {reason}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handlePauseDeepScan}
+                disabled={deepScanTask.status !== 'running'}
+                className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-lg text-[10px] font-black text-zinc-300 uppercase tracking-widest disabled:opacity-40 flex items-center gap-1.5"
+              >
+                <Pause className="w-3 h-3" />
+                Pause
+              </button>
+              <button
+                onClick={handleResumeDeepScan}
+                disabled={deepScanTask.status === 'completed'}
+                className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 rounded-lg text-[10px] font-black text-blue-200 uppercase tracking-widest disabled:opacity-40 flex items-center gap-1.5"
+              >
+                <Play className="w-3 h-3" />
+                Resume
+              </button>
+              <button
+                onClick={handleRetryFailedDeepScan}
+                disabled={deepScanTask.failed <= 0}
+                className="px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 rounded-lg text-[10px] font-black text-amber-200 uppercase tracking-widest disabled:opacity-40 flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Retry Failed
+              </button>
+              <button
+                onClick={handleRefreshDeepScan}
+                className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-lg text-[10px] font-black text-zinc-300 uppercase tracking-widest flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3 h-3" />
+                Refresh
+              </button>
+              <button
+                onClick={handleExportFailedCsv}
+                className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-lg text-[10px] font-black text-zinc-300 uppercase tracking-widest flex items-center gap-1.5"
+              >
+                <FileText className="w-3 h-3" />
+                Export Failed CSV
+              </button>
+            </div>
+          </div>
+          <div className="text-[10px] text-zinc-500">
+            Failed Reasons: {Object.entries(deepScanTask.failedReasonStats || {}).map(([reason, count]) => `${reason}:${count}`).join(' | ') || 'none'}
+          </div>
+          <div className="text-[10px] text-zinc-500">
+            Failed Sample: {deepScanTask.failedItemsSample.length}
+            {deepScanTask.failedItemsSample.length > 0
+              ? ` | ${deepScanTask.failedItemsSample.slice(0, 5).map((item) => `${item.id}:${item.reason}`).join(', ')}`
+              : ''}
+          </div>
+        </div>
+      )}
+
       {isScanning && (
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
@@ -475,6 +696,19 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
                 {[...new Set(artists.filter(a => a && a.account_tag).map(a => a.account_tag))].map((tag: any) => (
                   <option key={tag} value={tag}>{tag}</option>
                 ))}
+              </select>
+            </div>
+            <div className="relative">
+              <TrendingUp className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+              <select
+                value={sortMode}
+                onChange={(e) => setSortMode(e.target.value as any)}
+                className="pl-11 pr-8 py-4 bg-zinc-900/50 border border-zinc-800 focus:border-rose-500 rounded-2xl outline-none transition-all text-xs font-black uppercase tracking-widest text-zinc-400 appearance-none cursor-pointer"
+              >
+                <option value="priority">High Intent</option>
+                <option value="engagement">Engagement</option>
+                <option value="active_now">Active Now</option>
+                <option value="tattoo_likelihood">Tattoo Score</option>
               </select>
             </div>
           </div>
@@ -852,8 +1086,18 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
                       <td className="p-3">
                         <div className="flex items-center gap-1">
                           <Sparkles className="w-2.5 h-2.5 text-blue-500" />
-                          <span className="px-1 py-0.5 bg-zinc-800/50 text-[8px] font-black rounded text-zinc-400 uppercase tracking-widest border border-zinc-700/30 truncate block">
+                          <span className="px-1 py-0.5 bg-zinc-800/50 text-[8px] font-black rounded text-zinc-400 uppercase tracking-widest border border-zinc-700/30 truncate block max-w-[92px]">
                             {shop.style && shop.style !== 'Various' ? cleanDisplay(shop.style) : (isScanning ? <Loader2 className="w-2.5 h-2.5 animate-spin text-zinc-600" /> : 'Various')}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <span className="px-1 py-0.5 text-[7px] font-black rounded bg-zinc-900 border border-zinc-800 text-zinc-500">
+                            ER {(shop.socialSignals?.engagementRate || 0).toFixed(1)}%
+                          </span>
+                          <span className="px-1 py-0.5 text-[7px] font-black rounded bg-zinc-900 border border-zinc-800 text-zinc-500">
+                            H {Array.isArray(shop.socialSignals?.postingHours) && shop.socialSignals?.postingHours.length > 0
+                              ? shop.socialSignals?.postingHours.slice(0, 3).join(',')
+                              : '-'}
                           </span>
                         </div>
                       </td>

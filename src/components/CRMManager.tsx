@@ -466,7 +466,7 @@ export default function CRMManager() {
                         {activeStage === 'outreach' && (
                           <>
                             <button 
-                              onClick={() => addInteraction(artist.id, 'story-view')}
+                              onClick={() => addInteraction(artist.id, 'story_view')}
                               className="p-3 bg-zinc-900 border border-zinc-800 hover:border-red-500/50 hover:text-red-500 rounded-xl transition-all group/btn"
                               title="Simulate Story View (+5)"
                             >
@@ -487,7 +487,7 @@ export default function CRMManager() {
                               <MessageCircle className="w-4 h-4" />
                             </button>
                             <button 
-                              onClick={() => addInteraction(artist.id, 'follow-back')}
+                              onClick={() => addInteraction(artist.id, 'follow_back')}
                               className="p-3 bg-zinc-900 border border-zinc-800 hover:border-blue-500/50 hover:text-blue-500 rounded-xl transition-all group/btn"
                               title="Simulate Follow Back (+40)"
                             >

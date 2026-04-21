@@ -1,6 +1,27 @@
 
 export type CRMStage = 'outreach' | 'engaged' | 'customers' | 'dormant';
 export type AIPersona = 'professional' | 'friendly';
+export type ContactRole = 'owner' | 'artist' | 'manager' | 'unknown';
+export type ContactState = 'new' | 'attempted' | 'no_reply' | 'replied' | 'do_not_contact' | 'converted';
+
+export interface ShopContact {
+  id: string;
+  displayName?: string;
+  role: ContactRole;
+  priority: number;
+  state: ContactState;
+  lastContactedAt?: string;
+  attemptCount: number;
+  channels: {
+    instagram?: string;
+    facebook?: string;
+    tiktok?: string;
+    email?: string;
+    whatsapp?: string;
+  };
+  source?: 'import' | 'website' | 'search' | 'manual';
+  confidence?: number;
+}
 
 export interface CRMArtist {
   id: string;
@@ -50,12 +71,31 @@ export interface CRMArtist {
   account_tag?: string;
   customerTier?: 'new' | 'loyal' | 'vip';
   metadata?: Record<string, any>;
+  contacts?: ShopContact[];
+  socialSignals?: {
+    platformPresence?: {
+      instagram?: string;
+      facebook?: string;
+      tiktok?: string;
+      website?: string;
+      email?: string;
+      phone?: string;
+    };
+    engagementRate?: number;
+    avgLikesPerPost?: number;
+    avgCommentsPerPost?: number;
+    postsPerWeek?: number;
+    postingHours?: number[];
+    followerFollowingRatio?: number;
+    tattooLikelihood?: number;
+    styleVector?: Record<string, number>;
+  };
 }
 
 export interface CRMInteraction {
   id: string;
   artistId: string;
-  type: 'like' | 'comment' | 'follow' | 'story_view' | 'dm_reply' | 'follow_back' | 'reply';
+  type: 'like' | 'comment' | 'follow' | 'story_view' | 'follow_back' | 'reply';
   weight: number;
   timestamp: string;
   content?: string;
@@ -70,12 +110,33 @@ export interface CRMOrder {
 }
 
 export type AccountBehavior = 'observer' | 'active' | 'warmup';
+export type AccountSpeedProfile = 'safe' | 'balanced' | 'aggressive';
+export type AccountLanguage = 'en' | 'es' | 'pt' | 'fr' | 'de' | 'it' | 'zh' | 'ja' | 'ko';
+
+export interface AccountWindow {
+  startHour: number;
+  endHour: number;
+}
+
+export interface AccountDailyCaps {
+  likes: number;
+  comments: number;
+  follows: number;
+  dms: number;
+}
 
 export interface InstagramAccount {
   id: string;
   username: string;
   proxyIp?: string;
   timezone?: string;
+  language?: AccountLanguage;
+  speedProfile?: AccountSpeedProfile;
+  activeWindow?: AccountWindow;
+  sleepWindow?: AccountWindow;
+  dailyCaps?: AccountDailyCaps;
+  jitterMultiplier?: number;
+  regionTags?: string[];
   behaviorProfile: AccountBehavior;
   status: 'idle' | 'running' | 'cooldown' | 'banned';
   lastActionAt?: string;
@@ -89,6 +150,35 @@ export interface TaskAssignment {
   assignedAt: string;
   expiresAt: string;
   status: 'pending' | 'completed' | 'failed';
+}
+
+export type PipelineStageKey =
+  | 'data_import'
+  | 'deep_scan'
+  | 'quality_scoring'
+  | 'review_queue'
+  | 'outreach_execution'
+  | 'result_writeback'
+  | 'daily_recap';
+
+export interface PipelineStageConfig {
+  key: PipelineStageKey;
+  label: string;
+  enabled: boolean;
+  targetMinutes: number;
+  cooldownSeconds: number;
+}
+
+export interface AutomationPipelineConfig {
+  globalPause: boolean;
+  hourlyTaskCap: number;
+  dailyTaskCap: number;
+  minActionIntervalSeconds: number;
+  quietHoursStart: number;
+  quietHoursEnd: number;
+  requireManualReview: boolean;
+  stages: PipelineStageConfig[];
+  updatedAt: string;
 }
 
 export interface CRMState {

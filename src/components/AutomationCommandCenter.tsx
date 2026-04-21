@@ -24,7 +24,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { useCRM } from '../contexts/CRMContext';
-import { InstagramAccount, TaskAssignment } from '../types/crm';
+import { InstagramAccount, TaskAssignment, PipelineStageKey } from '../types/crm';
 import { toast } from 'sonner';
 
 const StatusBadge = ({ status }: { status: InstagramAccount['status'] }) => {
@@ -43,15 +43,60 @@ const StatusBadge = ({ status }: { status: InstagramAccount['status'] }) => {
 };
 
 export default function AutomationCommandCenter() {
-  const { accounts, assignments, artists, assignTaskToAccount, startAutomationSequence } = useCRM();
+  const {
+    accounts,
+    assignments,
+    artists,
+    interactions,
+    orders,
+    importMetrics,
+    deepScanTask,
+    pipelineConfig,
+    updatePipelineConfig,
+    updatePipelineStage,
+    assignTaskToAccount,
+    startAutomationSequence
+  } = useCRM();
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+
+  const getCapTotal = (account: InstagramAccount) => {
+    if (!account.dailyCaps) return 50;
+    return (account.dailyCaps.likes || 0) + (account.dailyCaps.comments || 0) + (account.dailyCaps.follows || 0) + (account.dailyCaps.dms || 0);
+  };
+
+  const getWindowLabel = (account: InstagramAccount) => {
+    const w = account.activeWindow;
+    if (!w) return '09:00-21:00';
+    return `${w.startHour.toString().padStart(2, '0')}:00-${w.endHour.toString().padStart(2, '0')}:00`;
+  };
 
   const activeAssignments = useMemo(() => {
     return assignments.filter(a => a.status === 'pending');
   }, [assignments]);
 
+  const stageProgress = useMemo(() => {
+    const pendingTasks = assignments.filter(a => a.status === 'pending').length;
+    const doneTasks = assignments.filter(a => a.status === 'completed').length;
+    return {
+      data_import: `${importMetrics.validRows.toLocaleString()} valid / ${importMetrics.rawRows.toLocaleString()} raw`,
+      deep_scan: deepScanTask
+        ? `${deepScanTask.completed + deepScanTask.failed}/${deepScanTask.total}`
+        : `${importMetrics.enrichSuccess + importMetrics.enrichFailed}/${importMetrics.deepScanTargets}`,
+      quality_scoring: `${artists.filter(a => (a.heatScore || 0) > 0).length} scored`,
+      review_queue: `${pendingTasks} pending review`,
+      outreach_execution: `${doneTasks} executed`,
+      result_writeback: `${interactions.length} interactions logged`,
+      daily_recap: `${orders.length} orders tracked`
+    } as Record<PipelineStageKey, string>;
+  }, [assignments, importMetrics, deepScanTask, artists, interactions.length, orders.length]);
+
   const handleStartSequence = async (assignment: TaskAssignment) => {
     await startAutomationSequence(assignment.artistId, assignment.accountId);
+  };
+
+  const updateNumericConfig = async (key: 'hourlyTaskCap' | 'dailyTaskCap' | 'minActionIntervalSeconds' | 'quietHoursStart' | 'quietHoursEnd', value: number) => {
+    const safe = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+    await updatePipelineConfig({ [key]: safe } as any);
   };
 
   const getArtistHandle = (id: string) => {
@@ -64,6 +109,90 @@ export default function AutomationCommandCenter() {
 
   return (
     <div className="space-y-8">
+      <div className="p-6 bg-zinc-900/60 border border-zinc-800 rounded-3xl space-y-5">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-xl font-black text-white">Pipeline Control</h3>
+            <p className="text-xs text-zinc-500 font-medium">7-step workflow timing and operation limits</p>
+          </div>
+          <button
+            onClick={() => updatePipelineConfig({ globalPause: !pipelineConfig.globalPause })}
+            className={cn(
+              "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest border",
+              pipelineConfig.globalPause
+                ? "bg-red-500/15 text-red-300 border-red-500/30"
+                : "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+            )}
+          >
+            {pipelineConfig.globalPause ? 'Global Paused' : 'Global Running'}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {[
+            { key: 'hourlyTaskCap', label: 'Hourly Cap', value: pipelineConfig.hourlyTaskCap },
+            { key: 'dailyTaskCap', label: 'Daily Cap', value: pipelineConfig.dailyTaskCap },
+            { key: 'minActionIntervalSeconds', label: 'Min Interval(s)', value: pipelineConfig.minActionIntervalSeconds },
+            { key: 'quietHoursStart', label: 'Quiet Start', value: pipelineConfig.quietHoursStart },
+            { key: 'quietHoursEnd', label: 'Quiet End', value: pipelineConfig.quietHoursEnd }
+          ].map((item) => (
+            <label key={item.key} className="p-3 bg-zinc-950/60 border border-zinc-800 rounded-xl">
+              <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2">{item.label}</p>
+              <input
+                type="number"
+                value={item.value}
+                onChange={(e) => updateNumericConfig(item.key as any, Number(e.target.value))}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-bold text-zinc-200"
+              />
+            </label>
+          ))}
+          <label className="p-3 bg-zinc-950/60 border border-zinc-800 rounded-xl flex items-center justify-between">
+            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Manual Review</span>
+            <input
+              type="checkbox"
+              checked={pipelineConfig.requireManualReview}
+              onChange={(e) => updatePipelineConfig({ requireManualReview: e.target.checked })}
+            />
+          </label>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {pipelineConfig.stages.map((stage) => (
+            <div key={stage.key} className="p-4 bg-zinc-950/50 border border-zinc-800 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-black text-white">{stage.label}</p>
+                <input
+                  type="checkbox"
+                  checked={stage.enabled}
+                  onChange={(e) => updatePipelineStage(stage.key, { enabled: e.target.checked })}
+                />
+              </div>
+              <p className="text-[10px] text-zinc-500">Progress: {stageProgress[stage.key]}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">
+                  Target Min
+                  <input
+                    type="number"
+                    value={stage.targetMinutes}
+                    onChange={(e) => updatePipelineStage(stage.key, { targetMinutes: Math.max(1, Number(e.target.value) || 1) })}
+                    className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-bold text-zinc-200"
+                  />
+                </label>
+                <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">
+                  Cooldown(s)
+                  <input
+                    type="number"
+                    value={stage.cooldownSeconds}
+                    onChange={(e) => updatePipelineStage(stage.key, { cooldownSeconds: Math.max(0, Number(e.target.value) || 0) })}
+                    className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-bold text-zinc-200"
+                  />
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
@@ -131,12 +260,12 @@ export default function AutomationCommandCenter() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between text-[10px] font-bold">
                     <span className="text-zinc-500 uppercase tracking-widest">Daily Limit</span>
-                    <span className="text-zinc-300">{account.dailyActionCount} / 50</span>
+                    <span className="text-zinc-300">{account.dailyActionCount} / {getCapTotal(account)}</span>
                   </div>
                   <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
                     <div 
                       className="h-full bg-blue-500 transition-all duration-500" 
-                      style={{ width: `${(account.dailyActionCount / 50) * 100}%` }}
+                      style={{ width: `${Math.min(100, (account.dailyActionCount / Math.max(1, getCapTotal(account))) * 100)}%` }}
                     />
                   </div>
                 </div>
@@ -149,6 +278,20 @@ export default function AutomationCommandCenter() {
                   <button className="text-zinc-500 hover:text-white transition-colors">
                     <Settings className="w-4 h-4" />
                   </button>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className="px-2 py-0.5 text-[9px] font-black uppercase rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+                    {account.language || 'en'}
+                  </span>
+                  <span className="px-2 py-0.5 text-[9px] font-black uppercase rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+                    {account.speedProfile || 'balanced'}
+                  </span>
+                  <span className="px-2 py-0.5 text-[9px] font-black uppercase rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+                    {account.timezone || 'UTC'}
+                  </span>
+                  <span className="px-2 py-0.5 text-[9px] font-black uppercase rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+                    {getWindowLabel(account)}
+                  </span>
                 </div>
               </div>
             ))}

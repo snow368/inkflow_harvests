@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { CRMArtist, CRMStage, AIPersona, CRMInteraction, CRMOrder, InstagramAccount, TaskAssignment, AccountBehavior } from '../types/crm';
+import { CRMArtist, CRMStage, AIPersona, CRMInteraction, CRMOrder, InstagramAccount, TaskAssignment, AccountBehavior, AccountLanguage, AccountSpeedProfile, ShopContact, AutomationPipelineConfig, PipelineStageConfig, PipelineStageKey } from '../types/crm';
 import { toast } from 'sonner';
 import { processArtistBatchAI, setMockMode as setGeminiMockMode } from '../lib/gemini';
 import { db, auth, signInWithGoogle, logoutUser } from '../lib/firebase';
@@ -52,19 +52,35 @@ interface ConversionDNA {
   topActivityLevels: string[];
 }
 
+interface DeepScanTaskStatus {
+  id: string;
+  status: 'running' | 'paused' | 'completed';
+  total: number;
+  completed: number;
+  failed: number;
+  pending: number;
+  leased: number;
+  updatedAt: string;
+  failedIdsSample: string[];
+  failedReasonStats: Record<string, number>;
+  failedItemsSample: Array<{ id: string; reason: string }>;
+}
+
 interface CRMContextType {
   artists: CRMArtist[];
   interactions: CRMInteraction[];
   orders: CRMOrder[];
+  pagination: { total: number; page: number; totalPages: number };
+  loadData: () => Promise<any>;
   persona: AIPersona;
   setPersona: (persona: AIPersona) => void;
   conversionDNA: ConversionDNA | null;
   moveArtist: (artistId: string, toStage: CRMStage) => void;
   updateArtist: (artistId: string, updates: Partial<CRMArtist>) => void;
-  addInteraction: (artistId: string, type: CRMInteraction['type'], content?: string) => Promise<void>;
+  addInteraction: (artistId: string, type: CRMInteraction['type'] | 'story-view' | 'follow-back' | 'dm_reply', content?: string) => Promise<void>;
   addOrder: (artistId: string, productName: string, amount: number) => Promise<void>;
   markAsConverted: (artistId: string) => void;
-  importCSV: (data: any[], defaultLocation?: string) => Promise<void>;
+  importCSV: (data: any[], defaultLocation?: string, accountTag?: string, options?: { rawRows?: number; missingNameRows?: number }) => Promise<void>;
   syncShopifySales: (data: any[]) => Promise<void>;
   bulkEnrichArtists: () => Promise<void>;
   clearAllData: () => void;
@@ -90,6 +106,28 @@ interface CRMContextType {
   logout: () => Promise<void>;
   isAuthReady: boolean;
   globalStats: any;
+  importMetrics: {
+    rawRows: number;
+    validRows: number;
+    dedupedRows: number;
+    deepScanTargets: number;
+    enrichSuccess: number;
+    enrichFailed: number;
+    skipReasons: {
+      missingName: number;
+      identical: number;
+      alreadyEnriched: number;
+      mappingError: number;
+    };
+  };
+  deepScanTask: DeepScanTaskStatus | null;
+  refreshDeepScanTask: (taskId?: string) => Promise<DeepScanTaskStatus | null>;
+  pauseDeepScanTask: (taskId?: string) => Promise<DeepScanTaskStatus | null>;
+  resumeDeepScanTask: (taskId?: string) => Promise<DeepScanTaskStatus | null>;
+  retryFailedDeepScanTask: (taskId?: string, reason?: string) => Promise<DeepScanTaskStatus | null>;
+  pipelineConfig: AutomationPipelineConfig;
+  updatePipelineConfig: (updates: Partial<AutomationPipelineConfig>) => Promise<void>;
+  updatePipelineStage: (stageKey: PipelineStageKey, updates: Partial<PipelineStageConfig>) => Promise<void>;
   accounts: InstagramAccount[];
   assignments: TaskAssignment[];
   assignTaskToAccount: (artistId: string) => Promise<string | null>;
@@ -97,6 +135,74 @@ interface CRMContextType {
 }
 
 const CRMContext = createContext<CRMContextType | undefined>(undefined);
+type InteractionInputType = CRMInteraction['type'] | 'story-view' | 'follow-back' | 'dm_reply';
+
+const SPEED_PROFILES: Record<AccountSpeedProfile, {
+  jitterRange: [number, number];
+  likesRange: [number, number];
+  commentProbability: number;
+  followProbability: number;
+  breakProbability: number;
+}> = {
+  safe: {
+    jitterRange: [120, 360],
+    likesRange: [1, 2],
+    commentProbability: 0.35,
+    followProbability: 0.2,
+    breakProbability: 0.22
+  },
+  balanced: {
+    jitterRange: [70, 260],
+    likesRange: [1, 3],
+    commentProbability: 0.5,
+    followProbability: 0.3,
+    breakProbability: 0.15
+  },
+  aggressive: {
+    jitterRange: [45, 180],
+    likesRange: [2, 4],
+    commentProbability: 0.65,
+    followProbability: 0.45,
+    breakProbability: 0.1
+  }
+};
+
+const COUNTRY_LANGUAGE_HINT: Record<string, AccountLanguage> = {
+  US: 'en',
+  UK: 'en',
+  AU: 'en',
+  CA: 'en',
+  MX: 'es',
+  ES: 'es',
+  AR: 'es',
+  BR: 'pt',
+  FR: 'fr',
+  DE: 'de',
+  IT: 'it',
+  CN: 'zh',
+  JP: 'ja',
+  KR: 'ko'
+};
+
+const DEFAULT_PIPELINE_CONFIG: AutomationPipelineConfig = {
+  globalPause: false,
+  hourlyTaskCap: 30,
+  dailyTaskCap: 180,
+  minActionIntervalSeconds: 90,
+  quietHoursStart: 23,
+  quietHoursEnd: 7,
+  requireManualReview: true,
+  stages: [
+    { key: 'data_import', label: 'Data Import', enabled: true, targetMinutes: 5, cooldownSeconds: 10 },
+    { key: 'deep_scan', label: 'Deep Scan', enabled: true, targetMinutes: 30, cooldownSeconds: 20 },
+    { key: 'quality_scoring', label: 'Quality Scoring', enabled: true, targetMinutes: 5, cooldownSeconds: 5 },
+    { key: 'review_queue', label: 'Manual Review Queue', enabled: true, targetMinutes: 20, cooldownSeconds: 0 },
+    { key: 'outreach_execution', label: 'Outreach Execution', enabled: true, targetMinutes: 120, cooldownSeconds: 90 },
+    { key: 'result_writeback', label: 'Result Writeback', enabled: true, targetMinutes: 10, cooldownSeconds: 5 },
+    { key: 'daily_recap', label: 'Daily Recap', enabled: true, targetMinutes: 15, cooldownSeconds: 0 }
+  ],
+  updatedAt: new Date().toISOString()
+};
 
 // Generate some mock data
 const generateMockArtists = (count: number): CRMArtist[] => {
@@ -161,6 +267,204 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [pagination, setPagination] = useState({ total: 0, page: 1, totalPages: 1 });
   const [globalStats, setGlobalStats] = useState<any[]>([]);
+  const [importMetrics, setImportMetrics] = useState({
+    rawRows: 0,
+    validRows: 0,
+    dedupedRows: 0,
+    deepScanTargets: 0,
+    enrichSuccess: 0,
+    enrichFailed: 0,
+    skipReasons: {
+      missingName: 0,
+      identical: 0,
+      alreadyEnriched: 0,
+      mappingError: 0
+    }
+  });
+  const [pipelineConfig, setPipelineConfig] = useState<AutomationPipelineConfig>(DEFAULT_PIPELINE_CONFIG);
+  const [deepScanTask, setDeepScanTask] = useState<DeepScanTaskStatus | null>(null);
+
+  const toDeepScanTaskStatus = useCallback((payload: any): DeepScanTaskStatus | null => {
+    if (!payload || !payload.id) return null;
+    const failedIdsSample = Array.isArray(payload.failedIdsSample)
+      ? payload.failedIdsSample.map((id: any) => String(id)).filter(Boolean)
+      : [];
+    const failedReasonStats = (payload?.failedReasonStats && typeof payload.failedReasonStats === 'object')
+      ? Object.entries(payload.failedReasonStats).reduce((acc: Record<string, number>, [key, value]) => {
+          acc[String(key)] = Number(value) || 0;
+          return acc;
+        }, {})
+      : {};
+    const failedItemsSample = Array.isArray(payload.failedItemsSample)
+      ? payload.failedItemsSample
+          .map((item: any) => ({ id: String(item?.id || ''), reason: String(item?.reason || 'unknown') }))
+          .filter((item: { id: string; reason: string }) => Boolean(item.id))
+      : [];
+    const status = String(payload.status || 'running') as DeepScanTaskStatus['status'];
+    return {
+      id: String(payload.id),
+      status: status === 'paused' || status === 'completed' ? status : 'running',
+      total: Number(payload.total) || 0,
+      completed: Number(payload.completed) || 0,
+      failed: Number(payload.failed) || 0,
+      pending: Number(payload.pending) || 0,
+      leased: Number(payload.leased) || 0,
+      updatedAt: String(payload.updatedAt || ''),
+      failedIdsSample,
+      failedReasonStats,
+      failedItemsSample
+    };
+  }, []);
+
+  const getHourInTimezone = (timezone?: string): number => {
+    if (!timezone) return new Date().getHours();
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        hour: '2-digit',
+        hour12: false,
+        timeZone: timezone
+      }).formatToParts(new Date());
+      const hourPart = parts.find((p) => p.type === 'hour')?.value;
+      const hour = parseInt(hourPart || '', 10);
+      return Number.isFinite(hour) ? hour : new Date().getHours();
+    } catch {
+      return new Date().getHours();
+    }
+  };
+
+  const isHourWithinWindow = (hour: number, startHour: number, endHour: number): boolean => {
+    if (startHour === endHour) return true;
+    if (startHour < endHour) return hour >= startHour && hour < endHour;
+    return hour >= startHour || hour < endHour;
+  };
+
+  const inferArtistLanguage = (artist?: CRMArtist): AccountLanguage => {
+    const country = (artist?.country || '').toUpperCase();
+    return COUNTRY_LANGUAGE_HINT[country] || 'en';
+  };
+
+  const getAccountDailyCapTotal = (account: InstagramAccount): number => {
+    if (!account.dailyCaps) return 50;
+    const { likes = 0, comments = 0, follows = 0, dms = 0 } = account.dailyCaps;
+    return likes + comments + follows + dms;
+  };
+
+  const buildDefaultContacts = (artist: CRMArtist): ShopContact[] => {
+    const contacts: ShopContact[] = [];
+    const baseId = artist.id || crypto.randomUUID();
+    if (artist.ig_handle || artist.username) {
+      contacts.push({
+        id: `${baseId}_owner_ig`,
+        displayName: artist.fullName || artist.shopName || artist.username,
+        role: 'owner',
+        priority: 100,
+        state: 'new',
+        attemptCount: 0,
+        channels: { instagram: artist.ig_handle || artist.username },
+        source: 'import',
+        confidence: 0.8
+      });
+    }
+    if (artist.email) {
+      contacts.push({
+        id: `${baseId}_owner_email`,
+        displayName: artist.fullName || artist.shopName || artist.username,
+        role: 'owner',
+        priority: 80,
+        state: 'new',
+        attemptCount: 0,
+        channels: { email: artist.email },
+        source: 'import',
+        confidence: 0.78
+      });
+    }
+    return contacts;
+  };
+
+  const mergeContacts = (existing: ShopContact[] = [], incoming: ShopContact[] = []): ShopContact[] => {
+    const merged = [...existing];
+    const keyOf = (c: ShopContact) => `${c.channels.instagram || ''}|${c.channels.email || ''}|${c.channels.whatsapp || ''}`.toLowerCase();
+    const index = new Map<string, number>();
+    merged.forEach((c, i) => index.set(keyOf(c), i));
+
+    incoming.forEach((c) => {
+      const k = keyOf(c);
+      const idx = index.get(k);
+      if (idx === undefined) {
+        merged.push(c);
+        index.set(k, merged.length - 1);
+      } else {
+        const prev = merged[idx];
+        merged[idx] = {
+          ...prev,
+          ...c,
+          channels: { ...prev.channels, ...c.channels },
+          priority: Math.max(prev.priority || 0, c.priority || 0),
+          confidence: Math.max(prev.confidence || 0, c.confidence || 0)
+        };
+      }
+    });
+    return merged;
+  };
+
+  const chooseNextContact = (artist: CRMArtist, nowIso: string = new Date().toISOString()): ShopContact | null => {
+    const fallbackPool = artist.contacts && artist.contacts.length > 0 ? artist.contacts : buildDefaultContacts(artist);
+    const now = new Date(nowIso).getTime();
+    const cooldownMs = 48 * 60 * 60 * 1000;
+    const eligible = fallbackPool
+      .filter((c) => c.state !== 'do_not_contact' && c.state !== 'converted')
+      .filter((c) => {
+        if (!c.lastContactedAt) return true;
+        const last = new Date(c.lastContactedAt).getTime();
+        return Number.isFinite(last) ? (now - last >= cooldownMs) : true;
+      })
+      .sort((a, b) => {
+        const aScore = (a.priority || 0) - (a.attemptCount || 0) * 8;
+        const bScore = (b.priority || 0) - (b.attemptCount || 0) * 8;
+        return bScore - aScore;
+      });
+    return eligible[0] || null;
+  };
+
+  const getArtistActiveHours = (artist?: CRMArtist): number[] => {
+    const fromSignals = artist?.socialSignals?.postingHours;
+    const fromMetadata = artist?.metadata?.postingHours;
+    const candidate = Array.isArray(fromSignals) && fromSignals.length > 0
+      ? fromSignals
+      : (Array.isArray(fromMetadata) ? fromMetadata : []);
+
+    const normalized = candidate
+      .map((h: any) => Number(h))
+      .filter((h: number) => Number.isFinite(h) && h >= 0 && h <= 23)
+      .map((h: number) => Math.floor(h));
+
+    if (normalized.length > 0) return Array.from(new Set(normalized));
+    // Fallback: common IG active windows for shops/artists
+    return [11, 12, 13, 19, 20, 21];
+  };
+
+  const circularHourDistance = (a: number, b: number): number => {
+    const raw = Math.abs(a - b);
+    return Math.min(raw, 24 - raw);
+  };
+
+  const isNearAnyActiveHour = (currentHour: number, activeHours: number[], tolerance: number = 1): boolean => {
+    return activeHours.some((h) => circularHourDistance(currentHour, h) <= tolerance);
+  };
+
+  const getWindowOverlapScore = (account: InstagramAccount, activeHours: number[]): number => {
+    if (!account.activeWindow) return 0;
+    const { startHour, endHour } = account.activeWindow;
+    const overlapCount = activeHours.filter((h) => isHourWithinWindow(h, startHour, endHour)).length;
+    return overlapCount;
+  };
+
+  const normalizeInteractionType = (type: InteractionInputType): CRMInteraction['type'] => {
+    if (type === 'story-view') return 'story_view';
+    if (type === 'follow-back') return 'follow_back';
+    if (type === 'dm_reply') return 'reply';
+    return type;
+  };
 
   // Auth Listener
   useEffect(() => {
@@ -184,12 +488,16 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const logout = async () => {
     try {
+      if (user?.uid) {
+        await localforage.removeItem(`deep_scan_task_${user.uid}`);
+      }
       await logoutUser();
       setRawArtists([]);
       setInteractions([]);
       setOrders([]);
       setAccounts([]);
       setAssignments([]);
+      setDeepScanTask(null);
       toast.success("Logged out successfully");
     } catch (e) {
       toast.error("Logout failed");
@@ -257,7 +565,11 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // 3. Sync Interactions from Firestore
       const qInteractions = query(collection(db, 'interactions'), where('uid', '==', user.uid));
       const unsubInteractions = onSnapshot(qInteractions, (snapshot) => {
-        const cloudData = snapshot.docs.map(doc => doc.data() as CRMInteraction);
+        const cloudData = snapshot.docs.map(doc => {
+          const raw = doc.data() as CRMInteraction & { type?: string };
+          const normalizedType = normalizeInteractionType((raw.type || 'like') as InteractionInputType);
+          return { ...raw, type: normalizedType } as CRMInteraction;
+        });
         setInteractions(prev => {
           const mergedMap = new Map<string, CRMInteraction>();
           prev.forEach(i => mergedMap.set(i.id, i));
@@ -286,8 +598,36 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         
         if (cloudData.length === 0) {
           const mockAccounts: InstagramAccount[] = [
-            { id: 'acc_1', username: 'inkflow_bot_1', behaviorProfile: 'observer', status: 'idle', dailyActionCount: 0 },
-            { id: 'acc_2', username: 'inkflow_bot_2', behaviorProfile: 'active', status: 'idle', dailyActionCount: 0 }
+            {
+              id: 'acc_1',
+              username: 'inkflow_bot_1',
+              behaviorProfile: 'observer',
+              status: 'idle',
+              language: 'en',
+              timezone: 'America/New_York',
+              speedProfile: 'safe',
+              activeWindow: { startHour: 9, endHour: 20 },
+              sleepWindow: { startHour: 23, endHour: 7 },
+              dailyCaps: { likes: 30, comments: 12, follows: 8, dms: 6 },
+              jitterMultiplier: 1.2,
+              regionTags: ['US', 'CA', 'NY'],
+              dailyActionCount: 0
+            },
+            {
+              id: 'acc_2',
+              username: 'inkflow_bot_2',
+              behaviorProfile: 'active',
+              status: 'idle',
+              language: 'es',
+              timezone: 'America/Los_Angeles',
+              speedProfile: 'balanced',
+              activeWindow: { startHour: 10, endHour: 22 },
+              sleepWindow: { startHour: 0, endHour: 8 },
+              dailyCaps: { likes: 45, comments: 18, follows: 12, dms: 8 },
+              jitterMultiplier: 1.0,
+              regionTags: ['US', 'MX', 'CA'],
+              dailyActionCount: 0
+            }
           ];
           mockAccounts.forEach(acc => {
             setDoc(doc(db, 'accounts', acc.id), { ...acc, uid: user.uid });
@@ -328,6 +668,133 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (cleanup) cleanup();
     };
   }, [user, loadData]);
+
+  const refreshDeepScanTask = useCallback(async (taskId?: string): Promise<DeepScanTaskStatus | null> => {
+    if (!user) return null;
+    const taskKey = `deep_scan_task_${user.uid}`;
+    const resolvedTaskId = taskId || deepScanTask?.id || await localforage.getItem<string>(taskKey);
+    if (!resolvedTaskId) {
+      setDeepScanTask(null);
+      return null;
+    }
+    const resp = await fetch(`/api/deep-scan/status/${resolvedTaskId}`);
+    if (!resp.ok) {
+      if (resp.status === 404) {
+        await localforage.removeItem(taskKey);
+        setDeepScanTask(null);
+        return null;
+      }
+      throw new Error('Failed to fetch deep scan task status');
+    }
+    const payload = await resp.json();
+    const normalized = toDeepScanTaskStatus(payload);
+    setDeepScanTask(normalized);
+    if (normalized) {
+      await localforage.setItem(taskKey, normalized.id);
+      if (normalized.status === 'completed') {
+        await localforage.removeItem(taskKey);
+      }
+    }
+    return normalized;
+  }, [user, deepScanTask?.id, toDeepScanTaskStatus]);
+
+  const pauseDeepScanTask = useCallback(async (taskId?: string): Promise<DeepScanTaskStatus | null> => {
+    if (!user) return null;
+    const taskKey = `deep_scan_task_${user.uid}`;
+    const resolvedTaskId = taskId || deepScanTask?.id || await localforage.getItem<string>(taskKey);
+    if (!resolvedTaskId) return null;
+    const resp = await fetch(`/api/deep-scan/pause/${resolvedTaskId}`, { method: 'POST' });
+    if (!resp.ok) throw new Error('Failed to pause deep scan task');
+    const normalized = toDeepScanTaskStatus(await resp.json());
+    setDeepScanTask(normalized);
+    if (normalized) await localforage.setItem(taskKey, normalized.id);
+    setIsScanning(false);
+    return normalized;
+  }, [user, deepScanTask?.id, toDeepScanTaskStatus]);
+
+  const resumeDeepScanTask = useCallback(async (taskId?: string): Promise<DeepScanTaskStatus | null> => {
+    if (!user) return null;
+    const taskKey = `deep_scan_task_${user.uid}`;
+    const resolvedTaskId = taskId || deepScanTask?.id || await localforage.getItem<string>(taskKey);
+    if (!resolvedTaskId) return null;
+    const resp = await fetch(`/api/deep-scan/resume/${resolvedTaskId}`, { method: 'POST' });
+    if (!resp.ok) throw new Error('Failed to resume deep scan task');
+    const normalized = toDeepScanTaskStatus(await resp.json());
+    setDeepScanTask(normalized);
+    if (normalized) await localforage.setItem(taskKey, normalized.id);
+    return normalized;
+  }, [user, deepScanTask?.id, toDeepScanTaskStatus]);
+
+  const retryFailedDeepScanTask = useCallback(async (taskId?: string, reason?: string): Promise<DeepScanTaskStatus | null> => {
+    if (!user) return null;
+    const taskKey = `deep_scan_task_${user.uid}`;
+    const resolvedTaskId = taskId || deepScanTask?.id || await localforage.getItem<string>(taskKey);
+    if (!resolvedTaskId) return null;
+    const resp = await fetch(`/api/deep-scan/retry-failed/${resolvedTaskId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reason ? { reason } : {})
+    });
+    if (!resp.ok) throw new Error('Failed to retry failed deep scan items');
+    const normalized = toDeepScanTaskStatus(await resp.json());
+    setDeepScanTask(normalized);
+    if (normalized) await localforage.setItem(taskKey, normalized.id);
+    return normalized;
+  }, [user, deepScanTask?.id, toDeepScanTaskStatus]);
+
+  const updatePipelineConfig = useCallback(async (updates: Partial<AutomationPipelineConfig>) => {
+    if (!user) return;
+    const nextConfig: AutomationPipelineConfig = {
+      ...pipelineConfig,
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    setPipelineConfig(nextConfig);
+    await localforage.setItem(`pipeline_config_${user.uid}`, nextConfig);
+    try {
+      await setDoc(
+        doc(db, 'settings', `${user.uid}_pipeline_config`),
+        sanitizeForFirestore({ ...nextConfig, uid: user.uid }),
+        { merge: true }
+      );
+    } catch (e) {
+      console.warn('Failed to sync pipeline config to cloud, kept locally.', e);
+    }
+  }, [user, pipelineConfig]);
+
+  const updatePipelineStage = useCallback(async (stageKey: PipelineStageKey, updates: Partial<PipelineStageConfig>) => {
+    if (!user) return;
+    const nextStages = pipelineConfig.stages.map((stage) =>
+      stage.key === stageKey ? { ...stage, ...updates } : stage
+    );
+    await updatePipelineConfig({ stages: nextStages });
+  }, [user, pipelineConfig.stages, updatePipelineConfig]);
+
+  useEffect(() => {
+    if (!user) {
+      setDeepScanTask(null);
+      return;
+    }
+    refreshDeepScanTask().catch(() => {
+      setDeepScanTask(null);
+    });
+  }, [user, refreshDeepScanTask]);
+
+  useEffect(() => {
+    const loadPipelineConfig = async () => {
+      if (!user) {
+        setPipelineConfig(DEFAULT_PIPELINE_CONFIG);
+        return;
+      }
+      const cached = await localforage.getItem<AutomationPipelineConfig>(`pipeline_config_${user.uid}`);
+      if (cached?.stages?.length) {
+        setPipelineConfig(cached);
+      } else {
+        setPipelineConfig(DEFAULT_PIPELINE_CONFIG);
+      }
+    };
+    loadPipelineConfig();
+  }, [user]);
 
   // Calculate Conversion DNA from Customers
   const conversionDNA = useMemo(() => {
@@ -516,15 +983,16 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [user]);
 
-  const addInteraction = useCallback(async (artistId: string, type: CRMInteraction['type'], content?: string) => {
+  const addInteraction = useCallback(async (artistId: string, type: InteractionInputType, content?: string) => {
     if (!user) return;
+    const normalizedType = normalizeInteractionType(type);
     
-    const weights = {
+    const weights: Record<CRMInteraction['type'], number> = {
       'like': 5,
       'comment': 20,
       'follow': 25,
       'story_view': 1,
-      'dm_reply': 40,
+      'reply': 40,
       'follow_back': 40
     };
 
@@ -532,8 +1000,8 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newInteraction: CRMInteraction = {
       id: interactionId,
       artistId,
-      type,
-      weight: weights[type],
+      type: normalizedType,
+      weight: weights[normalizedType],
       timestamp: new Date().toISOString(),
       content
     };
@@ -548,11 +1016,11 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           lastInteractionDate: newInteraction.timestamp
         };
 
-        if (type === 'like') updates.likeCount = (artist.likeCount || 0) + 1;
-        if (type === 'comment') updates.replyCount = (artist.replyCount || 0) + 1;
-        if (type === 'story_view') updates.storyViews24h = (artist.storyViews24h || 0) + 1;
-        if (type === 'follow_back') updates.hasFollowedBack = true;
-        if (type === 'reply' || type === 'dm_reply') {
+        if (normalizedType === 'like') updates.likeCount = (artist.likeCount || 0) + 1;
+        if (normalizedType === 'comment') updates.replyCount = (artist.replyCount || 0) + 1;
+        if (normalizedType === 'story_view') updates.storyViews24h = (artist.storyViews24h || 0) + 1;
+        if (normalizedType === 'follow_back') updates.hasFollowedBack = true;
+        if (normalizedType === 'reply') {
           updates.stage = 'engaged';
         }
 
@@ -754,9 +1222,32 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [rawArtists, markAsConverted, updateArtist]);
 
-  const importCSV = useCallback(async (data: any[], defaultLocation?: string, accountTag: string = 'default') => {
+  const importCSV = useCallback(async (
+    data: any[],
+    defaultLocation?: string,
+    accountTag: string = 'default',
+    options?: { rawRows?: number; missingNameRows?: number }
+  ) => {
     if (!user) return;
     try {
+      const rawRows = options?.rawRows ?? data.length;
+      const missingNameRows = options?.missingNameRows ?? Math.max(0, rawRows - data.length);
+      setImportMetrics(prev => ({
+        ...prev,
+        rawRows,
+        validRows: data.length,
+        dedupedRows: 0,
+        deepScanTargets: 0,
+        enrichSuccess: 0,
+        enrichFailed: 0,
+        skipReasons: {
+          ...prev.skipReasons,
+          missingName: missingNameRows,
+          identical: 0,
+          mappingError: 0
+        }
+      }));
+
       setIsScanning(true);
       setScanProgress({ current: 0, total: data.length });
       toast.info(`Importing ${data.length} leads. Initializing database...`, { id: 'import-progress' });
@@ -782,6 +1273,8 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const allArtistsToSave: CRMArtist[] = [];
       const artistsToEnrich: CRMArtist[] = [];
+      let identicalSkipCount = 0;
+      let mappingErrorCount = 0;
 
       // 2. Fast Mapping (O(M))
       console.log("Mapping rows...");
@@ -836,6 +1329,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               existing.mapsRating === mapsRating;
             
             if (isIdentical && !row.forceUpdate) {
+              identicalSkipCount++;
               return; // Skip writing to save quota
             }
           }
@@ -877,7 +1371,19 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             rating: mapsRating,
             metadata: { ...(existing?.metadata || {}), ...(row.metadata || {}), ...(row.place_id ? { place_id: row.place_id } : {}) },
             account_tag: accountTag || existing?.account_tag || 'default',
-            uid: user.uid
+            uid: user.uid,
+            contacts: mergeContacts(
+              existing?.contacts || [],
+              buildDefaultContacts({
+                ...(existing || {}),
+                id: existing?.id || stableId,
+                ig_handle: username.startsWith('user_') ? null : username,
+                username: username || existing?.username || '',
+                fullName: shopName || existing?.fullName || '',
+                shopName,
+                email: (row.email || existing?.email || null) as any
+              } as CRMArtist)
+            )
           };
 
           allArtistsToSave.push(artist);
@@ -886,17 +1392,39 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         } catch (err) {
           console.error("Error mapping row:", row, err);
+          mappingErrorCount++;
         }
       });
 
       console.log(`Mapped ${allArtistsToSave.length} unique artists from ${data.length} rows. Saving to Local Storage...`);
 
       if (allArtistsToSave.length === 0) {
+        setImportMetrics(prev => ({
+          ...prev,
+          dedupedRows: data.length,
+          deepScanTargets: 0,
+          skipReasons: {
+            ...prev.skipReasons,
+            identical: identicalSkipCount,
+            mappingError: mappingErrorCount
+          }
+        }));
         toast.success("All leads are already up-to-date. No changes needed.", { id: 'import-progress' });
         setIsScanning(false);
         setScanProgress({ current: 0, total: 0 });
         return;
       }
+
+      setImportMetrics(prev => ({
+        ...prev,
+        dedupedRows: Math.max(0, data.length - allArtistsToSave.length),
+        deepScanTargets: artistsToEnrich.length,
+        skipReasons: {
+          ...prev.skipReasons,
+          identical: identicalSkipCount,
+          mappingError: mappingErrorCount
+        }
+      }));
       
       // 3. Save to Local Storage IMMEDIATELY (Fast & Free)
       setScanProgress({ current: 0, total: allArtistsToSave.length });
@@ -1024,6 +1552,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               chunk.forEach(a => {
                 const enriched = aiData[a.id];
                 if (enriched) {
+                  const postingHours = Array.isArray(enriched.postingHours)
+                    ? enriched.postingHours.map((h: any) => Number(h)).filter((h: number) => Number.isFinite(h) && h >= 0 && h <= 23)
+                    : (a.socialSignals?.postingHours || []);
                   const updateData = {
                     followers: enriched.followers,
                     activityLevel: enriched.activityLevel,
@@ -1031,6 +1562,20 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     dnaTags: enriched.dnaTags || a.dnaTags,
                     username: enriched.realUsername || a.username,
                     fullName: enriched.realFullName || a.fullName,
+                    socialSignals: {
+                      ...(a.socialSignals || {}),
+                      postingHours: postingHours.length > 0 ? postingHours : (a.socialSignals?.postingHours || []),
+                      postsPerWeek: Number.isFinite(enriched.postsPerWeek) ? enriched.postsPerWeek : (a.socialSignals?.postsPerWeek || 0),
+                      avgLikesPerPost: Number.isFinite(enriched.avgLikes) ? enriched.avgLikes : (a.socialSignals?.avgLikesPerPost || 0),
+                      avgCommentsPerPost: Number.isFinite(enriched.avgComments) ? enriched.avgComments : (a.socialSignals?.avgCommentsPerPost || 0),
+                      engagementRate: Number.isFinite(enriched.engagementRate) ? enriched.engagementRate : (a.socialSignals?.engagementRate || 0),
+                      followerFollowingRatio: Number.isFinite(enriched.followerFollowingRatio) ? enriched.followerFollowingRatio : (a.socialSignals?.followerFollowingRatio || 0),
+                      tattooLikelihood: Number.isFinite(enriched.tattooLikelihood) ? enriched.tattooLikelihood : (a.socialSignals?.tattooLikelihood || 0),
+                      styleVector: {
+                        ...(a.socialSignals?.styleVector || {}),
+                        ...((enriched.styleVector && typeof enriched.styleVector === 'object') ? enriched.styleVector : {})
+                      }
+                    },
                     uid: user.uid // Ensure UID is present to satisfy security rules
                   };
                   // Use set with merge: true to handle documents that might be missing UID
@@ -1237,9 +1782,36 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [user, markAsConverted]);
 
   const bulkEnrichArtists = useCallback(async () => {
+    if (!user) {
+      toast.error("Please log in first.");
+      return;
+    }
+
     const outreachArtists = rawArtists.filter(a => a.stage === 'outreach');
-    const targets = outreachArtists.filter(a => !a.followers || !a.style);
+    const targets = outreachArtists.filter(a =>
+      !a.followers ||
+      !a.style ||
+      !a.socialSignals?.postingHours?.length ||
+      !a.socialSignals?.engagementRate ||
+      !a.socialSignals?.postsPerWeek ||
+      !a.ig_handle ||
+      !a.facebookId
+    );
     const skipped = outreachArtists.length - targets.length;
+    const BATCH_SIZE = 20;
+    const taskKey = `deep_scan_task_${user.uid}`;
+    const targetById = new Map(targets.map((a) => [a.id, a]));
+
+    setImportMetrics(prev => ({
+      ...prev,
+      deepScanTargets: targets.length,
+      enrichSuccess: 0,
+      enrichFailed: 0,
+      skipReasons: {
+        ...prev.skipReasons,
+        alreadyEnriched: skipped
+      }
+    }));
 
     if (targets.length === 0) {
       toast.success("All outreach leads already have enriched data!");
@@ -1255,81 +1827,317 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsScanning(true);
     setScanProgress({ current: 0, total: targets.length });
 
-    const BATCH_SIZE = 20; // Smaller batches for more frequent updates
-    const CONCURRENT_BATCHES = 3;
-    let completedCount = 0;
+    let taskId = await localforage.getItem<string>(taskKey);
+    let status: DeepScanTaskStatus | null = null;
+    let pausedByUser = false;
 
-    for (let i = 0; i < targets.length; i += BATCH_SIZE * CONCURRENT_BATCHES) {
-      const batchPromises = [];
-      
-      for (let j = 0; j < CONCURRENT_BATCHES; j++) {
-        const start = i + (j * BATCH_SIZE);
-        if (start >= targets.length) break;
-        
-        const batchToEnrich = targets.slice(start, start + BATCH_SIZE);
-        
-        const processBatch = async () => {
+    try {
+      if (taskId) {
+        const existingStatus = await refreshDeepScanTask(taskId);
+        if (existingStatus?.status === 'completed') {
+          await localforage.removeItem(taskKey);
+          taskId = null;
+        } else if (existingStatus) {
+          status = existingStatus;
+          setDeepScanTask(existingStatus);
+          setScanProgress({ current: existingStatus.completed + existingStatus.failed, total: existingStatus.total || targets.length });
+          toast.info(`Resuming Deep Scan task ${taskId}...`, { id: 'enrich-progress' });
+        } else {
+          await localforage.removeItem(taskKey);
+          taskId = null;
+        }
+      }
+
+      if (!taskId) {
+        const startResp = await fetch('/api/deep-scan/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ artistIds: targets.map((t) => t.id), batchSize: BATCH_SIZE })
+        });
+        if (!startResp.ok) throw new Error('Failed to start deep scan task');
+        const started = toDeepScanTaskStatus(await startResp.json());
+        if (!started) throw new Error('Invalid deep scan task response');
+        taskId = started.id;
+        status = started;
+        setDeepScanTask(started);
+        setScanProgress({ current: started.completed + started.failed, total: started.total });
+        await localforage.setItem(taskKey, taskId);
+      }
+
+      while (taskId) {
+        const nextResp = await fetch(`/api/deep-scan/next/${taskId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: BATCH_SIZE })
+        });
+        if (!nextResp.ok) throw new Error('Failed to fetch deep scan batch');
+        const nextPayload = await nextResp.json();
+        const nextStatus = toDeepScanTaskStatus(nextPayload);
+        if (nextStatus) {
+          status = nextStatus;
+          setDeepScanTask(nextStatus);
+        }
+        const batchIds: string[] = Array.isArray(nextPayload.artistIds) ? nextPayload.artistIds : [];
+
+        if (batchIds.length === 0) {
+          const refreshed = await refreshDeepScanTask(taskId);
+          if (!refreshed) break;
+          status = refreshed;
+          setScanProgress({ current: refreshed.completed + refreshed.failed, total: refreshed.total });
+          setImportMetrics(prev => ({
+            ...prev,
+            enrichSuccess: refreshed.completed,
+            enrichFailed: refreshed.failed
+          }));
+          if (refreshed.status === 'completed') break;
+          if (refreshed.status === 'paused') {
+            pausedByUser = true;
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 700));
+          continue;
+        }
+
+        const batchToEnrich = batchIds.map((id) => targetById.get(id)).filter(Boolean) as CRMArtist[];
+        const successIds: string[] = [];
+        const failedItems: Array<{ id: string; reason: string }> = [];
+
+        try {
+          const socialLookupCandidates = batchToEnrich
+            .filter(a => !a.ig_handle || !a.facebookId || !a.metadata?.tiktok)
+            .map(a => ({
+              id: a.id,
+              shopName: a.shopName || a.fullName,
+              website: a.website,
+              address: a.address || `${a.location || ''} ${a.country || ''}`.trim(),
+              phone: a.phone
+            }));
+
+          let socialLookupMap: Record<string, any> = {};
+          let socialLookupErrored = false;
+          if (socialLookupCandidates.length > 0) {
+            const socialResp = await fetch('/api/enrich/social-links', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ shops: socialLookupCandidates })
+            });
+            if (socialResp.ok) {
+              const payload = await socialResp.json();
+              const rows = Array.isArray(payload?.results) ? payload.results : [];
+              socialLookupMap = rows.reduce((acc: Record<string, any>, item: any) => {
+                if (item?.id) acc[item.id] = item;
+                return acc;
+              }, {});
+            } else {
+              socialLookupErrored = true;
+            }
+          }
+
+          let aiData: Record<string, any> = {};
+          let aiErrored = false;
           try {
-            const aiData = await processArtistBatchAI(
+            aiData = await processArtistBatchAI(
               batchToEnrich.map(a => ({ id: a.id, username: a.username, shopName: a.shopName })),
               true
             );
-
-            if (Object.keys(aiData).length > 0) {
-              const updateBatch = writeBatch(db);
-              const localUpdates: CRMArtist[] = [];
-
-              batchToEnrich.forEach(a => {
-                const enriched = aiData[a.id];
-                if (enriched) {
-                  const updates = {
-                    username: enriched.realUsername || a.username,
-                    fullName: enriched.realFullName || a.fullName,
-                    followers: enriched.followers,
-                    activityLevel: enriched.activityLevel,
-                    style: enriched.style,
-                    dnaTags: [...new Set([...(a.dnaTags || []), ...(enriched.dnaTags || [])])],
-                    uid: user.uid // Ensure UID is present
-                  };
-                  // Use set with merge: true to handle documents that might be missing UID
-                  updateBatch.set(doc(db, 'artists', a.id), sanitizeForFirestore(updates), { merge: true });
-                  localUpdates.push({ ...a, ...updates });
-                }
-              });
-              await updateBatch.commit();
-
-              // Update local state for immediate feedback
-              setRawArtists(prev => {
-                const next = [...prev];
-                localUpdates.forEach(update => {
-                  const idx = next.findIndex(a => a.id === update.id);
-                  if (idx >= 0) next[idx] = update;
-                });
-                return next;
-              });
-            }
           } catch (e) {
-            console.error("Enrichment batch failed", e);
-          } finally {
-            completedCount += batchToEnrich.length;
-            setScanProgress(prev => ({ ...prev, current: Math.min(completedCount, targets.length) }));
+            aiErrored = true;
           }
-        };
-        batchPromises.push(processBatch());
+
+          const updateBatch = writeBatch(db);
+          const localUpdates: CRMArtist[] = [];
+
+          batchToEnrich.forEach(a => {
+            const enriched = aiData[a.id];
+            const social = socialLookupMap[a.id];
+            if (!enriched && !social) {
+              let reason = 'unknown';
+              if (aiErrored) reason = 'ai_error';
+              else if (socialLookupErrored) reason = 'social_lookup_error';
+              else reason = 'ai_empty';
+              failedItems.push({ id: a.id, reason });
+              return;
+            }
+
+            const extractedHandle = (url?: string | null) => {
+              if (!url || typeof url !== 'string') return null;
+              const cleaned = url.trim().replace(/^@/, '');
+              if (cleaned.includes('instagram.com/')) {
+                return cleaned.split('instagram.com/')[1].split('/')[0].split('?')[0] || null;
+              }
+              return cleaned;
+            };
+
+            const updates = {
+              contacts: mergeContacts(
+                a.contacts || [],
+                [
+                  ...(social?.instagram ? [{
+                    id: `${a.id}_owner_ig_enriched`,
+                    displayName: a.fullName || a.shopName || a.username,
+                    role: 'owner' as const,
+                    priority: 100,
+                    state: 'new' as const,
+                    attemptCount: 0,
+                    channels: { instagram: extractedHandle(social.instagram) || social.instagram },
+                    source: 'search' as const,
+                    confidence: social?.confidence?.instagram || 0.65
+                  }] : []),
+                  ...(social?.facebook ? [{
+                    id: `${a.id}_owner_fb_enriched`,
+                    displayName: a.fullName || a.shopName || a.username,
+                    role: 'owner' as const,
+                    priority: 65,
+                    state: 'new' as const,
+                    attemptCount: 0,
+                    channels: { facebook: social.facebook },
+                    source: 'search' as const,
+                    confidence: social?.confidence?.facebook || 0.62
+                  }] : []),
+                  ...(social?.emails?.[0] ? [{
+                    id: `${a.id}_owner_email_enriched`,
+                    displayName: a.fullName || a.shopName || a.username,
+                    role: 'owner' as const,
+                    priority: 80,
+                    state: 'new' as const,
+                    attemptCount: 0,
+                    channels: { email: social.emails[0] },
+                    source: 'website' as const,
+                    confidence: 0.75
+                  }] : []),
+                  ...(social?.whatsapp?.[0] ? [{
+                    id: `${a.id}_owner_wa_enriched`,
+                    displayName: a.fullName || a.shopName || a.username,
+                    role: 'owner' as const,
+                    priority: 78,
+                    state: 'new' as const,
+                    attemptCount: 0,
+                    channels: { whatsapp: social.whatsapp[0] },
+                    source: 'website' as const,
+                    confidence: 0.72
+                  }] : [])
+                ] as ShopContact[]
+              ),
+              username: enriched?.realUsername || a.username,
+              fullName: enriched?.realFullName || a.fullName,
+              followers: enriched?.followers ?? a.followers,
+              activityLevel: enriched?.activityLevel ?? a.activityLevel,
+              style: enriched?.style ?? a.style,
+              dnaTags: [...new Set([...(a.dnaTags || []), ...((enriched?.dnaTags as string[]) || [])])],
+              ig_handle: a.ig_handle || extractedHandle(social?.instagram) || null,
+              facebookId: a.facebookId || social?.facebook || null,
+              metadata: {
+                ...(a.metadata || {}),
+                ...(social?.tiktok ? { tiktok: social.tiktok } : {}),
+                ...(social?.emails?.length ? { email_candidates: social.emails } : {}),
+                ...(social?.whatsapp?.length ? { whatsapp_candidates: social.whatsapp } : {}),
+                ...(social?.confidence ? { social_confidence: social.confidence } : {})
+              },
+              socialSignals: {
+                ...(a.socialSignals || {}),
+                postingHours: Array.isArray(enriched?.postingHours)
+                  ? enriched.postingHours.map((h: any) => Number(h)).filter((h: number) => Number.isFinite(h) && h >= 0 && h <= 23)
+                  : (a.socialSignals?.postingHours || []),
+                postsPerWeek: Number.isFinite(enriched?.postsPerWeek) ? enriched.postsPerWeek : (a.socialSignals?.postsPerWeek || 0),
+                avgLikesPerPost: Number.isFinite(enriched?.avgLikes) ? enriched.avgLikes : (a.socialSignals?.avgLikesPerPost || 0),
+                avgCommentsPerPost: Number.isFinite(enriched?.avgComments) ? enriched.avgComments : (a.socialSignals?.avgCommentsPerPost || 0),
+                engagementRate: Number.isFinite(enriched?.engagementRate) ? enriched.engagementRate : (a.socialSignals?.engagementRate || 0),
+                followerFollowingRatio: Number.isFinite(enriched?.followerFollowingRatio)
+                  ? enriched.followerFollowingRatio
+                  : (a.socialSignals?.followerFollowingRatio || 0),
+                tattooLikelihood: Number.isFinite(enriched?.tattooLikelihood)
+                  ? enriched.tattooLikelihood
+                  : (a.socialSignals?.tattooLikelihood || 0),
+                styleVector: {
+                  ...(a.socialSignals?.styleVector || {}),
+                  ...((enriched?.styleVector && typeof enriched.styleVector === 'object') ? enriched.styleVector : {})
+                },
+                platformPresence: {
+                  ...(a.socialSignals?.platformPresence || {}),
+                  ...(social?.instagram ? { instagram: social.instagram } : {}),
+                  ...(social?.facebook ? { facebook: social.facebook } : {}),
+                  ...(social?.tiktok ? { tiktok: social.tiktok } : {}),
+                  ...(a.website ? { website: a.website } : {}),
+                  ...(social?.emails?.[0] ? { email: social.emails[0] } : {}),
+                  ...(social?.whatsapp?.[0] ? { phone: social.whatsapp[0] } : {})
+                }
+              },
+              uid: user.uid
+            };
+            updateBatch.set(doc(db, 'artists', a.id), sanitizeForFirestore(updates), { merge: true });
+            localUpdates.push({ ...a, ...updates });
+            successIds.push(a.id);
+          });
+
+          try {
+            await updateBatch.commit();
+          } catch (e) {
+            batchToEnrich.forEach((a) => {
+              if (!successIds.includes(a.id)) {
+                failedItems.push({ id: a.id, reason: 'firestore_write' });
+              }
+            });
+            throw e;
+          }
+          setRawArtists(prev => {
+            const next = [...prev];
+            localUpdates.forEach(update => {
+              const idx = next.findIndex(a => a.id === update.id);
+              if (idx >= 0) next[idx] = update;
+            });
+            return next;
+          });
+        } catch (e) {
+          console.error("Enrichment batch failed", e);
+          batchToEnrich.forEach((a) => {
+            if (!failedItems.some((item) => item.id === a.id)) {
+              failedItems.push({ id: a.id, reason: 'network' });
+            }
+          });
+        }
+
+        const reportResp = await fetch(`/api/deep-scan/report/${taskId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ successIds, failedItems })
+        });
+        if (!reportResp.ok) throw new Error('Failed to report deep scan batch');
+
+        const reported = toDeepScanTaskStatus(await reportResp.json());
+        if (reported) {
+          status = reported;
+          setDeepScanTask(reported);
+          setScanProgress({ current: reported.completed + reported.failed, total: reported.total });
+          setImportMetrics(prev => ({
+            ...prev,
+            enrichSuccess: reported.completed,
+            enrichFailed: reported.failed
+          }));
+          toast.info(`Enrichment Progress: ${reported.completed + reported.failed} / ${reported.total}...`, { id: 'enrich-progress' });
+          if (reported.status === 'paused') {
+            pausedByUser = true;
+            break;
+          }
+          if (reported.status === 'completed') {
+            break;
+          }
+        }
       }
 
-      await Promise.all(batchPromises);
-      toast.info(`Enrichment Progress: ${Math.min(completedCount, targets.length)} / ${targets.length}...`, { id: 'enrich-progress' });
-      
-      if (i + BATCH_SIZE * CONCURRENT_BATCHES < targets.length) {
-        await new Promise(resolve => setTimeout(resolve, 800));
+      if (status?.status === 'completed') {
+        await localforage.removeItem(taskKey);
+        toast.success(`Deep Scan complete: ${status.completed} enriched, ${status.failed} failed.`, { id: 'enrich-progress' });
+      } else if (pausedByUser || status?.status === 'paused') {
+        toast.info(`Deep Scan paused on task ${taskId}. You can resume anytime.`, { id: 'enrich-progress' });
       }
+    } catch (e) {
+      console.error("Deep scan failed", e);
+      toast.error("Deep Scan failed. Please retry.", { id: 'enrich-progress' });
+    } finally {
+      setIsScanning(false);
+      setScanProgress({ current: 0, total: 0 });
     }
-
-    setIsScanning(false);
-    setScanProgress({ current: 0, total: 0 });
-    toast.success(`Successfully enriched ${targets.length} artists with AI data!`, { id: 'enrich-progress' });
-  }, [user, rawArtists]);
+  }, [user, rawArtists, refreshDeepScanTask, toDeepScanTaskStatus]);
 
   // Automation Orchestration Logic
   const assignTaskToAccount = useCallback(async (artistId: string): Promise<string | null> => {
@@ -1349,11 +2157,32 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return existingAssignment.accountId;
     }
 
-    // 2. Find an available account (idle and not at daily limit)
-    const availableAccount = accounts.find(acc => 
-      acc.status === 'idle' && 
-      acc.dailyActionCount < 50 // Mock limit
-    );
+    // 2. Find an available account by capacity + geo/language fit
+    const artist = rawArtists.find(a => a.id === artistId);
+    const targetLanguage = inferArtistLanguage(artist);
+    const targetRegion = (artist?.country || artist?.location || '').toUpperCase();
+    const artistActiveHours = getArtistActiveHours(artist);
+
+    const availableAccount = accounts
+      .filter(acc => acc.status === 'idle' && acc.dailyActionCount < getAccountDailyCapTotal(acc))
+      .sort((a, b) => {
+        const aRegionMatch = a.regionTags?.some(tag => targetRegion.includes(tag.toUpperCase())) ? 1 : 0;
+        const bRegionMatch = b.regionTags?.some(tag => targetRegion.includes(tag.toUpperCase())) ? 1 : 0;
+        const aLangMatch = a.language === targetLanguage ? 1 : 0;
+        const bLangMatch = b.language === targetLanguage ? 1 : 0;
+        const aCapacity = getAccountDailyCapTotal(a) - a.dailyActionCount;
+        const bCapacity = getAccountDailyCapTotal(b) - b.dailyActionCount;
+        const aOverlap = getWindowOverlapScore(a, artistActiveHours);
+        const bOverlap = getWindowOverlapScore(b, artistActiveHours);
+        const aLocalHour = getHourInTimezone(a.timezone);
+        const bLocalHour = getHourInTimezone(b.timezone);
+        const aPrimeNow = isNearAnyActiveHour(aLocalHour, artistActiveHours, 1) ? 1 : 0;
+        const bPrimeNow = isNearAnyActiveHour(bLocalHour, artistActiveHours, 1) ? 1 : 0;
+
+        const aScore = (aRegionMatch * 25) + (aLangMatch * 20) + (aOverlap * 6) + (aPrimeNow * 18) + aCapacity;
+        const bScore = (bRegionMatch * 25) + (bLangMatch * 20) + (bOverlap * 6) + (bPrimeNow * 18) + bCapacity;
+        return bScore - aScore;
+      })[0];
 
     if (!availableAccount) {
       toast.error('No available Instagram accounts found.');
@@ -1380,7 +2209,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       toast.error('Failed to assign task');
       return null;
     }
-  }, [user, assignments, accounts]);
+  }, [user, assignments, accounts, rawArtists]);
 
   const startAutomationSequence = useCallback(async (artistId: string, accountId: string) => {
     if (!user) return;
@@ -1389,24 +2218,74 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const account = accounts.find(a => a.id === accountId);
 
     if (!artist || !account) return;
-
-    // Humanization Profile Generation (Anti-Bot Logic)
-    // Randomize working hours (e.g., 8-11 AM start, 6-10 PM end)
-    const startHour = 8 + Math.floor(Math.random() * 4); 
-    const endHour = 18 + Math.floor(Math.random() * 5);
-    
-    // Randomize session intensity
-    const sessionLikes = 1 + Math.floor(Math.random() * 3);
-    const sessionComments = Math.random() > 0.4 ? 1 : 0;
-    const sessionFollows = Math.random() > 0.7 ? 1 : 0;
-
-    // Timezone & Working Hours Awareness
-    const currentHour = new Date().getHours(); 
-    if (currentHour < startHour || currentHour > endHour) {
-      toast.warning(`Outside of @${account.username}'s randomized daily window (${startHour}AM-${endHour-12}PM). Sequence queued for next active slot.`);
+    if (pipelineConfig.globalPause) {
+      toast.warning('Automation is globally paused in Pipeline Control.');
+      return;
+    }
+    const now = Date.now();
+    const minIntervalMs = Math.max(0, (pipelineConfig.minActionIntervalSeconds || 0) * 1000);
+    const lastActionAt = account.lastActionAt ? new Date(account.lastActionAt).getTime() : 0;
+    if (lastActionAt && minIntervalMs > 0 && now - lastActionAt < minIntervalMs) {
+      const waitSec = Math.ceil((minIntervalMs - (now - lastActionAt)) / 1000);
+      toast.info(`Rate guard active for @${account.username}. Wait ${waitSec}s.`);
+      return;
     }
 
-    toast.info(`Starting humanized sequence for @${artist.username} using @${account.username}...`);
+    const accountTodayCount = assignments.filter(a => a.accountId === accountId).length;
+    if (pipelineConfig.dailyTaskCap > 0 && accountTodayCount >= pipelineConfig.dailyTaskCap) {
+      toast.warning(`Daily task cap reached for @${account.username}.`);
+      return;
+    }
+
+    if (pipelineConfig.requireManualReview) {
+      const hasPendingAssignment = assignments.some(a => a.artistId === artistId && a.accountId === accountId && a.status === 'pending');
+      if (!hasPendingAssignment) {
+        toast.warning('Manual review is required before execution. Assign this shop first.');
+        return;
+      }
+    }
+
+    const selectedContact = chooseNextContact(artist);
+    const targetHandle = selectedContact?.channels.instagram || artist.username;
+    if (!targetHandle) {
+      toast.error('No reachable contact found for this shop.');
+      return;
+    }
+
+    const speedProfile: AccountSpeedProfile = account.speedProfile || 'balanced';
+    const profile = SPEED_PROFILES[speedProfile];
+    const activeWindow = account.activeWindow || { startHour: 9, endHour: 21 };
+    const sleepWindow = account.sleepWindow || { startHour: 23, endHour: 7 };
+    const dailyCaps = account.dailyCaps || { likes: 40, comments: 15, follows: 10, dms: 8 };
+    const timezone = account.timezone || 'UTC';
+    const language = account.language || inferArtistLanguage(artist);
+    const localHour = getHourInTimezone(timezone);
+    const artistActiveHours = getArtistActiveHours(artist);
+    const isPrimeTouchWindow = isNearAnyActiveHour(localHour, artistActiveHours, 1);
+
+    const remainingLikes = Math.max(0, dailyCaps.likes - account.dailyActionCount);
+    const likeMin = Math.min(profile.likesRange[0], Math.max(1, remainingLikes || 1));
+    const likeMax = Math.max(likeMin, Math.min(profile.likesRange[1], Math.max(1, remainingLikes || 1)));
+    const baseLikes = likeMin + Math.floor(Math.random() * (likeMax - likeMin + 1));
+    const sessionLikes = Math.min(dailyCaps.likes, isPrimeTouchWindow ? baseLikes + 1 : baseLikes);
+    const commentProbability = Math.min(0.95, profile.commentProbability + (isPrimeTouchWindow ? 0.15 : 0));
+    const followProbability = Math.min(0.9, profile.followProbability + (isPrimeTouchWindow ? 0.1 : 0));
+    const sessionComments = dailyCaps.comments > 0 && Math.random() < commentProbability ? 1 : 0;
+    const sessionFollows = dailyCaps.follows > 0 && Math.random() < followProbability ? 1 : 0;
+    const jitterMultiplier = account.jitterMultiplier || 1;
+    const jitterRange: [number, number] = [
+      Math.round(profile.jitterRange[0] * jitterMultiplier),
+      Math.round(profile.jitterRange[1] * jitterMultiplier)
+    ];
+
+    if (!isHourWithinWindow(localHour, activeWindow.startHour, activeWindow.endHour)) {
+      toast.warning(`@${account.username} is outside local active window (${activeWindow.startHour}:00-${activeWindow.endHour}:00, ${timezone}).`);
+    }
+    if (!isPrimeTouchWindow) {
+      toast.info(`@${artist.username} is likely more active at ${artistActiveHours.slice(0, 3).join(', ')}:00. Current local hour: ${localHour}:00.`);
+    }
+
+    toast.info(`Starting ${speedProfile} automation for @${targetHandle} via @${account.username} (${language.toUpperCase()}, ${timezone})...`);
 
     try {
       const response = await fetch('/api/automation/start', {
@@ -1416,15 +2295,28 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           artistId,
           accountId,
           behaviorProfile: account.behaviorProfile,
-          artistHandle: artist.username,
+          artistHandle: targetHandle,
           accountHandle: account.username,
+          contactId: selectedContact?.id || null,
+          language,
+          accountProfile: {
+            timezone,
+            speedProfile,
+            breakProbability: profile.breakProbability,
+            activeWindow,
+            sleepWindow,
+            dailyCaps,
+            targetActivityHours: artistActiveHours,
+            primeTouchWindow: isPrimeTouchWindow
+          },
           humanization: {
-            startHour,
-            endHour,
+            startHour: activeWindow.startHour,
+            endHour: activeWindow.endHour,
             sessionLikes,
             sessionComments,
             sessionFollows,
-            jitterRange: [45 + Math.floor(Math.random() * 30), 240 + Math.floor(Math.random() * 120)]
+            jitterRange,
+            localHour
           }
         })
       });
@@ -1447,14 +2339,48 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return;
       }
 
+      if (response.status === 425) {
+        const text = await response.text();
+        const data = safeJsonParse(text, {});
+        toast.warning(`Outside active window for @${account.username}.`, {
+          description: data.message || 'Account is currently paused by schedule policy.'
+        });
+        return;
+      }
+
       if (!response.ok) throw new Error('Failed to start automation');
       
       toast.success('Humanized automation sequence initiated.');
+
+      if (selectedContact) {
+        const nowIso = new Date().toISOString();
+        const existingContacts = artist.contacts || buildDefaultContacts(artist);
+        const hasContact = existingContacts.some((c) => c.id === selectedContact.id);
+        const nextContacts = hasContact
+          ? existingContacts.map((c) => {
+              if (c.id !== selectedContact.id) return c;
+              return {
+                ...c,
+                state: 'attempted',
+                attemptCount: (c.attemptCount || 0) + 1,
+                lastContactedAt: nowIso
+              };
+            })
+          : mergeContacts(existingContacts, [{
+              ...selectedContact,
+              state: 'attempted',
+              attemptCount: (selectedContact.attemptCount || 0) + 1,
+              lastContactedAt: nowIso
+            }]);
+        await updateArtist(artistId, {
+          contacts: nextContacts
+        });
+      }
     } catch (error) {
       console.error('Automation error:', error);
       toast.error('Failed to start automation sequence.');
     }
-  }, [user, rawArtists, accounts]);
+  }, [user, rawArtists, accounts, assignments, pipelineConfig, chooseNextContact, inferArtistLanguage, getHourInTimezone, isHourWithinWindow, getArtistActiveHours, isNearAnyActiveHour, updateArtist]);
 
   const clearAllData = useCallback(async () => {
     if (!user) return;
@@ -1701,6 +2627,15 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       orders,
       pagination,
       globalStats,
+      importMetrics,
+      deepScanTask,
+      refreshDeepScanTask,
+      pauseDeepScanTask,
+      resumeDeepScanTask,
+      retryFailedDeepScanTask,
+      pipelineConfig,
+      updatePipelineConfig,
+      updatePipelineStage,
       accounts,
       assignments,
       assignTaskToAccount,

@@ -74,7 +74,7 @@ service cloud.firestore {
     function isValidInteraction(data) {
       return data.id is string &&
              data.artistId is string &&
-             data.type in ['like', 'comment', 'follow', 'story_view', 'dm_reply'] &&
+             data.type in ['like', 'comment', 'follow', 'story_view', 'follow_back', 'reply', 'dm_reply'] &&
              data.weight is number &&
              data.uid is string;
     }

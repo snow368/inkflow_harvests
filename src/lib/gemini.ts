@@ -202,13 +202,31 @@ export const processArtistBatchAI = async (
     await new Promise(resolve => setTimeout(resolve, 1500));
     const mockResult: Record<string, any> = {};
     artists.forEach(a => {
+      const postsPerWeek = Math.floor(Math.random() * 8) + 1;
+      const avgLikes = Math.floor(Math.random() * 1200) + 80;
+      const avgComments = Math.floor(Math.random() * 120) + 8;
+      const followers = Math.floor(Math.random() * 20000) + 500;
       mockResult[a.id] = {
-        followers: Math.floor(Math.random() * 20000) + 500,
+        followers,
         activityLevel: ['high', 'medium', 'low'][Math.floor(Math.random() * 3)],
         style: ['Realism', 'Traditional', 'Black & Grey', 'Fine Line'][Math.floor(Math.random() * 4)],
         dnaTags: ['#Verified', '#Active', '#ProArtist'],
         realUsername: a.username.includes('user_') || a.username.includes('shopify') ? `artist_${a.id.slice(-4)}` : a.username,
-        realFullName: a.shopName || `Artist ${a.id.slice(-4)}`
+        realFullName: a.shopName || `Artist ${a.id.slice(-4)}`,
+        postingHours: [11, 12, 13, 19, 20, 21].sort(() => 0.5 - Math.random()).slice(0, 3).sort((x, y) => x - y),
+        postsPerWeek,
+        avgLikes,
+        avgComments,
+        engagementRate: Number(((avgLikes + avgComments * 3) / Math.max(500, followers) * 100).toFixed(2)),
+        followerFollowingRatio: Number((0.8 + Math.random() * 2.4).toFixed(2)),
+        tattooLikelihood: Number((0.7 + Math.random() * 0.3).toFixed(2)),
+        styleVector: {
+          realism: Math.floor(Math.random() * 45),
+          traditional: Math.floor(Math.random() * 45),
+          black_grey: Math.floor(Math.random() * 45),
+          fine_line: Math.floor(Math.random() * 45),
+          blackwork: Math.floor(Math.random() * 45)
+        }
       };
     });
     return mockResult;
@@ -230,6 +248,9 @@ export const processArtistBatchAI = async (
     4. 3-5 professional DNA tags: (e.g. "#Realism", "#FineLine", "#ProTeam", "#AwardWinner").
     5. A realistic Instagram handle: If the current one is a system ID (like user_123), suggest a professional one like @ink_by_name or @shopname_tattoo.
     6. The full shop or artist name: Clean up the provided name.
+    7. Estimate active posting hours (0-23) as postingHours array (3-5 integers).
+    8. Estimate postsPerWeek (integer), avgLikes (integer), avgComments (integer), engagementRate (percentage number).
+    9. Estimate followerFollowingRatio (number), tattooLikelihood (0-1), and styleVector object with keys realism/traditional/black_grey/fine_line/blackwork.
     
     Artists to analyze:
     ${artists.map(a => `ID: ${a.id} | Handle: @${a.username} | Shop: ${a.shopName || 'N/A'} | Bio: ${a.bio || 'N/A'}`).join('\n')}
@@ -240,7 +261,15 @@ export const processArtistBatchAI = async (
     - style: string (specific style name)
     - dnaTags: string[]
     - realUsername: string
-    - realFullName: string`;
+    - realFullName: string
+    - postingHours: number[]
+    - postsPerWeek: number
+    - avgLikes: number
+    - avgComments: number
+    - engagementRate: number
+    - followerFollowingRatio: number
+    - tattooLikelihood: number
+    - styleVector: object`;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
