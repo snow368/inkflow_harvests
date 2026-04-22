@@ -539,21 +539,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           // 2. Overwrite with cloud data (Cloud is source of truth for synced items)
           cloudData.forEach(a => mergedMap.set(a.id, a));
           
-          // 3. Handle deletions: ONLY delete if we are SURE it's a deletion from another client
-          // We avoid aggressive deletion during initial sync to prevent race conditions with local imports
-          if (!snapshot.metadata.fromCache && snapshot.metadata.hasPendingWrites === false) {
-            const cloudIds = new Set(cloudData.map(a => a.id));
-            // Only delete if the item was already synced (has a UID) and is missing from cloud
-            // AND we haven't recently updated it locally
-            const now = Date.now();
-            prev.forEach(a => {
-              const isRecentlyUpdated = lastLocalUpdateRef.current && (now - lastLocalUpdateRef.current < 30000);
-              if (a.uid === user.uid && !cloudIds.has(a.id) && !isRecentlyUpdated) {
-                mergedMap.delete(a.id);
-              }
-            });
-          }
-          
           const merged = Array.from(mergedMap.values());
           localforage.setItem(`artists_${user.uid}`, merged);
           return merged;
@@ -1786,6 +1771,16 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       toast.error("Please log in first.");
       return;
     }
+    try {
+      const healthResp = await fetch('/api/health');
+      if (!healthResp.ok) {
+        toast.error("Backend is offline. Please run `npm run dev` and retry Deep Scan.");
+        return;
+      }
+    } catch {
+      toast.error("Backend is offline. Please run `npm run dev` and retry Deep Scan.");
+      return;
+    }
 
     const outreachArtists = rawArtists.filter(a => a.stage === 'outreach');
     const targets = outreachArtists.filter(a =>
@@ -1898,9 +1893,10 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           continue;
         }
 
+        const missingTargetIds = batchIds.filter((id) => !targetById.has(id));
         const batchToEnrich = batchIds.map((id) => targetById.get(id)).filter(Boolean) as CRMArtist[];
         const successIds: string[] = [];
-        const failedItems: Array<{ id: string; reason: string }> = [];
+        const failedItems: Array<{ id: string; reason: string }> = missingTargetIds.map((id) => ({ id, reason: 'unknown' }));
 
         try {
           const socialLookupCandidates = batchToEnrich
@@ -2132,7 +2128,12 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     } catch (e) {
       console.error("Deep scan failed", e);
-      toast.error("Deep Scan failed. Please retry.", { id: 'enrich-progress' });
+      const message = String((e as any)?.message || '');
+      if (message.toLowerCase().includes('fetch')) {
+        toast.error("Deep Scan stopped: backend disconnected. Restart `npm run dev`, then click Continue Processing.", { id: 'enrich-progress' });
+      } else {
+        toast.error("Deep Scan failed. Please retry.", { id: 'enrich-progress' });
+      }
     } finally {
       setIsScanning(false);
       setScanProgress({ current: 0, total: 0 });

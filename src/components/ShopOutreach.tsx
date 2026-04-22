@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { 
   MapPin, 
   Search, 
@@ -91,6 +91,7 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
   const [importTab, setImportTab] = useState<'magic' | 'csv' | 'shopify'>('magic');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [retryReason, setRetryReason] = useState<string>('all');
+  const lastAutoResumeAtRef = useRef<number>(0);
 
   const cleanDisplay = (text: any) => {
     if (typeof text !== 'string') return String(text || '');
@@ -292,7 +293,7 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
 
     return artists
       .filter(artist => {
-        const matchesStage = artist.stage === 'outreach';
+        const matchesStage = activeStage === 'all' ? true : artist.stage === activeStage;
         const matchesLocation = selectedState === 'All Places' || 
                                artist.location === selectedState || 
                                (typeof artist.address === 'string' && artist.address.includes(selectedState));
@@ -326,7 +327,7 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
         
         return bScore - aScore;
       });
-  }, [artists, selectedState, search, accountTagFilter, sortMode]);
+  }, [artists, selectedState, search, accountTagFilter, sortMode, activeStage]);
 
   const paginatedShops = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -448,6 +449,19 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
     }
   };
 
+  const handleContinueDeepScan = async () => {
+    try {
+      if (isScanning) {
+        toast.info('Deep Scan worker is already running.');
+        return;
+      }
+      toast.info('Restarting Deep Scan worker...');
+      await bulkEnrichArtists();
+    } catch {
+      toast.error('Failed to continue deep scan worker.');
+    }
+  };
+
   const handleExportFailedCsv = async () => {
     if (!deepScanTask?.id) return;
     try {
@@ -474,6 +488,22 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
       toast.error('Failed to export failed CSV.');
     }
   };
+
+  useEffect(() => {
+    if (!deepScanTask) return;
+    const stalled =
+      deepScanTask.status === 'running' &&
+      deepScanTask.pending > 0 &&
+      !isScanning;
+    if (!stalled) return;
+
+    const now = Date.now();
+    if (now - lastAutoResumeAtRef.current < 30000) return;
+    lastAutoResumeAtRef.current = now;
+
+    toast.info(`Deep Scan worker paused unexpectedly. Auto-resuming task ${deepScanTask.id}...`);
+    void bulkEnrichArtists();
+  }, [deepScanTask, isScanning, bulkEnrichArtists]);
 
   return (
     <div className="space-y-8">
@@ -551,6 +581,13 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
               >
                 <RefreshCw className="w-3 h-3" />
                 Refresh
+              </button>
+              <button
+                onClick={handleContinueDeepScan}
+                className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 rounded-lg text-[10px] font-black text-emerald-200 uppercase tracking-widest flex items-center gap-1.5"
+              >
+                <Play className="w-3 h-3" />
+                Continue Processing
               </button>
               <button
                 onClick={handleExportFailedCsv}
@@ -961,7 +998,7 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
                 <div className="w-10 h-10 bg-zinc-900 rounded-xl flex items-center justify-center border border-zinc-800">
                   <Users className="w-5 h-5 text-rose-500" />
                 </div>
-                <h4 className="font-black text-xl text-white">Shops in {selectedState} ({filteredShops.length})</h4>
+                <h4 className="font-black text-xl text-white">Shops in {selectedState} ({filteredShops.length}/{artists.length})</h4>
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl">
