@@ -429,6 +429,14 @@ async function startServer() {
       failedIdsSample: task.failedIds.slice(0, 200)
     });
 
+    const getLatestDeepTask = (): DeepScanTask | null => {
+      const row = deepScanDb
+        .prepare('SELECT id FROM deep_scan_tasks ORDER BY updated_at DESC LIMIT 1')
+        .get() as { id: string } | undefined;
+      if (!row?.id) return null;
+      return getDeepTask(row.id);
+    };
+
     // API Routes
     app.get('/api/health', (req, res) => {
       res.json({ status: 'ok', message: 'InkFlow AI Server is running' });
@@ -491,6 +499,12 @@ async function startServer() {
     app.get('/api/deep-scan/status/:taskId', (req, res) => {
       const task = getDeepTask(req.params.taskId);
       if (!task) return res.status(404).json({ error: 'Task not found' });
+      return res.json(toTaskStatus(task));
+    });
+
+    app.get('/api/deep-scan/latest', (req, res) => {
+      const task = getLatestDeepTask();
+      if (!task) return res.status(404).json({ error: 'No deep scan task found' });
       return res.json(toTaskStatus(task));
     });
 

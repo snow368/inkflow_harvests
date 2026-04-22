@@ -184,6 +184,77 @@ const COUNTRY_LANGUAGE_HINT: Record<string, AccountLanguage> = {
   KR: 'ko'
 };
 
+const US_STATE_CODES = new Set([
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
+  'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC',
+  'SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'
+]);
+
+const US_STATE_NAME_TO_CODE: Record<string, string> = {
+  alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA', colorado: 'CO',
+  connecticut: 'CT', delaware: 'DE', florida: 'FL', georgia: 'GA', hawaii: 'HI', idaho: 'ID',
+  illinois: 'IL', indiana: 'IN', iowa: 'IA', kansas: 'KS', kentucky: 'KY', louisiana: 'LA',
+  maine: 'ME', maryland: 'MD', massachusetts: 'MA', michigan: 'MI', minnesota: 'MN', mississippi: 'MS',
+  missouri: 'MO', montana: 'MT', nebraska: 'NE', nevada: 'NV', 'new hampshire': 'NH', 'new jersey': 'NJ',
+  'new mexico': 'NM', 'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND', ohio: 'OH',
+  oklahoma: 'OK', oregon: 'OR', pennsylvania: 'PA', 'rhode island': 'RI', 'south carolina': 'SC',
+  'south dakota': 'SD', tennessee: 'TN', texas: 'TX', utah: 'UT', vermont: 'VT', virginia: 'VA',
+  washington: 'WA', 'west virginia': 'WV', wisconsin: 'WI', wyoming: 'WY', 'district of columbia': 'DC'
+};
+
+const inferStateCodeFromAddress = (address?: string): string | null => {
+  if (!address || typeof address !== 'string') return null;
+  const normalized = address.trim();
+  if (!normalized) return null;
+
+  const stateZipMatch = normalized.match(/,\s*([A-Za-z]{2})\s+\d{5}(?:-\d{4})?\b/);
+  if (stateZipMatch) {
+    const code = stateZipMatch[1].toUpperCase();
+    if (US_STATE_CODES.has(code)) return code;
+  }
+
+  const tokens = normalized.split(',').map((x) => x.trim()).filter(Boolean);
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    const token = tokens[i];
+    const words = token.split(/\s+/).filter(Boolean);
+    for (const word of words) {
+      const up = word.toUpperCase();
+      if (US_STATE_CODES.has(up)) return up;
+    }
+    const lowerToken = token.toLowerCase();
+    if (US_STATE_NAME_TO_CODE[lowerToken]) return US_STATE_NAME_TO_CODE[lowerToken];
+  }
+
+  return null;
+};
+
+const normalizeLocationValue = (rawLocation?: any, address?: string, country?: string): string => {
+  const raw = String(rawLocation ?? '').trim();
+  const countryCode = String(country || '').trim().toUpperCase();
+  const inferredState = inferStateCodeFromAddress(address);
+
+  const rawUpper = raw.toUpperCase();
+  const rawLower = raw.toLowerCase();
+  const isMissing =
+    !raw ||
+    rawLower === 'unknown' ||
+    rawLower === 'n/a' ||
+    rawLower === 'na' ||
+    /^\d+$/.test(rawLower);
+
+  if (!isMissing) {
+    if (US_STATE_CODES.has(rawUpper)) return rawUpper;
+    if (US_STATE_NAME_TO_CODE[rawLower]) return US_STATE_NAME_TO_CODE[rawLower];
+    if (rawUpper.length <= 3 && /^[A-Z]+$/.test(rawUpper)) return rawUpper;
+    if (inferredState) return inferredState;
+    return raw;
+  }
+
+  if (inferredState) return inferredState;
+  if (countryCode && countryCode !== 'US') return countryCode;
+  return 'Unknown';
+};
+
 const DEFAULT_PIPELINE_CONFIG: AutomationPipelineConfig = {
   globalPause: false,
   hourlyTaskCap: 30,
@@ -657,8 +728,18 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const refreshDeepScanTask = useCallback(async (taskId?: string): Promise<DeepScanTaskStatus | null> => {
     if (!user) return null;
     const taskKey = `deep_scan_task_${user.uid}`;
-    const resolvedTaskId = taskId || deepScanTask?.id || await localforage.getItem<string>(taskKey);
+    let resolvedTaskId = taskId || deepScanTask?.id || await localforage.getItem<string>(taskKey);
     if (!resolvedTaskId) {
+      const latestResp = await fetch('/api/deep-scan/latest');
+      if (latestResp.ok) {
+        const latestPayload = await latestResp.json();
+        const latestNormalized = toDeepScanTaskStatus(latestPayload);
+        if (latestNormalized?.id) {
+          await localforage.setItem(taskKey, latestNormalized.id);
+          setDeepScanTask(latestNormalized);
+          return latestNormalized;
+        }
+      }
       setDeepScanTask(null);
       return null;
     }
@@ -1282,10 +1363,11 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             username = `user_${index}_${Date.now()}`;
           }
 
-          const location = clean(row.location || row.location_tag || row.city || row.state || defaultLocation || 'Unknown');
+          const locationRaw = clean(row.location || row.location_tag || row.city || row.state || defaultLocation || 'Unknown');
           const country = clean(row.country || row.nation || 'USA');
           const followers = parseInt(row.followers || row.follower_count || row.followers_count) || 0;
           const address = row.address || row.full_address || row.formatted_address || '';
+          const location = normalizeLocationValue(locationRaw, address, country);
           
           // Try to find a stable ID from common scraper fields
           const placeId = row.place_id || row.cid || (row.metadata && (row.metadata.place_id || row.metadata.cid));
@@ -2022,6 +2104,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               dnaTags: [...new Set([...(a.dnaTags || []), ...((enriched?.dnaTags as string[]) || [])])],
               ig_handle: a.ig_handle || extractedHandle(social?.instagram) || null,
               facebookId: a.facebookId || social?.facebook || null,
+              location: normalizeLocationValue(a.location, a.address, a.country),
               metadata: {
                 ...(a.metadata || {}),
                 ...(social?.tiktok ? { tiktok: social.tiktok } : {}),
