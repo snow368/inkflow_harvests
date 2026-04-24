@@ -1,6 +1,30 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { CRMArtist, CRMStage, AIPersona, CRMInteraction, CRMOrder, InstagramAccount, TaskAssignment, AccountBehavior, AccountLanguage, AccountSpeedProfile, ShopContact, AutomationPipelineConfig, PipelineStageConfig, PipelineStageKey } from '../types/crm';
+import {
+  CRMArtist,
+  CRMStage,
+  AIPersona,
+  CRMInteraction,
+  CRMOrder,
+  InstagramAccount,
+  TaskAssignment,
+  AccountBehavior,
+  AccountLanguage,
+  AccountSpeedProfile,
+  ShopContact,
+  AutomationPipelineConfig,
+  PipelineStageConfig,
+  PipelineStageKey,
+  InventoryItem,
+  ShopifyInventorySyncConfig,
+  InventorySnapshot,
+  InventorySnapshotItem,
+  InventoryForecast,
+  LifecycleStage,
+  CommunicationRecord,
+  AIRecommendation,
+  CommunicationChannel
+} from '../types/crm';
 import { toast } from 'sonner';
 import { processArtistBatchAI, setMockMode as setGeminiMockMode } from '../lib/gemini';
 import { db, auth, signInWithGoogle, logoutUser } from '../lib/firebase';
@@ -70,6 +94,8 @@ interface CRMContextType {
   artists: CRMArtist[];
   interactions: CRMInteraction[];
   orders: CRMOrder[];
+  communicationRecords: CommunicationRecord[];
+  aiRecommendations: AIRecommendation[];
   pagination: { total: number; page: number; totalPages: number };
   loadData: () => Promise<any>;
   persona: AIPersona;
@@ -79,9 +105,23 @@ interface CRMContextType {
   updateArtist: (artistId: string, updates: Partial<CRMArtist>) => void;
   addInteraction: (artistId: string, type: CRMInteraction['type'] | 'story-view' | 'follow-back' | 'dm_reply', content?: string) => Promise<void>;
   addOrder: (artistId: string, productName: string, amount: number) => Promise<void>;
+  addCommunicationRecord: (record: Omit<CommunicationRecord, 'id' | 'timestamp'> & Partial<Pick<CommunicationRecord, 'id' | 'timestamp'>>) => Promise<void>;
+  refreshAIRecommendation: (artistId: string) => Promise<AIRecommendation | null>;
+  getAIRecommendationForArtist: (artistId: string) => AIRecommendation | undefined;
   markAsConverted: (artistId: string) => void;
   importCSV: (data: any[], defaultLocation?: string, accountTag?: string, options?: { rawRows?: number; missingNameRows?: number }) => Promise<void>;
   syncShopifySales: (data: any[]) => Promise<void>;
+  inventoryItems: InventoryItem[];
+  inventorySnapshots: InventorySnapshot[];
+  inventoryForecasts: InventoryForecast[];
+  inventoryImportTemplateHeaders: string[];
+  inventorySyncConfig: ShopifyInventorySyncConfig;
+  upsertInventoryItem: (item: Partial<InventoryItem>) => Promise<void>;
+  deleteInventoryItem: (itemId: string) => Promise<void>;
+  importInventoryCSV: (rows: any[], headers?: string[]) => Promise<{ imported: number }>;
+  syncShopifyInventory: (overrides?: Partial<ShopifyInventorySyncConfig>) => Promise<{ imported: number; updatedAt: string } | null>;
+  updateInventorySyncConfig: (updates: Partial<ShopifyInventorySyncConfig>) => Promise<void>;
+  setInventoryImportTemplateHeaders: (headers: string[]) => Promise<void>;
   bulkEnrichArtists: () => Promise<void>;
   clearAllData: () => void;
   markAsIdealTarget: (artistId: string) => void;
@@ -190,6 +230,25 @@ const US_STATE_CODES = new Set([
   'SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'
 ]);
 
+const DISTRIBUTOR_HINT_KEYWORDS = [
+  'tattoo supply',
+  'tattoo supplies',
+  'ink supply',
+  'ink supplies',
+  'tattoo wholesale',
+  'tattoo distributor',
+  'needle supply',
+  'tattoo equipment'
+];
+
+const isDistributorByText = (...texts: Array<string | undefined | null>): boolean => {
+  const merged = texts
+    .map((t) => String(t || '').toLowerCase())
+    .join(' ');
+  if (!merged.trim()) return false;
+  return DISTRIBUTOR_HINT_KEYWORDS.some((k) => merged.includes(k));
+};
+
 const US_STATE_NAME_TO_CODE: Record<string, string> = {
   alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA', colorado: 'CO',
   connecticut: 'CT', delaware: 'DE', florida: 'FL', georgia: 'GA', hawaii: 'HI', idaho: 'ID',
@@ -228,31 +287,64 @@ const inferStateCodeFromAddress = (address?: string): string | null => {
   return null;
 };
 
-const normalizeLocationValue = (rawLocation?: any, address?: string, country?: string): string => {
-  const raw = String(rawLocation ?? '').trim();
-  const countryCode = String(country || '').trim().toUpperCase();
-  const inferredState = inferStateCodeFromAddress(address);
+const normalizeCountryCode = (country?: any): string => {
+  const raw = String(country ?? '').trim();
+  if (!raw) return 'USA';
+  const upper = raw.toUpperCase();
+  if (upper === 'UNITED STATES' || upper === 'UNITED STATES OF AMERICA' || upper === 'US') return 'USA';
+  if (upper === 'UK' || upper === 'UNITED KINGDOM' || upper === 'GB') return 'UK';
+  if (upper.length <= 3) return upper;
+  return raw;
+};
 
-  const rawUpper = raw.toUpperCase();
-  const rawLower = raw.toLowerCase();
-  const isMissing =
-    !raw ||
-    rawLower === 'unknown' ||
-    rawLower === 'n/a' ||
-    rawLower === 'na' ||
-    /^\d+$/.test(rawLower);
+const sanitizeGeoText = (raw?: any): string => {
+  const text = String(raw ?? '').trim();
+  if (!text) return '';
+  const lower = text.toLowerCase();
+  if (lower === 'unknown' || lower === 'n/a' || lower === 'na' || /^\d+$/.test(lower)) return '';
+  return text;
+};
 
-  if (!isMissing) {
-    if (US_STATE_CODES.has(rawUpper)) return rawUpper;
-    if (US_STATE_NAME_TO_CODE[rawLower]) return US_STATE_NAME_TO_CODE[rawLower];
-    if (rawUpper.length <= 3 && /^[A-Z]+$/.test(rawUpper)) return rawUpper;
-    if (inferredState) return inferredState;
-    return raw;
+const inferCityFromAddress = (address?: string): string | null => {
+  if (!address || typeof address !== 'string') return null;
+  const parts = address.split(',').map((p) => p.trim()).filter(Boolean);
+  if (parts.length >= 3) {
+    const candidate = sanitizeGeoText(parts[parts.length - 3]);
+    return candidate || null;
   }
+  if (parts.length >= 2) {
+    const candidate = sanitizeGeoText(parts[parts.length - 2]);
+    return candidate || null;
+  }
+  return null;
+};
 
-  if (inferredState) return inferredState;
-  if (countryCode && countryCode !== 'US') return countryCode;
-  return 'Unknown';
+const normalizeGeoFields = (input: {
+  city?: any;
+  state?: any;
+  location?: any;
+  address?: string;
+  country?: any;
+}): { city: string; state: string; country: string; location: string } => {
+  const country = normalizeCountryCode(input.country);
+  const inferredState = inferStateCodeFromAddress(input.address);
+  const stateRaw = sanitizeGeoText(input.state) || sanitizeGeoText(input.location);
+  const stateUpper = stateRaw.toUpperCase();
+  const state =
+    (US_STATE_CODES.has(stateUpper) ? stateUpper : '') ||
+    (US_STATE_NAME_TO_CODE[stateRaw.toLowerCase()] || '') ||
+    (inferredState || '') ||
+    (country !== 'USA' ? country : '');
+
+  const city = sanitizeGeoText(input.city) || inferCityFromAddress(input.address) || '';
+  const location = state || (country !== 'USA' ? country : 'Unknown');
+
+  return {
+    city: city || 'Unknown',
+    state: state || 'Unknown',
+    country: country || 'USA',
+    location
+  };
 };
 
 const DEFAULT_PIPELINE_CONFIG: AutomationPipelineConfig = {
@@ -275,6 +367,21 @@ const DEFAULT_PIPELINE_CONFIG: AutomationPipelineConfig = {
   updatedAt: new Date().toISOString()
 };
 
+const DEFAULT_INVENTORY_SYNC_CONFIG: ShopifyInventorySyncConfig = {
+  enabled: false,
+  autoSyncMinutes: 60,
+  storeDomain: '',
+  accessToken: '',
+  locationId: '',
+  autoImportEnabled: false,
+  autoImportMode: 'file',
+  autoImportValue: '',
+  autoImportDailyHour: 9,
+  autoImportMinDays: 7,
+  autoImportMinSnapshots: 3,
+  lastSyncStatus: 'idle'
+};
+
 // Generate some mock data
 const generateMockArtists = (count: number): CRMArtist[] => {
   return []; // Disabled to prevent polluting real data
@@ -284,8 +391,14 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [rawArtists, setRawArtists] = useState<CRMArtist[]>([]);
   const [interactions, setInteractions] = useState<CRMInteraction[]>([]);
   const [orders, setOrders] = useState<CRMOrder[]>([]);
+  const [communicationRecords, setCommunicationRecords] = useState<CommunicationRecord[]>([]);
+  const [aiRecommendations, setAIRecommendations] = useState<AIRecommendation[]>([]);
   const [accounts, setAccounts] = useState<InstagramAccount[]>([]);
   const [assignments, setAssignments] = useState<TaskAssignment[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [inventorySnapshots, setInventorySnapshots] = useState<InventorySnapshot[]>([]);
+  const [inventoryImportTemplateHeaders, setInventoryImportTemplateHeadersState] = useState<string[]>([]);
+  const [inventorySyncConfig, setInventorySyncConfig] = useState<ShopifyInventorySyncConfig>(DEFAULT_INVENTORY_SYNC_CONFIG);
   const rawArtistsRef = useRef<CRMArtist[]>([]);
 
   useEffect(() => {
@@ -353,6 +466,33 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
   const [pipelineConfig, setPipelineConfig] = useState<AutomationPipelineConfig>(DEFAULT_PIPELINE_CONFIG);
+
+  const appendInventorySnapshot = useCallback(async (items: InventoryItem[], source: InventorySnapshot['source']) => {
+    if (!user) return;
+    const snapshot: InventorySnapshot = {
+      id: `snap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      capturedAt: new Date().toISOString(),
+      source,
+      items: items.map((it) => ({
+        sku: String(it.sku || '').trim(),
+        stock: Number(it.stock || 0),
+        threshold: Number(it.threshold || 0)
+      })).filter((x) => x.sku)
+    };
+    if (!snapshot.items.length) return;
+    setInventorySnapshots((prev) => {
+      const next = [...prev, snapshot].slice(-365);
+      localforage.setItem(`inventory_snapshots_${user.uid}`, next);
+      return next;
+    });
+  }, [user]);
+
+  const setInventoryImportTemplateHeaders = useCallback(async (headers: string[]) => {
+    if (!user) return;
+    const cleaned = Array.from(new Set((headers || []).map((h) => String(h || '').trim()).filter(Boolean)));
+    setInventoryImportTemplateHeadersState(cleaned);
+    await localforage.setItem(`inventory_import_template_headers_${user.uid}`, cleaned);
+  }, [user]);
   const [deepScanTask, setDeepScanTask] = useState<DeepScanTaskStatus | null>(null);
 
   const toDeepScanTaskStatus = useCallback((payload: any): DeepScanTaskStatus | null => {
@@ -561,13 +701,23 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       if (user?.uid) {
         await localforage.removeItem(`deep_scan_task_${user.uid}`);
+        await localforage.removeItem(`inventory_${user.uid}`);
+        await localforage.removeItem(`inventory_sync_config_${user.uid}`);
+        await localforage.removeItem(`inventory_snapshots_${user.uid}`);
+        await localforage.removeItem(`inventory_import_template_headers_${user.uid}`);
       }
       await logoutUser();
       setRawArtists([]);
       setInteractions([]);
       setOrders([]);
+      setCommunicationRecords([]);
+      setAIRecommendations([]);
       setAccounts([]);
       setAssignments([]);
+      setInventoryItems([]);
+      setInventorySnapshots([]);
+      setInventoryImportTemplateHeadersState([]);
+      setInventorySyncConfig(DEFAULT_INVENTORY_SYNC_CONFIG);
       setDeepScanTask(null);
       toast.success("Logged out successfully");
     } catch (e) {
@@ -594,6 +744,30 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (cached && cached.length > 0) {
         setRawArtists(cached);
         setIsInitialLoad(false);
+      }
+      const cachedInventory = await localforage.getItem<InventoryItem[]>(`inventory_${user.uid}`);
+      if (cachedInventory && cachedInventory.length > 0) {
+        setInventoryItems(cachedInventory);
+      }
+      const cachedInventoryConfig = await localforage.getItem<ShopifyInventorySyncConfig>(`inventory_sync_config_${user.uid}`);
+      if (cachedInventoryConfig) {
+        setInventorySyncConfig({ ...DEFAULT_INVENTORY_SYNC_CONFIG, ...cachedInventoryConfig });
+      }
+      const cachedInventorySnapshots = await localforage.getItem<InventorySnapshot[]>(`inventory_snapshots_${user.uid}`);
+      if (cachedInventorySnapshots && cachedInventorySnapshots.length > 0) {
+        setInventorySnapshots(cachedInventorySnapshots);
+      }
+      const cachedCommunications = await localforage.getItem<CommunicationRecord[]>(`communications_${user.uid}`);
+      if (cachedCommunications && cachedCommunications.length > 0) {
+        setCommunicationRecords(cachedCommunications);
+      }
+      const cachedRecommendations = await localforage.getItem<AIRecommendation[]>(`ai_recommendations_${user.uid}`);
+      if (cachedRecommendations && cachedRecommendations.length > 0) {
+        setAIRecommendations(cachedRecommendations);
+      }
+      const cachedImportHeaders = await localforage.getItem<string[]>(`inventory_import_template_headers_${user.uid}`);
+      if (cachedImportHeaders && cachedImportHeaders.length > 0) {
+        setInventoryImportTemplateHeadersState(cachedImportHeaders);
       }
 
       // 2. Sync Artists from Firestore
@@ -646,7 +820,35 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       });
 
-      // 5. Sync Accounts from Firestore
+      // 5. Sync Communications from Firestore
+      const qCommunications = query(collection(db, 'communications'), where('uid', '==', user.uid));
+      const unsubCommunications = onSnapshot(qCommunications, (snapshot) => {
+        const cloudData = snapshot.docs.map(doc => doc.data() as CommunicationRecord);
+        setCommunicationRecords(prev => {
+          const mergedMap = new Map<string, CommunicationRecord>();
+          prev.forEach(c => mergedMap.set(c.id, c));
+          cloudData.forEach(c => mergedMap.set(c.id, c));
+          const merged = Array.from(mergedMap.values()).sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp));
+          localforage.setItem(`communications_${user.uid}`, merged);
+          return merged;
+        });
+      });
+
+      // 6. Sync AI Recommendations from Firestore
+      const qRecommendations = query(collection(db, 'ai_recommendations'), where('uid', '==', user.uid));
+      const unsubRecommendations = onSnapshot(qRecommendations, (snapshot) => {
+        const cloudData = snapshot.docs.map(doc => doc.data() as AIRecommendation);
+        setAIRecommendations(prev => {
+          const mergedMap = new Map<string, AIRecommendation>();
+          prev.forEach(r => mergedMap.set(r.artistId, r));
+          cloudData.forEach(r => mergedMap.set(r.artistId, r));
+          const merged = Array.from(mergedMap.values()).sort((a, b) => +new Date(b.generatedAt) - +new Date(a.generatedAt));
+          localforage.setItem(`ai_recommendations_${user.uid}`, merged);
+          return merged;
+        });
+      });
+
+      // 7. Sync Accounts from Firestore
       const qAccounts = query(collection(db, 'accounts'), where('uid', '==', user.uid));
       const unsubAccounts = onSnapshot(qAccounts, (snapshot) => {
         const cloudData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InstagramAccount));
@@ -691,11 +893,30 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       });
 
-      // 6. Sync Assignments from Firestore
+      // 8. Sync Assignments from Firestore
       const qAssignments = query(collection(db, 'assignments'), where('uid', '==', user.uid));
       const unsubAssignments = onSnapshot(qAssignments, (snapshot) => {
         const cloudData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TaskAssignment));
         setAssignments(cloudData);
+      });
+
+      // 9. Sync Inventory from Firestore
+      const qInventory = query(collection(db, 'inventory_items'), where('uid', '==', user.uid));
+      const unsubInventory = onSnapshot(qInventory, (snapshot) => {
+        const cloudData = snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...(snapshotDoc.data() as InventoryItem) } as InventoryItem));
+        if (cloudData.length > 0) {
+          setInventoryItems(cloudData);
+          localforage.setItem(`inventory_${user.uid}`, cloudData);
+        }
+      });
+
+      const inventoryConfigRef = doc(db, 'settings', `${user.uid}_inventory_sync`);
+      const unsubInventoryConfig = onSnapshot(inventoryConfigRef, (snapshotDoc) => {
+        if (!snapshotDoc.exists()) return;
+        const payload = snapshotDoc.data() as ShopifyInventorySyncConfig;
+        const next = { ...DEFAULT_INVENTORY_SYNC_CONFIG, ...payload };
+        setInventorySyncConfig(next);
+        localforage.setItem(`inventory_sync_config_${user.uid}`, next);
       });
 
       // Return cleanup function
@@ -703,8 +924,12 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         unsubArtists();
         unsubInteractions();
         unsubOrders();
+        unsubCommunications();
+        unsubRecommendations();
         unsubAccounts();
         unsubAssignments();
+        unsubInventory();
+        unsubInventoryConfig();
       };
     } catch (error) {
       console.error("Error loading data:", error);
@@ -1049,6 +1274,160 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [user]);
 
+  const deriveLifecycleStage = useCallback((artist: CRMArtist): LifecycleStage => {
+    if (artist.lifecycleStage) return artist.lifecycleStage;
+    if (artist.stage === 'dormant') return 'dormant';
+
+    const orderCount = Number(artist.orderCount || 0);
+    const lastOrderDays = artist.lastOrderDate
+      ? Math.floor((Date.now() - new Date(artist.lastOrderDate).getTime()) / 86400000)
+      : null;
+
+    if (orderCount >= 2) {
+      if (typeof lastOrderDays === 'number' && lastOrderDays > 60) return 'at_risk';
+      return 'repeat_buyer';
+    }
+    if (orderCount === 1) {
+      if (typeof lastOrderDays === 'number' && lastOrderDays > 60) return 'at_risk';
+      return 'first_order';
+    }
+    if (artist.metadata?.sampleStatus === 'sent' || artist.metadata?.distributorLifecycle === 'sample_sent') {
+      return 'sample_sent';
+    }
+    if ((artist.replyCount || 0) > 0 || artist.stage === 'engaged') return 'interested';
+    if ((artist.likeCount || 0) > 0 || (artist.storyViews24h || 0) > 0 || artist.hasFollowedBack) return 'contacted';
+    return 'new_lead';
+  }, []);
+
+  const getActivityHint = useCallback((artist: CRMArtist): string => {
+    const posting = artist.socialSignals?.postingHours || [];
+    if (posting.length > 0) {
+      const sorted = [...posting].sort((a, b) => a - b);
+      return `Usually active around ${sorted.slice(0, 3).join(', ')}h`;
+    }
+    if (artist.activityLevel === 'high') return 'High social activity recently';
+    if (artist.hasFollowedBack || (artist.replyCount || 0) > 0) return 'Has already responded to engagement';
+    return 'Limited recent signal, use low-pressure follow-up';
+  }, []);
+
+  const buildRuleRecommendation = useCallback((artist: CRMArtist): AIRecommendation => {
+    const lifecycle = deriveLifecycleStage(artist);
+    const lastOrderDays = artist.lastOrderDate
+      ? Math.floor((Date.now() - new Date(artist.lastOrderDate).getTime()) / 86400000)
+      : null;
+    const avgCycle = artist.avgReorderCycleDays || 30;
+    const noOrderYet = !artist.orderCount || artist.orderCount === 0;
+    const isOverCycle = typeof lastOrderDays === 'number' && lastOrderDays > avgCycle;
+    const channel: CommunicationChannel =
+      artist.preferredChannel ||
+      (artist.email ? 'email' : artist.ig_handle || artist.username ? 'instagram_dm' : artist.phone ? 'whatsapp' : 'system');
+
+    let goal: AIRecommendation['goal'] = 'relationship';
+    let reason = 'Maintain relationship with low-pressure touchpoint.';
+    let timing: AIRecommendation['timing'] = 'today';
+    let confidence: AIRecommendation['confidence'] = 'medium';
+    let message = `Hey ${artist.fullName || artist.username}, quick check-in from InkFlow. How has this week been in the studio?`;
+
+    if (lifecycle === 'new_lead') {
+      goal = 'get_reply';
+      reason = 'New lead with no prior conversation.';
+      timing = 'now';
+      confidence = 'medium';
+      message = `Hey ${artist.fullName || artist.username}, saw your work and loved the style. We support tattoo studios with reliable needles/inks. Open to a quick chat on what your shop uses most?`;
+    } else if (lifecycle === 'contacted' || lifecycle === 'interested') {
+      goal = 'confirm_need';
+      reason = 'Lead has engagement signals and should be qualified further.';
+      timing = 'today';
+      confidence = 'high';
+      message = `Hey ${artist.fullName || artist.username}, wanted to follow up. If you share your top-used sizes or products, I can suggest a practical starter bundle for your workflow.`;
+    } else if (lifecycle === 'sample_sent') {
+      goal = 'sample_followup';
+      reason = 'Sample sent stage requires feedback and conversion to first order.';
+      timing = 'tomorrow';
+      confidence = 'high';
+      message = `Hey ${artist.fullName || artist.username}, checking how the sample performed in recent sessions. If it worked well, I can build a first order around your most-used specs.`;
+    } else if (lifecycle === 'first_order' && noOrderYet === false) {
+      goal = 'reorder';
+      reason = 'First order done, now optimize toward repeat.';
+      timing = 'in_3_days';
+      confidence = 'medium';
+      message = `Thanks again for your first order. Happy to prep a smoother reorder list based on your shop's real usage so restocking is easier next time.`;
+    } else if (lifecycle === 'repeat_buyer' && isOverCycle) {
+      goal = 'reorder';
+      reason = `No order for ${lastOrderDays} days, likely nearing reorder cycle.`;
+      timing = 'now';
+      confidence = 'high';
+      message = `Quick inventory check: if you're running low this week, I can reserve your usual SKUs and add one efficient substitute option for any low stock items.`;
+    } else if (lifecycle === 'at_risk' || lifecycle === 'dormant') {
+      goal = 'win_back';
+      reason = 'Lead/customer is cooling down and needs reactivation.';
+      timing = 'today';
+      confidence = 'medium';
+      message = `Hey ${artist.fullName || artist.username}, long time no talk. If priorities changed, no pressure. If useful, I can send one focused option with better value for your current style workload.`;
+    }
+
+    return {
+      id: `rec_${artist.id}_${Date.now()}`,
+      artistId: artist.id,
+      generatedAt: new Date().toISOString(),
+      reason,
+      channel,
+      timing,
+      goal,
+      message,
+      confidence,
+      lifecycleStage: lifecycle,
+      signalSummary: [
+        `Heat score ${artist.heatScore || 0}`,
+        `Order count ${artist.orderCount || 0}`,
+        getActivityHint(artist)
+      ]
+    };
+  }, [deriveLifecycleStage, getActivityHint]);
+
+  const addCommunicationRecord = useCallback(async (
+    record: Omit<CommunicationRecord, 'id' | 'timestamp'> & Partial<Pick<CommunicationRecord, 'id' | 'timestamp'>>
+  ) => {
+    if (!user) return;
+    const payload: CommunicationRecord = {
+      id: record.id || `comm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      timestamp: record.timestamp || new Date().toISOString(),
+      ...record
+    };
+    setCommunicationRecords(prev => {
+      const merged = [payload, ...prev.filter(p => p.id !== payload.id)].sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp));
+      localforage.setItem(`communications_${user.uid}`, merged);
+      return merged;
+    });
+    try {
+      await setDoc(doc(db, 'communications', payload.id), sanitizeForFirestore({ ...payload, uid: user.uid }), { merge: true });
+    } catch (e) {
+      console.error('Failed to sync communication record', e);
+    }
+  }, [user]);
+
+  const refreshAIRecommendation = useCallback(async (artistId: string): Promise<AIRecommendation | null> => {
+    if (!user) return null;
+    const artist = rawArtistsRef.current.find(a => a.id === artistId);
+    if (!artist) return null;
+    const rec = buildRuleRecommendation(artist);
+    setAIRecommendations(prev => {
+      const merged = [rec, ...prev.filter(r => r.artistId !== artistId)];
+      localforage.setItem(`ai_recommendations_${user.uid}`, merged);
+      return merged;
+    });
+    try {
+      await setDoc(doc(db, 'ai_recommendations', artistId), sanitizeForFirestore({ ...rec, uid: user.uid }), { merge: true });
+    } catch (e) {
+      console.error('Failed to sync AI recommendation', e);
+    }
+    return rec;
+  }, [user, buildRuleRecommendation]);
+
+  const getAIRecommendationForArtist = useCallback((artistId: string) => {
+    return aiRecommendations.find(r => r.artistId === artistId);
+  }, [aiRecommendations]);
+
   const addInteraction = useCallback(async (artistId: string, type: InteractionInputType, content?: string) => {
     if (!user) return;
     const normalizedType = normalizeInteractionType(type);
@@ -1074,6 +1453,16 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       await setDoc(doc(db, 'interactions', interactionId), { ...newInteraction, uid: user.uid });
+      const currentArtist = rawArtists.find(a => a.id === artistId);
+      await addCommunicationRecord({
+        artistId,
+        channel: normalizedType === 'reply' ? 'instagram_dm' : 'system',
+        direction: normalizedType === 'reply' ? 'inbound' : 'outbound',
+        status: normalizedType === 'reply' ? 'replied' : 'completed',
+        summary: `Interaction: ${normalizedType}`,
+        content,
+        lifecycleStageAtTime: currentArtist ? deriveLifecycleStage(currentArtist) : undefined
+      });
       
       // Update artist heat score
       const artist = rawArtists.find(a => a.id === artistId);
@@ -1106,11 +1495,12 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         await updateArtist(artistId, updates);
+        await refreshAIRecommendation(artistId);
       }
     } catch (error) {
       console.error("Error adding interaction:", error);
     }
-  }, [user, rawArtists, updateArtist, calculateHeatScore]);
+  }, [user, rawArtists, updateArtist, calculateHeatScore, addCommunicationRecord, deriveLifecycleStage, refreshAIRecommendation]);
 
   const getCustomerTier = (orderCount: number, totalSpent: number = 0): 'new' | 'loyal' | 'vip' => {
     if (orderCount >= 5 || totalSpent > 1000) return 'vip';
@@ -1132,6 +1522,14 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       await setDoc(doc(db, 'orders', orderId), { ...newOrder, uid: user.uid });
+      await addCommunicationRecord({
+        artistId,
+        channel: 'system',
+        direction: 'inbound',
+        status: 'completed',
+        summary: `Order placed: ${productName}`,
+        content: `Order amount: ${amount}`
+      });
       
       const artist = rawArtists.find(a => a.id === artistId);
       if (artist) {
@@ -1146,13 +1544,14 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           stage: 'customers',
           customerTier: newTier
         });
+        await refreshAIRecommendation(artistId);
 
         toast.success(`Order recorded! ${artist.username} is now a ${newTier} customer.`);
       }
     } catch (error) {
       console.error("Error adding order:", error);
     }
-  }, [user, rawArtists, updateArtist]);
+  }, [user, rawArtists, updateArtist, addCommunicationRecord, refreshAIRecommendation]);
 
   const deleteArtist = useCallback(async (artistId: string) => {
     if (!user) return;
@@ -1350,6 +1749,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const mapsRating = parseFloat(row.rating || row.mapsRating || row.avg_rating) || 0;
           const phone = clean((row.phone || row.phone_number || '').toString().replace(/\D/g, ''));
           const email = clean(row.email || row.contact_email || '');
+          const rawInstagramInput = clean(row.ig_handle || row.igLink || row.instagram || row.instagram_url || row.ig_url || '');
           
           let username = clean(row.ig_handle || row.igLink || row.instagram || row.instagram_url || row.ig_url || `user_${index}_${Date.now()}`);
           if (typeof username === 'string') {
@@ -1363,16 +1763,37 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             username = `user_${index}_${Date.now()}`;
           }
 
-          const locationRaw = clean(row.location || row.location_tag || row.city || row.state || defaultLocation || 'Unknown');
-          const country = clean(row.country || row.nation || 'USA');
+          const importedInstagramUrl = (() => {
+            const raw = String(rawInstagramInput || '').trim();
+            if (!raw) return null;
+            if (raw.toLowerCase().includes('instagram.com/')) {
+              return raw.startsWith('http') ? raw : `https://${raw}`;
+            }
+            const handle = raw.replace(/^@/, '').trim();
+            if (!handle) return null;
+            return `https://instagram.com/${handle}`;
+          })();
+
+          const locationRaw = clean(row.location || row.location_tag || defaultLocation || 'Unknown');
+          const cityRaw = clean(row.city || row.city_name || row.town || '');
+          const stateRaw = clean(row.state || row.province || row.region || row.location_tag || '');
+          const countryRaw = clean(row.country || row.nation || 'USA');
           const followers = parseInt(row.followers || row.follower_count || row.followers_count) || 0;
           const address = row.address || row.full_address || row.formatted_address || '';
-          const location = normalizeLocationValue(locationRaw, address, country);
+          const websiteRaw = clean(row.website || row.site || row.web_url || row.url || '');
+          const isDistributorLead = isDistributorByText(shopName, websiteRaw, address);
+          const geo = normalizeGeoFields({
+            city: cityRaw,
+            state: stateRaw,
+            location: locationRaw,
+            address,
+            country: countryRaw
+          });
           
           // Try to find a stable ID from common scraper fields
           const placeId = row.place_id || row.cid || (row.metadata && (row.metadata.place_id || row.metadata.cid));
           const safeShopName = shopName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-          const safeLoc = (address || location).toLowerCase().replace(/[^a-z0-9]+/g, '_');
+          const safeLoc = (address || geo.location).toLowerCase().replace(/[^a-z0-9]+/g, '_');
           
           // Make stableId more unique if placeId is missing
           let stableId = placeId;
@@ -1424,11 +1845,13 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ig_handle: username.startsWith('user_') ? null : username,
             followers: followers || existing?.followers || 0,
             style: existing?.style || 'Various',
-            country: country || existing?.country || 'USA',
+            country: geo.country || existing?.country || 'USA',
+            city: geo.city !== 'Unknown' ? geo.city : (existing?.city || undefined),
+            state: geo.state !== 'Unknown' ? geo.state : (existing?.state || undefined),
             shopName,
             mapsRating,
             address: address || existing?.address,
-            location,
+            location: geo.location,
             baseScore: Math.floor(mapsRating * 20),
             similarityWeight: 0,
             facebookId: row.facebook_id || row.facebook || existing?.facebookId || null,
@@ -1436,7 +1859,19 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             website: row.website || row.site || existing?.website || null,
             email: row.email || existing?.email || null,
             rating: mapsRating,
-            metadata: { ...(existing?.metadata || {}), ...(row.metadata || {}), ...(row.place_id ? { place_id: row.place_id } : {}) },
+            metadata: {
+              ...(existing?.metadata || {}),
+              ...(row.metadata || {}),
+              ...(row.place_id ? { place_id: row.place_id } : {}),
+              ingestSource: (existing?.metadata as any)?.ingestSource || 'csv_import',
+              importedInstagramProvided: Boolean(rawInstagramInput),
+              ...(importedInstagramUrl ? { importedInstagramUrl } : {}),
+              ...(isDistributorLead ? {
+                isDistributor: true,
+                distributorStatus: existing?.metadata?.distributorStatus || 'new',
+                distributorSource: existing?.metadata?.distributorSource || 'maps_import_keyword'
+              } : {})
+            },
             account_tag: accountTag || existing?.account_tag || 'default',
             uid: user.uid,
             contacts: mergeContacts(
@@ -1718,7 +2153,15 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const province = getVal(['Default Address Province Code', 'Province Code']);
       const country = getVal(['Default Address Country Code', 'Country Code']);
-      const location = (country && country !== 'US') ? country : (province || 'Unknown');
+      const city = getVal(['Default Address City', 'City']);
+      const address = `${getVal(['Default Address Address1', 'Address1'])} ${city}, ${province || ''} ${country || ''}`.trim();
+      const geo = normalizeGeoFields({
+        city,
+        state: province,
+        location: province,
+        address,
+        country
+      });
 
       // Try to find existing artist
       let artist = emailMap.get(email) || phoneMap.get(phone) || nameMap.get(fullName.toLowerCase());
@@ -1748,8 +2191,11 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           shopName: company || fullName,
           email: email,
           phone: phone,
-          location: location,
-          address: `${getVal(['Default Address Address1', 'Address1'])} ${getVal(['Default Address City', 'City'])}, ${province || ''} ${country || ''}`.trim(),
+          location: geo.location,
+          city: geo.city !== 'Unknown' ? geo.city : undefined,
+          state: geo.state !== 'Unknown' ? geo.state : undefined,
+          country: geo.country,
+          address,
           stage: 'customers',
           heatScore: 50,
           similarityScore: 0,
@@ -1847,6 +2293,375 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setIsScanning(false);
   }, [user, markAsConverted]);
+
+  const upsertInventoryItem = useCallback(async (item: Partial<InventoryItem>) => {
+    if (!user) return;
+    const now = new Date().toISOString();
+    const nextItem: InventoryItem = {
+      id: String(item.id || `inv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
+      sku: String(item.sku || '').trim(),
+      name: String(item.name || '').trim() || String(item.sku || 'Unnamed Item'),
+      category: String(item.category || 'General').trim(),
+      stock: Number(item.stock || 0),
+      threshold: Number(item.threshold ?? 5),
+      price: Number.isFinite(Number(item.price)) ? Number(item.price) : undefined,
+      currency: String(item.currency || 'USD'),
+      vendor: String(item.vendor || '').trim() || undefined,
+      source: (item.source as InventoryItem['source']) || ('manual' as const),
+      updatedAt: now
+    };
+    if (!nextItem.sku) {
+      toast.error('SKU is required.');
+      return;
+    }
+
+    setInventoryItems(prev => {
+      const bySkuIdx = prev.findIndex((x) => x.sku.toLowerCase() === nextItem.sku.toLowerCase());
+      const byIdIdx = prev.findIndex((x) => x.id === nextItem.id);
+      const idx = byIdIdx >= 0 ? byIdIdx : bySkuIdx;
+      const next = [...prev];
+      if (idx >= 0) next[idx] = { ...next[idx], ...nextItem, updatedAt: now };
+      else next.unshift(nextItem);
+      localforage.setItem(`inventory_${user.uid}`, next);
+      return next;
+    });
+
+    try {
+      await setDoc(doc(db, 'inventory_items', nextItem.id), sanitizeForFirestore({ ...nextItem, uid: user.uid }), { merge: true });
+    } catch (e) {
+      console.error('Failed to sync inventory item to cloud', e);
+    }
+  }, [user]);
+
+  const deleteInventoryItem = useCallback(async (itemId: string) => {
+    if (!user) return;
+    setInventoryItems(prev => {
+      const next = prev.filter((x) => x.id !== itemId);
+      localforage.setItem(`inventory_${user.uid}`, next);
+      return next;
+    });
+    try {
+      await deleteDoc(doc(db, 'inventory_items', itemId));
+    } catch (e) {
+      console.error('Failed to delete inventory item in cloud', e);
+    }
+  }, [user]);
+
+  const importInventoryCSV = useCallback(async (rows: any[], headers?: string[]) => {
+    if (!user) return { imported: 0 };
+    const findVal = (row: any, keys: string[]) => {
+      const foundKey = Object.keys(row || {}).find((k) => keys.includes(String(k || '').toLowerCase().trim()));
+      return foundKey ? row[foundKey] : undefined;
+    };
+
+    const parsed: InventoryItem[] = rows.map((row, index) => {
+      const sku = String(findVal(row, ['sku', 'variant sku', 'product sku']) || '').trim();
+      const name = String(findVal(row, ['name', 'product name', 'title', 'variant title']) || '').trim();
+      const stockRaw = findVal(row, ['stock', 'available', 'quantity', 'inventory']);
+      const thresholdRaw = findVal(row, ['threshold', 'low stock threshold', 'reorder point']);
+      const priceRaw = findVal(row, ['price', 'variant price', 'cost']);
+      const category = String(findVal(row, ['category', 'product type', 'type']) || 'General').trim();
+      const vendor = String(findVal(row, ['vendor', 'brand']) || '').trim();
+      const stock = Number(stockRaw);
+      const threshold = Number(thresholdRaw);
+      const price = Number(priceRaw);
+      const id = String(findVal(row, ['id', 'variant id']) || `csv_${Date.now()}_${index}`);
+      return {
+        id,
+        sku: sku || `SKU_${index + 1}`,
+        name: name || sku || `Inventory Item ${index + 1}`,
+        category: category || 'General',
+        stock: Number.isFinite(stock) ? stock : 0,
+        threshold: Number.isFinite(threshold) ? threshold : 5,
+        price: Number.isFinite(price) ? price : undefined,
+        currency: 'USD',
+        vendor: vendor || undefined,
+        source: 'csv' as const,
+        updatedAt: new Date().toISOString()
+      };
+    }).filter((x) => x.sku && x.name);
+
+    if (parsed.length === 0) return { imported: 0 };
+
+    const merged = [...inventoryItems];
+    const idxBySku = new Map<string, number>();
+    merged.forEach((item, idx) => idxBySku.set(item.sku.toLowerCase(), idx));
+    parsed.forEach((item) => {
+      const idx = idxBySku.get(item.sku.toLowerCase());
+      if (idx === undefined) {
+        merged.unshift(item);
+        idxBySku.set(item.sku.toLowerCase(), 0);
+      } else {
+        merged[idx] = { ...merged[idx], ...item, updatedAt: new Date().toISOString() };
+      }
+    });
+
+    setInventoryItems(merged);
+    await localforage.setItem(`inventory_${user.uid}`, merged);
+    if (headers && headers.length > 0) {
+      await setInventoryImportTemplateHeaders(headers);
+    }
+    await appendInventorySnapshot(merged, 'csv');
+    toast.success(`Imported ${parsed.length} inventory rows.`);
+
+    try {
+      const batch = writeBatch(db);
+      parsed.forEach((item) => {
+        batch.set(doc(db, 'inventory_items', item.id), sanitizeForFirestore({ ...item, uid: user.uid }), { merge: true });
+      });
+      await batch.commit();
+    } catch (e) {
+      console.error('Failed to sync imported inventory to cloud', e);
+    }
+
+    return { imported: parsed.length };
+  }, [user, inventoryItems, appendInventorySnapshot, setInventoryImportTemplateHeaders]);
+
+  const updateInventorySyncConfig = useCallback(async (updates: Partial<ShopifyInventorySyncConfig>) => {
+    if (!user) return;
+    const next = {
+      ...inventorySyncConfig,
+      ...updates
+    };
+    setInventorySyncConfig(next);
+    await localforage.setItem(`inventory_sync_config_${user.uid}`, next);
+    try {
+      await setDoc(doc(db, 'settings', `${user.uid}_inventory_sync`), sanitizeForFirestore({ ...next, uid: user.uid }), { merge: true });
+    } catch (e) {
+      console.error('Failed to sync inventory config to cloud', e);
+    }
+  }, [user, inventorySyncConfig]);
+
+  const syncShopifyInventory = useCallback(async (overrides?: Partial<ShopifyInventorySyncConfig>) => {
+    if (!user) return null;
+    const activeConfig = { ...inventorySyncConfig, ...(overrides || {}) };
+    if (!activeConfig.storeDomain || !activeConfig.accessToken) {
+      toast.error('Shopify domain/token are required for inventory sync.');
+      return null;
+    }
+    try {
+      const resp = await fetch('/api/shopify/inventory/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storeDomain: activeConfig.storeDomain,
+          accessToken: activeConfig.accessToken,
+          locationId: activeConfig.locationId || undefined
+        })
+      });
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(text || 'Shopify sync failed');
+      }
+      const payload = await resp.json();
+      const items = Array.isArray(payload.items) ? payload.items as InventoryItem[] : [];
+      const normalized: InventoryItem[] = items.map((item) => ({
+        id: String(item.id || `shopify_${item.sku}`),
+        sku: String(item.sku || '').trim(),
+        name: String(item.name || item.sku || '').trim(),
+        category: String(item.category || 'General').trim(),
+        stock: Number(item.stock || 0),
+        threshold: Number(item.threshold ?? 5),
+        price: Number.isFinite(Number(item.price)) ? Number(item.price) : undefined,
+        currency: String(item.currency || 'USD'),
+        vendor: item.vendor ? String(item.vendor) : undefined,
+        source: 'shopify' as const,
+        updatedAt: new Date().toISOString()
+      })).filter((x) => x.sku && x.name);
+
+      setInventoryItems(normalized);
+      await localforage.setItem(`inventory_${user.uid}`, normalized);
+      await appendInventorySnapshot(normalized, 'shopify');
+
+      const updatedAt = new Date().toISOString();
+      await updateInventorySyncConfig({
+        ...activeConfig,
+        lastSyncAt: updatedAt,
+        lastSyncStatus: 'ok',
+        lastSyncMessage: `Imported ${normalized.length} SKUs`
+      });
+
+      try {
+        const batch = writeBatch(db);
+        normalized.forEach((item) => {
+          batch.set(doc(db, 'inventory_items', item.id), sanitizeForFirestore({ ...item, uid: user.uid }), { merge: true });
+        });
+        await batch.commit();
+      } catch (e) {
+        console.error('Failed to write synced inventory to Firestore', e);
+      }
+
+      toast.success(`Shopify inventory synced: ${normalized.length} SKUs.`);
+      return { imported: normalized.length, updatedAt };
+    } catch (e: any) {
+      console.error('Shopify inventory sync failed', e);
+      const msg = String(e?.message || 'Shopify sync failed');
+      await updateInventorySyncConfig({
+        ...activeConfig,
+        lastSyncAt: new Date().toISOString(),
+        lastSyncStatus: 'error',
+        lastSyncMessage: msg.slice(0, 180)
+      });
+      toast.error('Shopify inventory sync failed.');
+      return null;
+    }
+  }, [user, inventorySyncConfig, updateInventorySyncConfig, appendInventorySnapshot]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (!inventorySyncConfig.enabled) return;
+    if (!inventorySyncConfig.storeDomain || !inventorySyncConfig.accessToken) return;
+    const minutes = Math.max(5, Number(inventorySyncConfig.autoSyncMinutes || 60));
+    const timer = setInterval(() => {
+      syncShopifyInventory().catch((e) => {
+        console.error('Auto inventory sync failed', e);
+      });
+    }, minutes * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [
+    user,
+    inventorySyncConfig.enabled,
+    inventorySyncConfig.autoSyncMinutes,
+    inventorySyncConfig.storeDomain,
+    inventorySyncConfig.accessToken,
+    syncShopifyInventory
+  ]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (!inventorySyncConfig.autoImportEnabled) return;
+    const mode = inventorySyncConfig.autoImportMode || 'file';
+    const value = String(inventorySyncConfig.autoImportValue || '').trim();
+    if (!value) return;
+    const dailyHour = Number.isFinite(Number(inventorySyncConfig.autoImportDailyHour))
+      ? Math.max(0, Math.min(23, Number(inventorySyncConfig.autoImportDailyHour)))
+      : 9;
+
+    const runIfDue = async () => {
+      const now = new Date();
+      if (now.getHours() < dailyHour) return;
+      const lastAt = inventorySyncConfig.lastAutoImportAt ? new Date(inventorySyncConfig.lastAutoImportAt) : null;
+      const sameDay = !!lastAt &&
+        lastAt.getFullYear() === now.getFullYear() &&
+        lastAt.getMonth() === now.getMonth() &&
+        lastAt.getDate() === now.getDate();
+      if (sameDay) return;
+
+      try {
+        const resp = await fetch('/api/inventory/source/load', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode, value })
+        });
+        if (!resp.ok) {
+          const text = await resp.text();
+          throw new Error(text || 'Auto import failed');
+        }
+        const payload = await resp.json();
+        const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+        const headers = Array.isArray(payload?.headers) ? payload.headers : [];
+        const imported = await importInventoryCSV(rows, headers);
+        await updateInventorySyncConfig({
+          ...inventorySyncConfig,
+          lastAutoImportAt: now.toISOString(),
+          lastSyncStatus: 'ok',
+          lastSyncMessage: `Auto imported ${imported.imported} rows`
+        });
+      } catch (e: any) {
+        console.error('Auto inventory import failed', e);
+        await updateInventorySyncConfig({
+          ...inventorySyncConfig,
+          lastSyncStatus: 'error',
+          lastSyncMessage: String(e?.message || 'Auto import failed').slice(0, 180)
+        });
+      }
+    };
+
+    runIfDue().catch(() => undefined);
+    const timer = setInterval(() => {
+      runIfDue().catch(() => undefined);
+    }, 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [
+    user,
+    inventorySyncConfig,
+    importInventoryCSV,
+    updateInventorySyncConfig
+  ]);
+
+  const inventoryForecasts = useMemo<InventoryForecast[]>(() => {
+    const minDays = Math.max(1, Number(inventorySyncConfig.autoImportMinDays || 7));
+    const minSnapshots = Math.max(2, Number(inventorySyncConfig.autoImportMinSnapshots || 3));
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const snapshots = [...inventorySnapshots].sort((a, b) =>
+      new Date(a.capturedAt).getTime() - new Date(b.capturedAt).getTime()
+    );
+
+    return inventoryItems.map((item) => {
+      const sku = String(item.sku || '').trim();
+      const points = snapshots
+        .map((s) => {
+          const hit = s.items.find((x) => String(x.sku || '').trim().toLowerCase() === sku.toLowerCase());
+          if (!hit) return null;
+          return { at: new Date(s.capturedAt).getTime(), stock: Number(hit.stock || 0) };
+        })
+        .filter((x): x is { at: number; stock: number } => !!x)
+        .sort((a, b) => a.at - b.at);
+
+      if (points.length < minSnapshots) {
+        return {
+          sku: item.sku,
+          name: item.name,
+          currentStock: Number(item.stock || 0),
+          threshold: Number(item.threshold || 0),
+          dailyConsumption: 0,
+          daysLeft: null,
+          recommendQty7d: 0,
+          recommendQty15d: 0,
+          recommendedCycleDays: null
+        };
+      }
+
+      const first = points[0];
+      const last = points[points.length - 1];
+      const spanDays = Math.max(0, (last.at - first.at) / msPerDay);
+      if (spanDays < minDays) {
+        return {
+          sku: item.sku,
+          name: item.name,
+          currentStock: Number(item.stock || 0),
+          threshold: Number(item.threshold || 0),
+          dailyConsumption: 0,
+          daysLeft: null,
+          recommendQty7d: 0,
+          recommendQty15d: 0,
+          recommendedCycleDays: null
+        };
+      }
+
+      const consumed = Math.max(0, first.stock - last.stock);
+      const daily = consumed > 0 ? consumed / spanDays : 0;
+      const current = Number(item.stock || 0);
+      const threshold = Number(item.threshold || 0);
+      const daysLeft = daily > 0 ? current / daily : null;
+      const recommendQty7d = daily > 0 ? Math.max(0, Math.ceil(daily * 7 + threshold - current)) : 0;
+      const recommendQty15d = daily > 0 ? Math.max(0, Math.ceil(daily * 15 + threshold - current)) : 0;
+      const recommendedCycleDays: 7 | 15 | null =
+        daily <= 0 ? null : (daysLeft !== null && daysLeft <= 10 ? 7 : 15);
+
+      return {
+        sku: item.sku,
+        name: item.name,
+        currentStock: current,
+        threshold,
+        dailyConsumption: Number(daily.toFixed(3)),
+        daysLeft: daysLeft === null ? null : Number(daysLeft.toFixed(1)),
+        recommendQty7d,
+        recommendQty15d,
+        recommendedCycleDays
+      };
+    });
+  }, [inventoryItems, inventorySnapshots, inventorySyncConfig.autoImportMinDays, inventorySyncConfig.autoImportMinSnapshots]);
 
   const bulkEnrichArtists = useCallback(async () => {
     if (!user) {
@@ -2046,6 +2861,25 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               return cleaned;
             };
 
+            const distributorSignalText = [
+              a.shopName,
+              a.fullName,
+              a.website,
+              social?.instagram,
+              social?.facebook,
+              social?.tiktok
+            ].map((x) => String(x || '')).join(' ').toLowerCase();
+            const distributorKeywordRegex = /(tattoo\s*supply|ink\s*supply|needle\s*supply|supplier|wholesale|distributor|distribution|equipment)/i;
+            const distributorFromDeepScan =
+              isDistributorByText(
+                a.shopName,
+                a.fullName,
+                a.website,
+                social?.instagram,
+                social?.facebook,
+                social?.tiktok
+              ) || distributorKeywordRegex.test(distributorSignalText);
+
             const updates = {
               contacts: mergeContacts(
                 a.contacts || [],
@@ -2104,13 +2938,32 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               dnaTags: [...new Set([...(a.dnaTags || []), ...((enriched?.dnaTags as string[]) || [])])],
               ig_handle: a.ig_handle || extractedHandle(social?.instagram) || null,
               facebookId: a.facebookId || social?.facebook || null,
-              location: normalizeLocationValue(a.location, a.address, a.country),
+              ...(() => {
+                const geo = normalizeGeoFields({
+                  city: a.city,
+                  state: a.state,
+                  location: a.location,
+                  address: a.address,
+                  country: a.country
+                });
+                return {
+                  city: geo.city !== 'Unknown' ? geo.city : (a.city || undefined),
+                  state: geo.state !== 'Unknown' ? geo.state : (a.state || undefined),
+                  country: geo.country || a.country || 'USA',
+                  location: geo.location
+                };
+              })(),
               metadata: {
                 ...(a.metadata || {}),
                 ...(social?.tiktok ? { tiktok: social.tiktok } : {}),
                 ...(social?.emails?.length ? { email_candidates: social.emails } : {}),
                 ...(social?.whatsapp?.length ? { whatsapp_candidates: social.whatsapp } : {}),
-                ...(social?.confidence ? { social_confidence: social.confidence } : {})
+                ...(social?.confidence ? { social_confidence: social.confidence } : {}),
+                ...(distributorFromDeepScan ? {
+                  isDistributor: true,
+                  distributorStatus: String(a.metadata?.distributorStatus || 'new'),
+                  distributorSource: String(a.metadata?.distributorSource || 'deep_scan_keyword')
+                } : {})
               },
               socialSignals: {
                 ...(a.socialSignals || {}),
@@ -2489,6 +3342,14 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setRawArtists([]);
       setInteractions([]);
       await localforage.removeItem(`artists_${user.uid}`);
+      await localforage.removeItem(`inventory_${user.uid}`);
+      await localforage.removeItem(`inventory_snapshots_${user.uid}`);
+      await localforage.removeItem(`inventory_import_template_headers_${user.uid}`);
+      await localforage.removeItem(`inventory_sync_config_${user.uid}`);
+      setInventoryItems([]);
+      setInventorySnapshots([]);
+      setInventoryImportTemplateHeadersState([]);
+      setInventorySyncConfig(DEFAULT_INVENTORY_SYNC_CONFIG);
       toast.success("All data cleared successfully.");
     } catch (e) {
       console.error("Failed to clear data", e);
@@ -2709,6 +3570,8 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       artists, 
       interactions,
       orders,
+      communicationRecords,
+      aiRecommendations,
       pagination,
       globalStats,
       importMetrics,
@@ -2732,11 +3595,25 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateArtist, 
       addInteraction, 
       addOrder,
+      addCommunicationRecord,
+      refreshAIRecommendation,
+      getAIRecommendationForArtist,
       markAsConverted,
       analyzeArtistVisualDNA,
       findSimilarArtists,
       importCSV,
       syncShopifySales,
+      inventoryItems,
+      inventorySnapshots,
+      inventoryForecasts,
+      inventoryImportTemplateHeaders,
+      inventorySyncConfig,
+      upsertInventoryItem,
+      deleteInventoryItem,
+      importInventoryCSV,
+      syncShopifyInventory,
+      updateInventorySyncConfig,
+      setInventoryImportTemplateHeaders,
       bulkEnrichArtists,
       clearAllData,
       deleteArtist,
