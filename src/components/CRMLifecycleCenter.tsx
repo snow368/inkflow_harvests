@@ -104,6 +104,8 @@ export default function CRMLifecycleCenter() {
   const [section, setSection] = useState<CRMSection>('overview');
   const [activeLifecycle, setActiveLifecycle] = useState<LifecycleStage | 'all'>('all');
   const [selectedArtistId, setSelectedArtistId] = useState<string>('');
+  const [followupNote, setFollowupNote] = useState('');
+  const [followupAt, setFollowupAt] = useState('');
 
   const artistsWithLifecycle = useMemo(() => {
     return artists.map((a) => ({ artist: a, lifecycle: deriveLifecycle(a) }));
@@ -341,6 +343,45 @@ export default function CRMLifecycleCenter() {
                     )}
                   </div>
                 </div>
+
+                <div className="rounded-lg border border-zinc-800 p-3">
+                  <div className="text-xs font-bold text-zinc-500 mb-2">Next Follow-up Task</div>
+                  <div className="space-y-2">
+                    <textarea
+                      value={followupNote}
+                      onChange={(e) => setFollowupNote(e.target.value)}
+                      placeholder="What to do next? (e.g., ask sample feedback + confirm commonly used SKU)"
+                      className="w-full min-h-[76px] rounded-lg border border-zinc-800 bg-zinc-900 p-2 text-sm text-zinc-100 outline-none focus:border-zinc-700"
+                    />
+                    <input
+                      type="datetime-local"
+                      value={followupAt}
+                      onChange={(e) => setFollowupAt(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-800 bg-zinc-900 p-2 text-sm text-zinc-100 outline-none focus:border-zinc-700"
+                    />
+                    <button
+                      onClick={async () => {
+                        if (!selectedArtist) return;
+                        await addCommunicationRecord({
+                          artistId: selectedArtist.id,
+                          channel: 'system',
+                          direction: 'outbound',
+                          status: 'completed',
+                          summary: 'Follow-up task saved',
+                          content: followupNote || 'No note',
+                          needsFollowup: true,
+                          followupAt: followupAt ? new Date(followupAt).toISOString() : undefined,
+                          lifecycleStageAtTime: deriveLifecycle(selectedArtist)
+                        });
+                        setFollowupNote('');
+                        toast.success('Follow-up task saved.');
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border border-rose-500/30 bg-rose-500/10 text-sm text-rose-200"
+                    >
+                      Save Task
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -438,4 +479,3 @@ export default function CRMLifecycleCenter() {
     </div>
   );
 }
-
