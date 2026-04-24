@@ -16,7 +16,8 @@ import {
   LogIn,
   LogOut,
   Loader2,
-  Zap
+  Zap,
+  Package
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
@@ -27,13 +28,13 @@ import { CRMProvider, useCRM } from './contexts/CRMContext';
 import Dashboard from './components/Dashboard';
 import ChatTrainer from './components/ChatTrainer';
 import ArtistAnalyzer from './components/ArtistAnalyzer';
-import CRMManager from './components/CRMManager';
-import DualListManager from './components/DualListManager';
+import CRMLifecycleCenter from './components/CRMLifecycleCenter';
 import AutomationSettings from './components/AutomationSettings';
 import ShopOutreach from './components/ShopOutreach';
 import AutomationCommandCenter from './components/AutomationCommandCenter';
+import InventoryManager from './components/InventoryManager';
 
-type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'automation' | 'settings';
+type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'inventory' | 'automation' | 'settings';
 
 const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (tab: Tab) => void }) => {
   const { artists, user, logout } = useCRM();
@@ -48,6 +49,7 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
     { id: 'analyzer', label: 'Artist Analyzer', icon: Instagram },
     { id: 'training', label: 'AI Training', icon: MessageSquare },
     { id: 'crm', label: 'CRM (Lifecycle)', icon: Users },
+    { id: 'inventory', label: 'Inventory', icon: Package },
     { id: 'automation', label: 'Automation', icon: Zap },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
@@ -189,6 +191,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     analyzer: 'Artist Analyzer',
     training: 'AI Training',
     crm: 'CRM (Lifecycle)',
+    inventory: 'Inventory',
     automation: 'Automation Center',
     settings: 'Settings'
   };
@@ -198,7 +201,8 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     outreach: "A large searchable table of tattoo artists and shops.",
     analyzer: "A deep-dive profile page for a single artist and post analysis.",
     training: "Manage AI personas and chat history to refine automation.",
-    crm: "Manage 'Engaged' and 'Customers' through the lifecycle funnel.",
+    crm: 'Lifecycle operating center with communication detail and AI next action.',
+    inventory: "Local-first inventory control and Shopify auto-sync.",
     automation: "AdsPower & Playwright multi-account orchestration command center.",
     settings: "Configure API keys and automation safety settings."
   };
@@ -246,7 +250,8 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
           {activeTab === 'outreach' && <ShopOutreach onNavigate={setActiveTab} />}
           {activeTab === 'analyzer' && <ArtistAnalyzer />}
           {activeTab === 'training' && <ChatTrainer />}
-          {activeTab === 'crm' && <DualListManager />}
+          {activeTab === 'crm' && <CRMLifecycleCenter />}
+          {activeTab === 'inventory' && <InventoryManager />}
           {activeTab === 'automation' && <AutomationCommandCenter />}
           {activeTab === 'settings' && <AutomationSettings />}
         </motion.div>
