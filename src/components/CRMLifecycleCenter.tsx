@@ -106,6 +106,7 @@ export default function CRMLifecycleCenter() {
   const [selectedArtistId, setSelectedArtistId] = useState<string>('');
   const [followupNote, setFollowupNote] = useState('');
   const [followupAt, setFollowupAt] = useState('');
+  const [messageOverride, setMessageOverride] = useState('');
 
   const artistsWithLifecycle = useMemo(() => {
     return artists.map((a) => ({ artist: a, lifecycle: deriveLifecycle(a) }));
@@ -135,6 +136,7 @@ export default function CRMLifecycleCenter() {
 
   const selectedLifecycle = selectedArtist ? deriveLifecycle(selectedArtist) : null;
   const selectedRecommendation = selectedArtist ? getAIRecommendationForArtist(selectedArtist.id) : undefined;
+  const activeMessage = messageOverride || selectedRecommendation?.message || '';
 
   const selectedTimeline = useMemo(() => {
     if (!selectedArtist) return [] as Array<{ ts: string; type: string; detail: string }>;
@@ -393,7 +395,10 @@ export default function CRMLifecycleCenter() {
                 onClick={async () => {
                   if (!selectedArtist) return;
                   const next = await refreshAIRecommendation(selectedArtist.id);
-                  if (next) toast.success('AI recommendation refreshed.');
+                  if (next) {
+                    setMessageOverride('');
+                    toast.success('AI recommendation refreshed.');
+                  }
                 }}
                 className="p-1.5 rounded border border-zinc-700 text-zinc-400 hover:text-white"
                 title="Regenerate"
@@ -429,12 +434,53 @@ export default function CRMLifecycleCenter() {
                       </div>
                     </div>
                     <div className="text-[11px] text-zinc-400">Draft message</div>
-                    <div className="text-sm text-zinc-100 leading-relaxed">{selectedRecommendation.message}</div>
+                    <div className="text-sm text-zinc-100 leading-relaxed">{activeMessage}</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        className="px-2 py-1.5 rounded border border-zinc-700 text-xs text-zinc-200 hover:text-white"
+                        onClick={() => {
+                          if (!selectedRecommendation) return;
+                          const shortVersion = selectedRecommendation.message.length > 180
+                            ? `${selectedRecommendation.message.slice(0, 177)}...`
+                            : selectedRecommendation.message;
+                          setMessageOverride(shortVersion);
+                        }}
+                      >
+                        Make shorter
+                      </button>
+                      <button
+                        className="px-2 py-1.5 rounded border border-zinc-700 text-xs text-zinc-200 hover:text-white"
+                        onClick={() => {
+                          if (!selectedRecommendation) return;
+                          setMessageOverride(`Hi ${selectedArtist?.fullName || selectedArtist?.username}, ${selectedRecommendation.message}`);
+                        }}
+                      >
+                        Make warmer
+                      </button>
+                      <button
+                        className="px-2 py-1.5 rounded border border-zinc-700 text-xs text-zinc-200 hover:text-white"
+                        onClick={() => {
+                          if (!selectedRecommendation) return;
+                          setMessageOverride(`Hello ${selectedArtist?.fullName || selectedArtist?.username},\n\n${selectedRecommendation.message}\n\nBest regards,\nInkFlow Team`);
+                        }}
+                      >
+                        More professional
+                      </button>
+                      <button
+                        className="px-2 py-1.5 rounded border border-zinc-700 text-xs text-zinc-200 hover:text-white"
+                        onClick={() => {
+                          if (!selectedRecommendation) return;
+                          setMessageOverride(`[ES draft placeholder]\n${selectedRecommendation.message}`);
+                        }}
+                      >
+                        Translate draft
+                      </button>
+                    </div>
                     <div className="flex gap-2">
                       <button
                         className="flex-1 px-2 py-1.5 rounded border border-zinc-700 text-xs text-zinc-200 hover:text-white"
                         onClick={() => {
-                          navigator.clipboard.writeText(selectedRecommendation.message);
+                          navigator.clipboard.writeText(activeMessage);
                           toast.success('Message copied.');
                         }}
                       >
@@ -449,7 +495,7 @@ export default function CRMLifecycleCenter() {
                             direction: 'outbound',
                             status: 'sent',
                             summary: `AI draft used (${selectedRecommendation.goal})`,
-                            content: selectedRecommendation.message,
+                            content: activeMessage,
                             lifecycleStageAtTime: selectedRecommendation.lifecycleStage
                           });
                           toast.success('Send action logged.');
