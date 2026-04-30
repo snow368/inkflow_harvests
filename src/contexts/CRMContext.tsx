@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   CRMArtist,
@@ -29,6 +28,7 @@ import { toast } from 'sonner';
 import { processArtistBatchAI, setMockMode as setGeminiMockMode } from '../lib/gemini';
 import { db, auth, signInWithGoogle, logoutUser } from '../lib/firebase';
 import localforage from 'localforage';
+(window as any).localforage = localforage;
 import { 
   collection, 
   query, 
@@ -43,6 +43,9 @@ import {
 } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { safeJsonParse } from '../lib/gemini';
+import { neon } from '@neondatabase/serverless';
+
+const sql = neon(import.meta.env.VITE_NEON_DATABASE_URL || '');
 
 // Helper to sanitize data for Firestore
 const sanitizeForFirestore = (obj: any): any => {
@@ -386,7 +389,6 @@ const DEFAULT_INVENTORY_SYNC_CONFIG: ShopifyInventorySyncConfig = {
 const generateMockArtists = (count: number): CRMArtist[] => {
   return []; // Disabled to prevent polluting real data
 };
-
 export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [rawArtists, setRawArtists] = useState<CRMArtist[]>([]);
   const [interactions, setInteractions] = useState<CRMInteraction[]>([]);
@@ -404,6 +406,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     rawArtistsRef.current = rawArtists;
   }, [rawArtists]);
+
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -416,7 +419,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [isScanning]);
   const [scanProgress, setScanProgress] = useState({ current: 0, total: 0 });
   const [pinnedCount, setPinnedCount] = useState(0);
-  const [mockMode, setMockModeState] = useState(false);
+  const [mockMode, setMockModeState] = useState(true);
   const [debugMode, setDebugMode] = useState(false);
   const [globalWeights, setGlobalWeights] = useState<Record<string, number>>({
     'Realism': 1.0,
@@ -650,7 +653,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .map((h: number) => Math.floor(h));
 
     if (normalized.length > 0) return Array.from(new Set(normalized));
-    // Fallback: common IG active windows for shops/artists
     return [11, 12, 13, 19, 20, 21];
   };
 
@@ -725,7 +727,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Keep pagination total in sync with artists length
   useEffect(() => {
     setPagination(prev => ({
       ...prev,
@@ -739,6 +740,40 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!user) return;
 
     try {
+      // ===== 优先从 Neon 快速加载 =====
+      const neonArtists = await sql`
+        SELECT * FROM artists WHERE uid = ${user.uid} ORDER BY last_updated DESC
+      `.catch(() => []);
+      
+      if (neonArtists.length > 0) {
+        const mapped = neonArtists.map((row: any) => ({
+          id: row.id,
+          uid: row.uid,
+          username: row.username || '',
+          fullName: row.full_name || '',
+          shopName: row.shop_name || '',
+          stage: row.stage || 'outreach',
+          heatScore: row.heat_score || 0,
+          similarityScore: row.similarity_score || 0,
+          dnaTags: row.dna_tags || [],
+          followers: row.followers || 0,
+          orderCount: row.order_count || 0,
+          totalSpent: row.total_spent || 0,
+          location: row.location || '',
+          city: row.city || '',
+          state: row.state || '',
+          country: row.country || '',
+          style: row.style || '',
+          lastInteractionDate: row.last_interaction_date || '',
+          lastOrderDate: row.last_order_date || '',
+          isHighIntent: row.is_high_intent || false,
+        }));
+        setRawArtists(mapped);
+        await localforage.setItem(`artists_${user.uid}`, mapped);
+        setIsInitialLoad(false);
+      }
+      // ===== Neon 加载结束 =====
+
       // 1. Load from Local Storage first (Instant)
       const cached = await localforage.getItem<CRMArtist[]>(`artists_${user.uid}`);
       if (cached && cached.length > 0) {
@@ -770,153 +805,187 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setInventoryImportTemplateHeadersState(cachedImportHeaders);
       }
 
-      // 2. Sync Artists from Firestore
+      // 2. Sync Artists from Firestore（包裹 try-catch 防止配额错误打断主流程）
       const qArtists = query(collection(db, 'artists'), where('uid', '==', user.uid));
       const unsubArtists = onSnapshot(qArtists, (snapshot) => {
-        const cloudData = snapshot.docs.map(doc => doc.data() as CRMArtist);
-        
-        setRawArtists(prev => {
-          const mergedMap = new Map<string, CRMArtist>();
+        try {
+          const cloudData = snapshot.docs.map(doc => doc.data() as CRMArtist);
           
-          // 1. Start with existing local state
-          prev.forEach(a => mergedMap.set(a.id, a));
+          setRawArtists(prev => {
+            const mergedMap = new Map<string, CRMArtist>();
+            
+            prev.forEach(a => mergedMap.set(a.id, a));
+            
+            cloudData.forEach(a => mergedMap.set(a.id, a));
+            
+            const merged = Array.from(mergedMap.values());
+            localforage.setItem(`artists_${user.uid}`, merged);
+            return merged;
+          });
           
-          // 2. Overwrite with cloud data (Cloud is source of truth for synced items)
-          cloudData.forEach(a => mergedMap.set(a.id, a));
-          
-          const merged = Array.from(mergedMap.values());
-          localforage.setItem(`artists_${user.uid}`, merged);
-          return merged;
-        });
-        
-        setIsInitialLoad(false);
+          setIsInitialLoad(false);
+        } catch (e) {
+          console.warn('Firebase 配额限制，艺术家同步跳过', e);
+        }
       });
 
       // 3. Sync Interactions from Firestore
       const qInteractions = query(collection(db, 'interactions'), where('uid', '==', user.uid));
       const unsubInteractions = onSnapshot(qInteractions, (snapshot) => {
-        const cloudData = snapshot.docs.map(doc => {
-          const raw = doc.data() as CRMInteraction & { type?: string };
-          const normalizedType = normalizeInteractionType((raw.type || 'like') as InteractionInputType);
-          return { ...raw, type: normalizedType } as CRMInteraction;
-        });
-        setInteractions(prev => {
-          const mergedMap = new Map<string, CRMInteraction>();
-          prev.forEach(i => mergedMap.set(i.id, i));
-          cloudData.forEach(i => mergedMap.set(i.id, i));
-          return Array.from(mergedMap.values());
-        });
+        try {
+          const cloudData = snapshot.docs.map(doc => {
+            const raw = doc.data() as CRMInteraction & { type?: string };
+            const normalizedType = normalizeInteractionType((raw.type || 'like') as InteractionInputType);
+            return { ...raw, type: normalizedType } as CRMInteraction;
+          });
+          setInteractions(prev => {
+            const mergedMap = new Map<string, CRMInteraction>();
+            prev.forEach(i => mergedMap.set(i.id, i));
+            cloudData.forEach(i => mergedMap.set(i.id, i));
+            return Array.from(mergedMap.values());
+          });
+        } catch (e) {
+          console.warn('Firebase 配额限制，互动同步跳过', e);
+        }
       });
 
       // 4. Sync Orders from Firestore
       const qOrders = query(collection(db, 'orders'), where('uid', '==', user.uid));
       const unsubOrders = onSnapshot(qOrders, (snapshot) => {
-        const cloudData = snapshot.docs.map(doc => doc.data() as CRMOrder);
-        setOrders(prev => {
-          const mergedMap = new Map<string, CRMOrder>();
-          prev.forEach(o => mergedMap.set(o.id, o));
-          cloudData.forEach(o => mergedMap.set(o.id, o));
-          return Array.from(mergedMap.values());
-        });
+        try {
+          const cloudData = snapshot.docs.map(doc => doc.data() as CRMOrder);
+          setOrders(prev => {
+            const mergedMap = new Map<string, CRMOrder>();
+            prev.forEach(o => mergedMap.set(o.id, o));
+            cloudData.forEach(o => mergedMap.set(o.id, o));
+            return Array.from(mergedMap.values());
+          });
+        } catch (e) {
+          console.warn('Firebase 配额限制，订单同步跳过', e);
+        }
       });
 
       // 5. Sync Communications from Firestore
       const qCommunications = query(collection(db, 'communications'), where('uid', '==', user.uid));
       const unsubCommunications = onSnapshot(qCommunications, (snapshot) => {
-        const cloudData = snapshot.docs.map(doc => doc.data() as CommunicationRecord);
-        setCommunicationRecords(prev => {
-          const mergedMap = new Map<string, CommunicationRecord>();
-          prev.forEach(c => mergedMap.set(c.id, c));
-          cloudData.forEach(c => mergedMap.set(c.id, c));
-          const merged = Array.from(mergedMap.values()).sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp));
-          localforage.setItem(`communications_${user.uid}`, merged);
-          return merged;
-        });
+        try {
+          const cloudData = snapshot.docs.map(doc => doc.data() as CommunicationRecord);
+          setCommunicationRecords(prev => {
+            const mergedMap = new Map<string, CommunicationRecord>();
+            prev.forEach(c => mergedMap.set(c.id, c));
+            cloudData.forEach(c => mergedMap.set(c.id, c));
+            const merged = Array.from(mergedMap.values()).sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp));
+            localforage.setItem(`communications_${user.uid}`, merged);
+            return merged;
+          });
+        } catch (e) {
+          console.warn('Firebase 配额限制，通信记录同步跳过', e);
+        }
       });
 
       // 6. Sync AI Recommendations from Firestore
       const qRecommendations = query(collection(db, 'ai_recommendations'), where('uid', '==', user.uid));
       const unsubRecommendations = onSnapshot(qRecommendations, (snapshot) => {
-        const cloudData = snapshot.docs.map(doc => doc.data() as AIRecommendation);
-        setAIRecommendations(prev => {
-          const mergedMap = new Map<string, AIRecommendation>();
-          prev.forEach(r => mergedMap.set(r.artistId, r));
-          cloudData.forEach(r => mergedMap.set(r.artistId, r));
-          const merged = Array.from(mergedMap.values()).sort((a, b) => +new Date(b.generatedAt) - +new Date(a.generatedAt));
-          localforage.setItem(`ai_recommendations_${user.uid}`, merged);
-          return merged;
-        });
+        try {
+          const cloudData = snapshot.docs.map(doc => doc.data() as AIRecommendation);
+          setAIRecommendations(prev => {
+            const mergedMap = new Map<string, AIRecommendation>();
+            prev.forEach(r => mergedMap.set(r.artistId, r));
+            cloudData.forEach(r => mergedMap.set(r.artistId, r));
+            const merged = Array.from(mergedMap.values()).sort((a, b) => +new Date(b.generatedAt) - +new Date(a.generatedAt));
+            localforage.setItem(`ai_recommendations_${user.uid}`, merged);
+            return merged;
+          });
+        } catch (e) {
+          console.warn('Firebase 配额限制，AI推荐同步跳过', e);
+        }
       });
 
       // 7. Sync Accounts from Firestore
       const qAccounts = query(collection(db, 'accounts'), where('uid', '==', user.uid));
       const unsubAccounts = onSnapshot(qAccounts, (snapshot) => {
-        const cloudData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InstagramAccount));
-        setAccounts(cloudData);
-        
-        if (cloudData.length === 0) {
-          const mockAccounts: InstagramAccount[] = [
-            {
-              id: 'acc_1',
-              username: 'inkflow_bot_1',
-              behaviorProfile: 'observer',
-              status: 'idle',
-              language: 'en',
-              timezone: 'America/New_York',
-              speedProfile: 'safe',
-              activeWindow: { startHour: 9, endHour: 20 },
-              sleepWindow: { startHour: 23, endHour: 7 },
-              dailyCaps: { likes: 30, comments: 12, follows: 8, dms: 6 },
-              jitterMultiplier: 1.2,
-              regionTags: ['US', 'CA', 'NY'],
-              dailyActionCount: 0
-            },
-            {
-              id: 'acc_2',
-              username: 'inkflow_bot_2',
-              behaviorProfile: 'active',
-              status: 'idle',
-              language: 'es',
-              timezone: 'America/Los_Angeles',
-              speedProfile: 'balanced',
-              activeWindow: { startHour: 10, endHour: 22 },
-              sleepWindow: { startHour: 0, endHour: 8 },
-              dailyCaps: { likes: 45, comments: 18, follows: 12, dms: 8 },
-              jitterMultiplier: 1.0,
-              regionTags: ['US', 'MX', 'CA'],
-              dailyActionCount: 0
-            }
-          ];
-          mockAccounts.forEach(acc => {
-            setDoc(doc(db, 'accounts', acc.id), { ...acc, uid: user.uid });
-          });
+        try {
+          const cloudData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InstagramAccount));
+          setAccounts(cloudData);
+          
+          if (cloudData.length === 0) {
+            const mockAccounts: InstagramAccount[] = [
+              {
+                id: 'acc_1',
+                username: 'inkflow_bot_1',
+                behaviorProfile: 'observer',
+                status: 'idle',
+                language: 'en',
+                timezone: 'America/New_York',
+                speedProfile: 'safe',
+                activeWindow: { startHour: 9, endHour: 20 },
+                sleepWindow: { startHour: 23, endHour: 7 },
+                dailyCaps: { likes: 30, comments: 12, follows: 8, dms: 6 },
+                jitterMultiplier: 1.2,
+                regionTags: ['US', 'CA', 'NY'],
+                dailyActionCount: 0
+              },
+              {
+                id: 'acc_2',
+                username: 'inkflow_bot_2',
+                behaviorProfile: 'active',
+                status: 'idle',
+                language: 'es',
+                timezone: 'America/Los_Angeles',
+                speedProfile: 'balanced',
+                activeWindow: { startHour: 10, endHour: 22 },
+                sleepWindow: { startHour: 0, endHour: 8 },
+                dailyCaps: { likes: 45, comments: 18, follows: 12, dms: 8 },
+                jitterMultiplier: 1.0,
+                regionTags: ['US', 'MX', 'CA'],
+                dailyActionCount: 0
+              }
+            ];
+            mockAccounts.forEach(acc => {
+              setDoc(doc(db, 'accounts', acc.id), { ...acc, uid: user.uid });
+            });
+          }
+        } catch (e) {
+          console.warn('Firebase 配额限制，账号同步跳过', e);
         }
       });
 
       // 8. Sync Assignments from Firestore
       const qAssignments = query(collection(db, 'assignments'), where('uid', '==', user.uid));
       const unsubAssignments = onSnapshot(qAssignments, (snapshot) => {
-        const cloudData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TaskAssignment));
-        setAssignments(cloudData);
+        try {
+          const cloudData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TaskAssignment));
+          setAssignments(cloudData);
+        } catch (e) {
+          console.warn('Firebase 配额限制，任务分配同步跳过', e);
+        }
       });
 
       // 9. Sync Inventory from Firestore
       const qInventory = query(collection(db, 'inventory_items'), where('uid', '==', user.uid));
       const unsubInventory = onSnapshot(qInventory, (snapshot) => {
-        const cloudData = snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...(snapshotDoc.data() as InventoryItem) } as InventoryItem));
-        if (cloudData.length > 0) {
-          setInventoryItems(cloudData);
-          localforage.setItem(`inventory_${user.uid}`, cloudData);
+        try {
+          const cloudData = snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...(snapshotDoc.data() as InventoryItem) } as InventoryItem));
+          if (cloudData.length > 0) {
+            setInventoryItems(cloudData);
+            localforage.setItem(`inventory_${user.uid}`, cloudData);
+          }
+        } catch (e) {
+          console.warn('Firebase 配额限制，库存同步跳过', e);
         }
       });
 
       const inventoryConfigRef = doc(db, 'settings', `${user.uid}_inventory_sync`);
       const unsubInventoryConfig = onSnapshot(inventoryConfigRef, (snapshotDoc) => {
-        if (!snapshotDoc.exists()) return;
-        const payload = snapshotDoc.data() as ShopifyInventorySyncConfig;
-        const next = { ...DEFAULT_INVENTORY_SYNC_CONFIG, ...payload };
-        setInventorySyncConfig(next);
-        localforage.setItem(`inventory_sync_config_${user.uid}`, next);
+        try {
+          if (!snapshotDoc.exists()) return;
+          const payload = snapshotDoc.data() as ShopifyInventorySyncConfig;
+          const next = { ...DEFAULT_INVENTORY_SYNC_CONFIG, ...payload };
+          setInventorySyncConfig(next);
+          localforage.setItem(`inventory_sync_config_${user.uid}`, next);
+        } catch (e) {
+          console.warn('Firebase 配额限制，库存配置同步跳过', e);
+        }
       });
 
       // Return cleanup function
@@ -937,7 +1006,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return () => {};
     }
   }, [user]);
-
   useEffect(() => {
     let cleanup: (() => void) | undefined;
     if (user) {
@@ -1090,7 +1158,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Calculate Conversion DNA from Customers
   const conversionDNA = useMemo(() => {
     const customers = rawArtists.filter(a => a.stage === 'customers' && a.orderCount > 0);
-    if (customers.length < 3) return null; // Need a baseline
+    if (customers.length < 3) return null;
 
     const styles: Record<string, number> = {};
     const locations: Record<string, number> = {};
@@ -1123,7 +1191,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         let baseScore = 0;
         let currentStage = a.stage;
 
-      // 0. Check for Dormancy (90 days) and Restock Alerts (45-60 days)
       if (a.stage === 'customers' && a.lastOrderDate) {
         const lastOrder = new Date(a.lastOrderDate);
         const daysSinceOrder = (Date.now() - lastOrder.getTime()) / (1000 * 60 * 60 * 24);
@@ -1133,7 +1200,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
       
-      // 1. Base Similarity from Conversion DNA (if exists)
       if (conversionDNA) {
         if (a.style && conversionDNA.topStyles.includes(a.style)) baseScore += 40;
         if (a.location && conversionDNA.topLocations.includes(a.location)) baseScore += 30;
@@ -1142,11 +1208,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           baseScore += 10;
         }
       } else {
-        // Fallback base score if no DNA yet
         baseScore = 50; 
       }
 
-      // 2. Apply Learned Global Weights (The "Smart Discovery" part)
       let weightedScore = baseScore;
       const tags = [a.style, a.location, a.activityLevel].filter(Boolean) as string[];
       
@@ -1168,20 +1232,15 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return artists
       .filter(a => a.stage === 'outreach' || a.stage === 'dormant')
       .sort((a, b) => {
-        // 1. Calculate Priority Score
-        // Base: Heat Score + Similarity Score
         let aPriority = (a.heatScore || 0) + (a.similarityScore || 0);
         let bPriority = (b.heatScore || 0) + (b.similarityScore || 0);
 
-        // 2. Massive Boost for "Just Followed Back" (The "Harvest" trigger)
         if (a.hasFollowedBack && a.stage === 'outreach') aPriority += 100;
         if (b.hasFollowedBack && b.stage === 'outreach') bPriority += 100;
 
-        // 3. Boost for Dormant Re-activation
         if (a.stage === 'dormant') aPriority += 50;
         if (b.stage === 'dormant') bPriority += 50;
 
-        // 4. Recency Boost (Interaction within last 24h)
         const dayInMs = 24 * 60 * 60 * 1000;
         if (a.lastInteractionDate && (Date.now() - new Date(a.lastInteractionDate).getTime() < dayInMs)) aPriority += 20;
         if (b.lastInteractionDate && (Date.now() - new Date(b.lastInteractionDate).getTime() < dayInMs)) bPriority += 20;
@@ -1193,24 +1252,19 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshHarvestList = useCallback(() => {
     setIsScanning(true);
-    toast.info('Re-calculating Daily Harvest List based on updated feature weights...');
+    toast.info('Re-calculating Daily Harvest List...');
     setTimeout(() => {
       setIsScanning(false);
-      toast.success('Daily Harvest List Refreshed', {
-        description: 'Targeting accuracy improved based on recent feedback.'
-      });
+      toast.success('Daily Harvest List Refreshed');
     }, 1500);
   }, []);
 
   const calculateHeatScore = (artist: CRMArtist): { score: number, isHighIntent: boolean } => {
-    // view_count * 1 + like_count * 5 + comment_count * 20 + follow_back * 40
     const interactionScore = (artist.storyViews24h || 0) * 1 + 
                             (artist.likeCount || 0) * 5 + 
                             (artist.replyCount || 0) * 20 + 
                             (artist.hasFollowedBack ? 40 : 0);
     
-    // Use the higher of the current score or the calculated interaction score
-    // This prevents manually seeded high scores from being reset by the first interaction
     const currentScore = artist.heatScore || 0;
     const finalScore = Math.max(currentScore, interactionScore);
     
@@ -1221,7 +1275,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const moveArtist = useCallback(async (artistId: string, toStage: CRMStage) => {
     if (!user) return;
     
-    // 1. Update Local State & Cache immediately
     setRawArtists(prev => {
       const updated = prev.map(a => a.id === artistId ? { ...a, stage: toStage } : a);
       localforage.setItem(`artists_${user.uid}`, updated);
@@ -1229,10 +1282,15 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     toast.success(`Artist moved to ${toStage}`);
 
-    // 2. Try Cloud Sync
     try {
       const docRef = doc(db, 'artists', artistId);
       await setDoc(docRef, sanitizeForFirestore({ stage: toStage }), { merge: true });
+      
+      // 同步到Neon
+      sql`
+        UPDATE artists SET stage = ${toStage}, last_updated = NOW() WHERE id = ${artistId}
+      `.catch(e => console.error('Neon moveArtist failed', e));
+      
     } catch (e: any) {
       console.error("Failed to sync move to cloud", e);
       if (e.message.includes("resource-exhausted")) {
@@ -1244,7 +1302,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateArtist = useCallback(async (artistId: string, updates: Partial<CRMArtist>) => {
     if (!user) return;
     
-    // 1. Calculate and Update Local State & Cache immediately
     setRawArtists(prev => {
       const artist = prev.find(a => a.id === artistId);
       if (!artist) return prev;
@@ -1258,7 +1315,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return updatedList;
     });
 
-    // 2. Try Cloud Sync
     try {
       const artist = rawArtistsRef.current.find(a => a.id === artistId);
       if (!artist) return;
@@ -1269,6 +1325,18 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       
       const docRef = doc(db, 'artists', artistId);
       await setDoc(docRef, sanitizeForFirestore(finalUpdates), { merge: true });
+      
+      // 同步到Neon
+      sql`
+        INSERT INTO artists (id, uid, full_name, stage, heat_score, similarity_score, last_updated)
+        VALUES (${artistId}, ${user.uid}, ${finalUpdates.fullName || ''}, ${finalUpdates.stage || 'outreach'}, ${finalUpdates.heatScore || 0}, ${finalUpdates.similarityScore || 0}, NOW())
+        ON CONFLICT (id) DO UPDATE SET
+          full_name = EXCLUDED.full_name,
+          stage = EXCLUDED.stage,
+          heat_score = EXCLUDED.heat_score,
+          similarity_score = EXCLUDED.similarity_score,
+          last_updated = NOW()
+      `.catch(e => console.error('Neon updateArtist failed', e));
     } catch (e: any) {
       console.error("Failed to sync update to cloud", e);
     }
@@ -1453,6 +1521,13 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       await setDoc(doc(db, 'interactions', interactionId), { ...newInteraction, uid: user.uid });
+      
+      // 同步到Neon
+      sql`
+        INSERT INTO interactions (id, uid, artist_id, type, weight, timestamp, content)
+        VALUES (${interactionId}, ${user.uid}, ${artistId}, ${normalizedType}, ${weights[normalizedType]}, ${newInteraction.timestamp}, ${content || ''})
+      `.catch(e => console.error('Neon addInteraction failed', e));
+      
       const currentArtist = rawArtists.find(a => a.id === artistId);
       await addCommunicationRecord({
         artistId,
@@ -1464,7 +1539,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         lifecycleStageAtTime: currentArtist ? deriveLifecycleStage(currentArtist) : undefined
       });
       
-      // Update artist heat score
       const artist = rawArtists.find(a => a.id === artistId);
       if (artist) {
         const updates: Partial<CRMArtist> = {
@@ -1485,7 +1559,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updates.heatScore = score;
         updates.isHighIntent = isHighIntent;
 
-        // Threshold Trigger: If heat_score >= 80, set status to 'engaged' and trigger a UI alert
         if (score >= 80 && artist.stage === 'outreach') {
           updates.stage = 'engaged';
           toast.success('🔥 High-Value Connection Detected!', {
@@ -1522,6 +1595,13 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       await setDoc(doc(db, 'orders', orderId), { ...newOrder, uid: user.uid });
+      
+      // 同步到Neon
+      sql`
+        INSERT INTO orders (id, uid, artist_id, product_name, amount, order_date)
+        VALUES (${orderId}, ${user.uid}, ${artistId}, ${productName}, ${amount}, ${newOrder.orderDate})
+      `.catch(e => console.error('Neon addOrder failed', e));
+      
       await addCommunicationRecord({
         artistId,
         channel: 'system',
@@ -1557,26 +1637,23 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!user) return;
     
     try {
-      // 1. Update Local State & Cache
       setRawArtists(prev => {
         const updatedList = prev.filter(a => a.id !== artistId);
         localforage.setItem(`artists_${user.uid}`, updatedList);
         return updatedList;
       });
 
-      // 2. Delete from Firestore
       const docRef = doc(db, 'artists', artistId);
       await deleteDoc(docRef);
       
-      toast.success("Lead permanently deleted", {
-        description: "The artist has been removed from your CRM and cloud storage."
-      });
+      sql`DELETE FROM artists WHERE id = ${artistId}`.catch(e => console.error('Neon deleteArtist failed', e));
+      
+      toast.success("Lead permanently deleted");
     } catch (e) {
       console.error("Failed to delete artist", e);
       toast.error("Failed to remove artist from cloud");
     }
   }, [user]);
-
   const analyzeArtistVisualDNA = useCallback(async (artistId: string, imageUrl: string) => {
     if (!user) return;
     
@@ -1687,7 +1764,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [rawArtists, markAsConverted, updateArtist]);
 
-  const importCSV = useCallback(async (
+    const importCSV = useCallback(async (
     data: any[],
     defaultLocation?: string,
     accountTag: string = 'default',
@@ -1722,7 +1799,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return val.replace(/\uFFFD/g, '').trim();
       };
 
-      // 1. Fast ID Lookup Map - Use Ref to avoid dependency on rawArtists
       const artistMap = new Map<string, CRMArtist>();
       const phoneMap = new Map<string, CRMArtist>();
       const nameMap = new Map<string, CRMArtist>();
@@ -1731,7 +1807,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       rawArtistsRef.current.forEach(a => {
         if (a.id) artistMap.set(a.id, a);
         if (a.phone) phoneMap.set(a.phone.replace(/\D/g, ''), a);
-        // Avoid matching on generic names like "Unknown Shop"
         if (a.shopName && a.shopName.toLowerCase().trim() !== 'unknown shop') {
           nameMap.set(a.shopName.toLowerCase().trim(), a);
         }
@@ -1741,7 +1816,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       let identicalSkipCount = 0;
       let mappingErrorCount = 0;
 
-      // 2. Fast Mapping (O(M))
       console.log("Mapping rows...");
       data.forEach((row, index) => {
         try {
@@ -1757,7 +1831,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (username.includes('instagram.com/')) {
               username = username.split('instagram.com/')[1].split('/')[0].split('?')[0];
             }
-            // Final cleanup for username
             username = username.replace(/[^\w@.]/g, '');
           } else {
             username = `user_${index}_${Date.now()}`;
@@ -1790,24 +1863,21 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             country: countryRaw
           });
           
-          // Try to find a stable ID from common scraper fields
           const placeId = row.place_id || row.cid || (row.metadata && (row.metadata.place_id || row.metadata.cid));
           const safeShopName = shopName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
           const safeLoc = (address || geo.location).toLowerCase().replace(/[^a-z0-9]+/g, '_');
           
-          // Make stableId more unique if placeId is missing
           let stableId = placeId;
           if (!stableId) {
             const uniqueSuffix = phone || email || `idx_${index}`;
-            stableId = `shop_${safeShopName}_${safeLoc}_${uniqueSuffix}`;
+            stableId = `shop_${safeShopName}_${safeLoc}_${uniqueSuffix}`
+  .replace(/\//g, '_')
+  .replace(/N\/A/g, 'NA');
           }
 
-          // Check if already exists (by ID, Phone, or Name)
-          // Only match by name if it's not a generic "Unknown Shop"
           const existingByName = (shopName.toLowerCase().trim() !== 'unknown shop') ? nameMap.get(shopName.toLowerCase().trim()) : null;
           const existing = artistMap.get(stableId) || (phone ? phoneMap.get(phone) : null) || existingByName;
           
-          // Smart Skip: If data is identical to existing, don't write to save quota
           if (existing) {
             const isIdentical = 
               existing.shopName === shopName &&
@@ -1818,12 +1888,12 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             
             if (isIdentical && !row.forceUpdate) {
               identicalSkipCount++;
-              return; // Skip writing to save quota
+              return;
             }
           }
 
           const artist: CRMArtist = {
-            id: existing?.id || stableId,
+            id: (existing?.id || stableId).replace(/\//g, '_'),
             username: username || existing?.username,
             fullName: shopName || existing?.fullName,
             profilePic: existing?.profilePic || `https://picsum.photos/seed/shop${index}/100/100`,
@@ -1878,7 +1948,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               existing?.contacts || [],
               buildDefaultContacts({
                 ...(existing || {}),
-                id: existing?.id || stableId,
+                id: (existing?.id || stableId).replace(/\//g, '_'),
                 ig_handle: username.startsWith('user_') ? null : username,
                 username: username || existing?.username || '',
                 fullName: shopName || existing?.fullName || '',
@@ -1928,9 +1998,8 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }));
       
-      // 3. Save to Local Storage IMMEDIATELY (Fast & Free)
       setScanProgress({ current: 0, total: allArtistsToSave.length });
-      toast.info(`Saving ${allArtistsToSave.length} leads to local database...`, { id: 'import-progress' });
+      toast.info(`Saving ${allArtistsToSave.length} leads to Neon database...`, { id: 'import-progress' });
 
       const updatedArtists = [...rawArtistsRef.current];
       const newIds = new Set(allArtistsToSave.map(a => a.id));
@@ -1944,68 +2013,54 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       });
       
-      // CRITICAL: Update state and cache BEFORE cloud sync
       lastLocalUpdateRef.current = Date.now();
       await localforage.setItem(`artists_${user.uid}`, updatedArtists);
       setRawArtists(updatedArtists);
       
       toast.success(`Locally saved ${allArtistsToSave.length} leads!`, { 
         id: 'import-progress',
-        description: "Data is safe in your browser. Syncing with cloud..."
+        description: "Syncing to Neon..."
       });
 
-      // 4. Bulk Sync to Firestore (Batches of 500)
-      setScanProgress({ current: 0, total: allArtistsToSave.length });
-      
-      const FIRESTORE_BATCH_LIMIT = 500;
-      let quotaHit = false;
-
-      for (let i = 0; i < allArtistsToSave.length; i += FIRESTORE_BATCH_LIMIT) {
-        if (quotaHit) break;
-
-        const chunk = allArtistsToSave.slice(i, i + FIRESTORE_BATCH_LIMIT);
-        const batch = writeBatch(db);
-        
-        chunk.forEach(artist => {
-          if (artist.id) {
-            batch.set(doc(db, 'artists', artist.id), sanitizeForFirestore({ ...artist, uid: user.uid }), { merge: true });
-          }
-        });
-        
-        try {
-          console.log(`Committing cloud batch ${i / FIRESTORE_BATCH_LIMIT + 1}...`);
-          // Use a longer timeout for large imports
-          const commitPromise = batch.commit();
-          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), 30000));
-          
-          await Promise.race([commitPromise, timeoutPromise]);
-          
-          setScanProgress({ current: i + chunk.length, total: allArtistsToSave.length });
-        } catch (commitErr: any) {
-          console.error("Batch commit failed:", commitErr);
-          const message = commitErr?.message || String(commitErr);
-          
-          if (message.includes("resource-exhausted") || message.includes("Quota exceeded") || message === "TIMEOUT") {
-            quotaHit = true;
-            toast.warning(message === "TIMEOUT" ? "Cloud Sync is slow" : "Cloud Quota Hit", {
-              description: "Data is safe LOCALLY. Cloud backup will continue in background.",
-              duration: 8000
-            });
-            break;
-          }
-        }
-        
-        // Small delay between batches to avoid overwhelming the connection
-        await new Promise(resolve => setTimeout(resolve, 500));
+      // ===== 直接写 Neon，分小批写入 =====
+      const NEON_BATCH_SIZE = 200;
+      for (let i = 0; i < allArtistsToSave.length; i += NEON_BATCH_SIZE) {
+        const neonChunk = allArtistsToSave.slice(i, i + NEON_BATCH_SIZE);
+        const insertPromises = neonChunk.map(artist => 
+          sql`
+            INSERT INTO artists (id, uid, username, full_name, shop_name, stage, heat_score, similarity_score, dna_tags, followers, order_count, total_spent, location, city, state, country, style, last_interaction_date, last_order_date, is_high_intent, last_updated)
+            VALUES (${artist.id}, ${user.uid}, ${artist.username || ''}, ${artist.fullName || ''}, ${artist.shopName || ''}, ${artist.stage || 'outreach'}, ${artist.heatScore || 0}, ${artist.similarityScore || 0}, ${artist.dnaTags || []}, ${artist.followers || 0}, ${artist.orderCount || 0}, ${artist.totalSpent || 0}, ${artist.location || ''}, ${artist.city || ''}, ${artist.state || ''}, ${artist.country || ''}, ${artist.style || ''}, ${artist.lastInteractionDate || ''}, ${artist.lastOrderDate || ''}, ${artist.isHighIntent || false}, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+              username = EXCLUDED.username,
+              full_name = EXCLUDED.full_name,
+              shop_name = EXCLUDED.shop_name,
+              stage = EXCLUDED.stage,
+              heat_score = EXCLUDED.heat_score,
+              similarity_score = EXCLUDED.similarity_score,
+              dna_tags = EXCLUDED.dna_tags,
+              followers = EXCLUDED.followers,
+              order_count = EXCLUDED.order_count,
+              total_spent = EXCLUDED.total_spent,
+              location = EXCLUDED.location,
+              city = EXCLUDED.city,
+              state = EXCLUDED.state,
+              country = EXCLUDED.country,
+              style = EXCLUDED.style,
+              last_interaction_date = EXCLUDED.last_interaction_date,
+              last_order_date = EXCLUDED.last_order_date,
+              is_high_intent = EXCLUDED.is_high_intent,
+              last_updated = NOW()
+          `.catch(e => console.error('Neon importCSV failed for', artist.id, e))
+        );
+        await Promise.all(insertPromises);
+        setScanProgress({ current: i + neonChunk.length, total: allArtistsToSave.length });
       }
+      // ===== Neon 写入结束 =====
 
-      if (!quotaHit) {
-        toast.success(`Cloud sync complete!`, { id: 'import-progress' });
-      }
+      toast.success(`Neon sync complete! ${allArtistsToSave.length} leads saved.`, { id: 'import-progress' });
 
       // 5. Background AI Enrichment (Non-blocking)
       if (artistsToEnrich.length > 0) {
-        // We don't await this, it runs in the background
         setTimeout(() => {
           processBackgroundAIEnrichment(artistsToEnrich, user.uid);
         }, 1000);
@@ -2078,16 +2133,30 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         ...((enriched.styleVector && typeof enriched.styleVector === 'object') ? enriched.styleVector : {})
                       }
                     },
-                    uid: user.uid // Ensure UID is present to satisfy security rules
+                    uid: user.uid
                   };
-                  // Use set with merge: true to handle documents that might be missing UID
                   batch.set(doc(db, 'artists', a.id), sanitizeForFirestore(updateData), { merge: true });
                   localUpdates.push({ ...a, ...updateData });
                 }
               });
               await batch.commit();
 
-              // Update local state for immediate feedback
+              // 同步到Neon
+              for (const updatedArtist of localUpdates) {
+                sql`
+                  INSERT INTO artists (id, uid, username, full_name, activity_level, style, dna_tags, followers, last_updated)
+                  VALUES (${updatedArtist.id}, ${user.uid}, ${updatedArtist.username || ''}, ${updatedArtist.fullName || ''}, ${updatedArtist.activityLevel || ''}, ${updatedArtist.style || ''}, ${updatedArtist.dnaTags || []}, ${updatedArtist.followers || 0}, NOW())
+                  ON CONFLICT (id) DO UPDATE SET
+                    username = EXCLUDED.username,
+                    full_name = EXCLUDED.full_name,
+                    activity_level = EXCLUDED.activity_level,
+                    style = EXCLUDED.style,
+                    dna_tags = EXCLUDED.dna_tags,
+                    followers = EXCLUDED.followers,
+                    last_updated = NOW()
+                `.catch(e => console.error('Neon enrich failed for', updatedArtist.id, e));
+              }
+
               setRawArtists(prev => {
                 const next = [...prev];
                 localUpdates.forEach(update => {
@@ -2123,7 +2192,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let newCount = 0;
     const artistsToSave: CRMArtist[] = [];
     
-    // Create lookup maps for O(1) matching from current state
     const emailMap = new Map<string, CRMArtist>();
     const phoneMap = new Map<string, CRMArtist>();
     const nameMap = new Map<string, CRMArtist>();
@@ -2163,11 +2231,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         country
       });
 
-      // Try to find existing artist
       let artist = emailMap.get(email) || phoneMap.get(phone) || nameMap.get(fullName.toLowerCase());
 
       if (artist) {
-        // Update existing
         const updatedArtist = {
           ...artist,
           stage: 'customers',
@@ -2182,7 +2248,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         artistsToSave.push(updatedArtist);
         matchCount++;
       } else {
-        // Create new
         const newArtist: CRMArtist = {
           id: `shopify_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           username: email.split('@')[0] || `user_${Math.random().toString(36).substr(2, 5)}`,
@@ -2220,7 +2285,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     if (artistsToSave.length > 0) {
-      // 1. Save Locally First
       toast.info(`Saving ${artistsToSave.length} Shopify matches to local database...`, { id: 'shopify-sync' });
       
       const updatedArtists = [...rawArtistsRef.current];
@@ -2241,7 +2305,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         description: `Matched: ${matchCount} | New: ${newCount}. Cloud sync in progress...`
       });
 
-      // 2. Background Cloud Sync
       setScanProgress({ current: 0, total: artistsToSave.length });
       const FIRESTORE_BATCH_LIMIT = 500;
       let quotaHit = false;
@@ -2257,11 +2320,25 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         try {
           console.log(`Committing Shopify cloud batch ${i / FIRESTORE_BATCH_LIMIT + 1}...`);
-          // Use a timeout for large imports
           const commitPromise = batch.commit();
           const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), 30000));
           
           await Promise.race([commitPromise, timeoutPromise]);
+          
+          // 同步到Neon
+          for (const artist of chunk) {
+            sql`
+              INSERT INTO artists (id, uid, username, full_name, shop_name, stage, heat_score, order_count, total_spent, last_order_date, customer_tier, last_updated)
+              VALUES (${artist.id}, ${user.uid}, ${artist.username || ''}, ${artist.fullName || ''}, ${artist.shopName || ''}, ${artist.stage || 'customers'}, ${artist.heatScore || 50}, ${artist.orderCount || 0}, ${artist.totalSpent || 0}, ${artist.lastOrderDate || new Date().toISOString()}, ${artist.customerTier || 'new'}, NOW())
+              ON CONFLICT (id) DO UPDATE SET
+                stage = EXCLUDED.stage,
+                order_count = EXCLUDED.order_count,
+                total_spent = EXCLUDED.total_spent,
+                last_order_date = EXCLUDED.last_order_date,
+                customer_tier = EXCLUDED.customer_tier,
+                last_updated = NOW()
+            `.catch(e => console.error('Neon shopify sync failed for', artist.id, e));
+          }
           
           setScanProgress({ current: Math.min(i + FIRESTORE_BATCH_LIMIT, artistsToSave.length), total: artistsToSave.length });
         } catch (err: any) {
@@ -3003,6 +3080,23 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           try {
             await updateBatch.commit();
+            // 同步到Neon
+            for (const updatedArtist of localUpdates) {
+              sql`
+                INSERT INTO artists (id, uid, username, full_name, followers, activity_level, style, dna_tags, ig_handle, facebook_id, last_updated)
+                VALUES (${updatedArtist.id}, ${user.uid}, ${updatedArtist.username || ''}, ${updatedArtist.fullName || ''}, ${updatedArtist.followers || 0}, ${updatedArtist.activityLevel || ''}, ${updatedArtist.style || ''}, ${updatedArtist.dnaTags || []}, ${updatedArtist.ig_handle || null}, ${updatedArtist.facebookId || null}, NOW())
+                ON CONFLICT (id) DO UPDATE SET
+                  username = EXCLUDED.username,
+                  full_name = EXCLUDED.full_name,
+                  followers = EXCLUDED.followers,
+                  activity_level = EXCLUDED.activity_level,
+                  style = EXCLUDED.style,
+                  dna_tags = EXCLUDED.dna_tags,
+                  ig_handle = EXCLUDED.ig_handle,
+                  facebook_id = EXCLUDED.facebook_id,
+                  last_updated = NOW()
+              `.catch(e => console.error('Neon enrich batch failed for', updatedArtist.id, e));
+            }
           } catch (e) {
             batchToEnrich.forEach((a) => {
               if (!successIds.includes(a.id)) {
@@ -3076,11 +3170,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [user, rawArtists, refreshDeepScanTask, toDeepScanTaskStatus]);
 
-  // Automation Orchestration Logic
   const assignTaskToAccount = useCallback(async (artistId: string): Promise<string | null> => {
     if (!user) return null;
 
-    // 1. Check if artist is already assigned in the last 7 days
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
@@ -3094,7 +3186,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return existingAssignment.accountId;
     }
 
-    // 2. Find an available account by capacity + geo/language fit
     const artist = rawArtists.find(a => a.id === artistId);
     const targetLanguage = inferArtistLanguage(artist);
     const targetRegion = (artist?.country || artist?.location || '').toUpperCase();
@@ -3126,7 +3217,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return null;
     }
 
-    // 3. Create assignment
     const newAssignment: TaskAssignment = {
       id: crypto.randomUUID(),
       artistId,
@@ -3330,7 +3420,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       await batch.commit();
       
-      // Clear interactions too
       const qInt = query(collection(db, 'interactions'), where('uid', '==', user.uid));
       const snapInt = await getDocs(qInt);
       const batchInt = writeBatch(db);
@@ -3350,6 +3439,12 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setInventorySnapshots([]);
       setInventoryImportTemplateHeadersState([]);
       setInventorySyncConfig(DEFAULT_INVENTORY_SYNC_CONFIG);
+      
+      // 清除Neon数据
+      sql`DELETE FROM artists WHERE uid = ${user.uid}`.catch(e => console.error('Neon clearAllData failed', e));
+      sql`DELETE FROM interactions WHERE uid = ${user.uid}`.catch(e => console.error('Neon clearAllData interactions failed', e));
+      sql`DELETE FROM orders WHERE uid = ${user.uid}`.catch(e => console.error('Neon clearAllData orders failed', e));
+      
       toast.success("All data cleared successfully.");
     } catch (e) {
       console.error("Failed to clear data", e);
@@ -3403,6 +3498,13 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
         await batch.commit();
         setScanProgress({ current: Math.min(i + FIRESTORE_BATCH_SIZE, updatedArtists.length), total: updatedArtists.length });
+        
+        // 同步到Neon (相似度分数)
+        for (const artist of chunk) {
+          sql`
+            UPDATE artists SET similarity_score = ${artist.similarityScore}, last_updated = NOW() WHERE id = ${artist.id}
+          `.catch(e => console.error('Neon markAsIdealTarget failed', e));
+        }
       }
 
       const recommended = updatedArtists.filter(a => a.stage === 'outreach' && a.isRecommended).length;
@@ -3443,9 +3545,13 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const updatedList = prev.map(a => a.id === artistId ? updatedItem : a);
       localforage.setItem(`artists_${user.uid}`, updatedList);
       
-      // Sync to cloud
       const docRef = doc(db, 'artists', artistId);
       setDoc(docRef, sanitizeForFirestore({ heatScore: newScore, isHighIntent, stage: newStage }), { merge: true });
+      
+      // 同步到Neon
+      sql`
+        UPDATE artists SET heat_score = ${newScore}, is_high_intent = ${isHighIntent}, stage = ${newStage}, last_updated = NOW() WHERE id = ${artistId}
+      `.catch(e => console.error('Neon simulateInteraction failed', e));
       
       return updatedList;
     });
@@ -3529,7 +3635,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     setRawArtists(prev => {
       const mergedMap = new Map<string, CRMArtist>();
-      // Build a map of existing artists by username for lookup
       const existingByUsername = new Map<string, CRMArtist>();
       prev.forEach(a => {
         mergedMap.set(a.id, a);
@@ -3539,7 +3644,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const finalTestArtists = testArtists.map(ta => {
         const existing = existingByUsername.get(ta.username.toLowerCase());
         if (existing) {
-          return { ...existing, ...ta, id: existing.id }; // Reuse existing ID
+          return { ...existing, ...ta, id: existing.id };
         }
         return ta;
       });
@@ -3549,10 +3654,24 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const newList = Array.from(mergedMap.values());
       localforage.setItem(`artists_${user.uid}`, newList);
       
-      // Sync to cloud
       finalTestArtists.forEach(a => {
         const docRef = doc(db, 'artists', a.id);
         setDoc(docRef, sanitizeForFirestore({ ...a, uid: user.uid }), { merge: true });
+        // 同步到Neon
+        sql`
+          INSERT INTO artists (id, uid, username, full_name, stage, heat_score, similarity_score, dna_tags, last_interaction_date, order_count, last_updated)
+          VALUES (${a.id}, ${user.uid}, ${a.username || ''}, ${a.fullName || ''}, ${a.stage || 'outreach'}, ${a.heatScore || 0}, ${a.similarityScore || 0}, ${a.dnaTags || []}, ${a.lastInteractionDate || ''}, ${a.orderCount || 0}, NOW())
+          ON CONFLICT (id) DO UPDATE SET
+            username = EXCLUDED.username,
+            full_name = EXCLUDED.full_name,
+            stage = EXCLUDED.stage,
+            heat_score = EXCLUDED.heat_score,
+            similarity_score = EXCLUDED.similarity_score,
+            dna_tags = EXCLUDED.dna_tags,
+            last_interaction_date = EXCLUDED.last_interaction_date,
+            order_count = EXCLUDED.order_count,
+            last_updated = NOW()
+        `.catch(e => console.error('Neon seedTestData failed for', a.id, e));
       });
       
       return newList;
@@ -3562,8 +3681,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       description: "Added/Updated 5 dummy artists in your outreach list."
     });
   }, [user]);
-
-  // Dormant logic is handled via useMemo in the artists derivation
 
   return (
     <CRMContext.Provider value={{ 

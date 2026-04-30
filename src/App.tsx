@@ -62,7 +62,10 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
     return (
       <button
         key={tab.id}
-        onClick={() => setActiveTab(tab.id as Tab)}
+        onClick={() => {
+        setActiveTab(tab.id as Tab);
+        sessionStorage.setItem('activeTab', tab.id as string);
+    }}
         className={cn(
           "w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group relative",
           isActive 
@@ -227,6 +230,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
           <button 
             onClick={() => {
               setActiveTab('automation');
+              sessionStorage.setItem('activeTab', 'automation');
               toast.success("Campaign Engine Initialized", {
                 description: "Redirecting to Automation Command Center..."
               });
@@ -261,7 +265,9 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+  return (sessionStorage.getItem('activeTab') as Tab) || 'dashboard';
+});
 
   return (
     <CRMProvider>

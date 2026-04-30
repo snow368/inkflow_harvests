@@ -1,11 +1,13 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import cors from 'cors';
+import { Router } from 'express';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import Database from 'better-sqlite3';
+import Papa from 'papaparse';
 
 dotenv.config();
 
@@ -140,6 +142,16 @@ const pickBest = (links: string[]): string | null => {
   return (filtered[0] || links[0]) ?? null;
 };
 
+const parseCsvRows = (text: string): { rows: Record<string, any>[]; headers: string[] } => {
+  const parsed = Papa.parse<Record<string, any>>(text, {
+    header: true,
+    skipEmptyLines: true
+  });
+  const rows = Array.isArray(parsed.data) ? parsed.data : [];
+  const headers = Array.isArray(parsed.meta?.fields) ? parsed.meta.fields.filter(Boolean) : [];
+  return { rows, headers };
+};
+
 const scoreCandidate = (candidate: string | null, source: 'website' | 'search', shop: ShopLookupInput): number => {
   if (!candidate) return 0;
   let score = source === 'website' ? 0.78 : 0.58;
@@ -157,13 +169,44 @@ const scoreCandidate = (candidate: string | null, source: 'website' | 'search', 
 
 const buildSearchQueries = (shop: ShopLookupInput): string[] => {
   const base = [shop.shopName, shop.address].filter(Boolean).join(' ');
-  if (!base.trim()) return [];
-  return [
+  const website = ensureHttp(shop.website || '') || '';
+  let domain = '';
+  try {
+    if (website) {
+      domain = new URL(website).hostname.replace(/^www\./i, '');
+    }
+  } catch {}
+
+  const queries = [
     `${base} instagram`,
+    `${base} site:instagram.com`,
+    `${shop.shopName || ''} ${shop.address || ''} tattoo instagram`,
+    `${shop.shopName || ''} instagram`,
     `${base} facebook`,
     `${base} tiktok`,
-    `${base} tattoo studio social media`
-  ];
+    `${base} tattoo studio social media`,
+    ...(domain ? [`${domain} instagram`, `${shop.shopName || ''} ${domain} instagram`] : [])
+  ].map((q) => q.trim()).filter(Boolean);
+
+  return Array.from(new Set(queries));
+};
+
+const tokenize = (text: string): string[] =>
+  String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, ' ')
+    .split(/\s+/)
+    .filter((x) => x.length >= 3);
+
+const overlapScore = (a: string[], b: string[]): number => {
+  if (a.length === 0 || b.length === 0) return 0;
+  const sa = new Set(a);
+  const sb = new Set(b);
+  let hit = 0;
+  sa.forEach((x) => {
+    if (sb.has(x)) hit += 1;
+  });
+  return hit / Math.max(1, Math.min(sa.size, sb.size));
 };
 
 const lookupSocialForShop = async (shop: ShopLookupInput) => {
@@ -187,17 +230,23 @@ const lookupSocialForShop = async (shop: ShopLookupInput) => {
   }
 
   if (merged.instagram.length === 0 || merged.facebook.length === 0 || merged.tiktok.length === 0) {
-    const queries = buildSearchQueries(shop).slice(0, 3);
+    const queries = buildSearchQueries(shop).slice(0, 6);
     for (const q of queries) {
-      const ddgUrl = `https://duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
-      const searchHtml = await fetchText(ddgUrl, 7000);
-      if (!searchHtml) continue;
-      const found = findSocialLinks(searchHtml);
-      if (merged.instagram.length === 0) merged.instagram.push(...found.instagram);
-      if (merged.facebook.length === 0) merged.facebook.push(...found.facebook);
-      if (merged.tiktok.length === 0) merged.tiktok.push(...found.tiktok);
-      merged.emails.push(...found.emails);
-      merged.whatsapp.push(...found.whatsapp);
+      const endpoints = [
+        `https://duckduckgo.com/html/?q=${encodeURIComponent(q)}`,
+        `https://www.bing.com/search?q=${encodeURIComponent(q)}`,
+        `https://www.google.com/search?q=${encodeURIComponent(q)}`
+      ];
+      for (const endpoint of endpoints) {
+        const searchHtml = await fetchText(endpoint, 7500);
+        if (!searchHtml) continue;
+        const found = findSocialLinks(searchHtml);
+        if (merged.instagram.length === 0) merged.instagram.push(...found.instagram);
+        if (merged.facebook.length === 0) merged.facebook.push(...found.facebook);
+        if (merged.tiktok.length === 0) merged.tiktok.push(...found.tiktok);
+        merged.emails.push(...found.emails);
+        merged.whatsapp.push(...found.whatsapp);
+      }
     }
   }
 
@@ -222,10 +271,58 @@ const lookupSocialForShop = async (shop: ShopLookupInput) => {
   };
 };
 
+interface ShopifyVariant {
+  id: number;
+  sku?: string;
+  title?: string;
+  price?: string;
+  inventory_item_id?: number;
+  inventory_quantity?: number;
+}
+
+interface ShopifyProduct {
+  id: number;
+  title: string;
+  vendor?: string;
+  product_type?: string;
+  variants?: ShopifyVariant[];
+}
+
+const normalizeShopDomain = (raw: string): string => {
+  const trimmed = String(raw || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  return trimmed.toLowerCase();
+};
+
+const parseNextLink = (linkHeader: string | null): string | null => {
+  if (!linkHeader) return null;
+  const parts = linkHeader.split(',');
+  for (const part of parts) {
+    if (!part.includes('rel=\"next\"')) continue;
+    const m = part.match(/<([^>]+)>/);
+    if (m?.[1]) return m[1];
+  }
+  return null;
+};
+
+const shopifyFetch = async (url: string, accessToken: string) => {
+  const resp = await fetch(url, {
+    headers: {
+      'X-Shopify-Access-Token': accessToken,
+      'Content-Type': 'application/json'
+    }
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Shopify API ${resp.status}: ${text.slice(0, 240)}`);
+  }
+  return resp;
+};
+
 async function startServer() {
   try {
     console.log('Starting server initialization...');
     const app = express();
+// 记得在 server.ts 中挂载到 app
     app.use(cors());
     app.use(express.json({ limit: '50mb' }));
     const dataDir = path.join(__dirname, 'data');
@@ -442,6 +539,161 @@ async function startServer() {
       res.json({ status: 'ok', message: 'InkFlow AI Server is running' });
     });
 
+    app.post('/api/inventory/source/load', async (req, res) => {
+      try {
+        const mode = String(req.body?.mode || '').trim().toLowerCase();
+        const value = String(req.body?.value || '').trim();
+        if (!mode || !value) {
+          return res.status(400).json({ error: 'mode and value are required' });
+        }
+
+        let csvText = '';
+        if (mode === 'file') {
+          const resolved = path.resolve(value);
+          if (!fs.existsSync(resolved)) {
+            return res.status(404).json({ error: `File not found: ${resolved}` });
+          }
+          csvText = fs.readFileSync(resolved, 'utf-8');
+        } else if (mode === 'url') {
+          const resp = await fetch(value, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) InkFlow/1.0'
+            }
+          });
+          if (!resp.ok) {
+            const text = await resp.text();
+            return res.status(400).json({ error: `Failed to load url: ${resp.status} ${text.slice(0, 160)}` });
+          }
+          csvText = await resp.text();
+        } else {
+          return res.status(400).json({ error: 'mode must be file or url' });
+        }
+
+        const { rows, headers } = parseCsvRows(csvText);
+        return res.json({
+          ok: true,
+          mode,
+          rows,
+          headers,
+          totalRows: rows.length,
+          loadedAt: new Date().toISOString()
+        });
+      } catch (e: any) {
+        return res.status(500).json({ error: e?.message || 'Failed to load inventory source' });
+      }
+    });
+
+    app.post('/api/shopify/inventory/sync', async (req, res) => {
+      try {
+        const storeDomain = normalizeShopDomain(String(req.body?.storeDomain || ''));
+        const accessToken = String(req.body?.accessToken || '').trim();
+        const locationId = String(req.body?.locationId || '').trim();
+
+        if (!storeDomain || !storeDomain.includes('.myshopify.com')) {
+          return res.status(400).json({ error: 'Valid storeDomain is required (e.g. xxx.myshopify.com)' });
+        }
+        if (!accessToken) {
+          return res.status(400).json({ error: 'accessToken is required' });
+        }
+
+        const apiVersion = '2024-10';
+        const products: ShopifyProduct[] = [];
+        let nextUrl: string | null =
+          `https://${storeDomain}/admin/api/${apiVersion}/products.json?limit=250&fields=id,title,vendor,product_type,variants`;
+
+        while (nextUrl) {
+          const resp = await shopifyFetch(nextUrl, accessToken);
+          const payload = await resp.json();
+          const batch = Array.isArray(payload?.products) ? payload.products as ShopifyProduct[] : [];
+          products.push(...batch);
+          nextUrl = parseNextLink(resp.headers.get('link'));
+        }
+
+        const variants: Array<{
+          id: number;
+          sku: string;
+          name: string;
+          category: string;
+          vendor?: string;
+          price?: number;
+          inventoryItemId?: number;
+          fallbackQty: number;
+        }> = [];
+
+        products.forEach((product) => {
+          (product.variants || []).forEach((variant) => {
+            const variantTitle = String(variant.title || '').trim();
+            const sku = String(variant.sku || '').trim();
+            const name = variantTitle && variantTitle.toLowerCase() !== 'default title'
+              ? `${product.title} / ${variantTitle}`
+              : product.title;
+            variants.push({
+              id: Number(variant.id),
+              sku: sku || `VAR_${variant.id}`,
+              name,
+              category: String(product.product_type || 'General'),
+              vendor: product.vendor ? String(product.vendor) : undefined,
+              price: Number.isFinite(Number(variant.price)) ? Number(variant.price) : undefined,
+              inventoryItemId: Number.isFinite(Number(variant.inventory_item_id)) ? Number(variant.inventory_item_id) : undefined,
+              fallbackQty: Number.isFinite(Number(variant.inventory_quantity)) ? Number(variant.inventory_quantity) : 0
+            });
+          });
+        });
+
+        const inventoryItemIds = Array.from(new Set(
+          variants.map((v) => v.inventoryItemId).filter((x): x is number => Number.isFinite(Number(x)))
+        ));
+        const availableByInventoryItem = new Map<number, number>();
+
+        for (let i = 0; i < inventoryItemIds.length; i += 50) {
+          const chunk = inventoryItemIds.slice(i, i + 50);
+          const qs = new URLSearchParams({
+            inventory_item_ids: chunk.join(',')
+          });
+          if (locationId) qs.set('location_ids', locationId);
+          const url = `https://${storeDomain}/admin/api/${apiVersion}/inventory_levels.json?${qs.toString()}`;
+          const resp = await shopifyFetch(url, accessToken);
+          const payload = await resp.json();
+          const levels = Array.isArray(payload?.inventory_levels) ? payload.inventory_levels : [];
+          levels.forEach((level: any) => {
+            const invId = Number(level?.inventory_item_id);
+            const available = Number(level?.available);
+            if (!Number.isFinite(invId) || !Number.isFinite(available)) return;
+            const prev = availableByInventoryItem.get(invId) || 0;
+            availableByInventoryItem.set(invId, prev + available);
+          });
+        }
+
+        const now = new Date().toISOString();
+        const items = variants.map((variant) => {
+          const stock = variant.inventoryItemId && availableByInventoryItem.has(variant.inventoryItemId)
+            ? Number(availableByInventoryItem.get(variant.inventoryItemId) || 0)
+            : variant.fallbackQty;
+          return {
+            id: `shopify_variant_${variant.id}`,
+            sku: variant.sku,
+            name: variant.name,
+            category: variant.category || 'General',
+            stock: Number.isFinite(stock) ? stock : 0,
+            threshold: 5,
+            price: variant.price,
+            currency: 'USD',
+            vendor: variant.vendor,
+            source: 'shopify',
+            updatedAt: now
+          };
+        });
+
+        return res.json({
+          totalProducts: products.length,
+          totalVariants: variants.length,
+          items
+        });
+      } catch (e: any) {
+        return res.status(500).json({ error: e?.message || 'Shopify inventory sync failed' });
+      }
+    });
+
     app.post('/api/enrich/social-links', async (req, res) => {
       const input = (req.body?.shops || []) as ShopLookupInput[];
       const shops = input.filter((s) => s && s.id).slice(0, 200);
@@ -461,6 +713,57 @@ async function startServer() {
       } catch (e: any) {
         return res.status(500).json({ error: e?.message || 'Lookup failed' });
       }
+    });
+
+    app.post('/api/instagram/validate', async (req, res) => {
+      const rawUrl = String(req.body?.url || '').trim();
+      const shopName = String(req.body?.shopName || '').trim();
+      const shopType = String(req.body?.shopType || 'shop').trim().toLowerCase();
+      const url = ensureHttp(rawUrl);
+      if (!url || !url.toLowerCase().includes('instagram.com/')) {
+        return res.status(400).json({ error: 'Valid instagram url is required' });
+      }
+
+      const html = await fetchText(url, 10000);
+      if (!html) {
+        return res.json({ ok: false, score: 0, verdict: 'low', reason: 'network_empty' });
+      }
+
+      const titleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]*)"/i);
+      const descMatch = html.match(/<meta\s+property="og:description"\s+content="([^"]*)"/i);
+      const bioMatch = html.match(/"biography":"([^"]*)"/i);
+      const title = titleMatch?.[1] || '';
+      const description = descMatch?.[1] || '';
+      const biography = bioMatch?.[1] || '';
+
+      const targetTokens = tokenize(shopName);
+      const pageTokens = tokenize(`${title} ${description} ${biography}`);
+      const shopOverlap = overlapScore(targetTokens, pageTokens);
+
+      const distributorKeywords = ['supply', 'supplier', 'wholesale', 'distribution', 'distributor', 'equipment'];
+      const tattooKeywords = ['tattoo', 'ink', 'needle', 'studio', 'artist'];
+      const pageText = `${title} ${description} ${biography}`.toLowerCase();
+      const distributorHit = distributorKeywords.some((k) => pageText.includes(k));
+      const tattooHit = tattooKeywords.some((k) => pageText.includes(k));
+
+      let score = shopOverlap * 0.65 + (tattooHit ? 0.2 : 0);
+      if (shopType === 'distributor' && distributorHit) score += 0.2;
+      score = Math.min(1, Math.max(0, score));
+
+      const verdict = score >= 0.72 ? 'high' : score >= 0.45 ? 'medium' : 'low';
+      return res.json({
+        ok: verdict !== 'low',
+        score: Number(score.toFixed(3)),
+        verdict,
+        signals: {
+          title,
+          description,
+          biography: biography.slice(0, 200),
+          shopOverlap: Number(shopOverlap.toFixed(3)),
+          tattooHit,
+          distributorHit
+        }
+      });
     });
 
     app.post('/api/deep-scan/start', (req, res) => {

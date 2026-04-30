@@ -47,6 +47,83 @@ const states = [
   'UK', 'AU', 'CA_INTL', 'DE', 'FR', 'IT', 'ES', 'JP', 'KR', 'BR' // Countries
 ];
 
+const COOP_PRODUCT_OPTIONS = [
+  'cartridges',
+  'inks',
+  'machines',
+  'power_supplies',
+  'needles',
+  'grips',
+  'tips',
+  'stencil',
+  'aftercare',
+  'furniture',
+  'accessories'
+];
+
+const normText = (v: any) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+const isPlaceholderHandle = (h?: string): boolean => {
+  const x = String(h || '').toLowerCase().trim();
+  if (!x) return true;
+  return x.startsWith('user_') || x.includes('shopify') || x.includes('unknown');
+};
+
+const normalizeInstagramUrl = (raw: string): string | null => {
+  const x = String(raw || '').trim();
+  if (!x) return null;
+  if (x.toLowerCase().includes('instagram.com/')) {
+    return x.startsWith('http') ? x : `https://${x}`;
+  }
+  if (!x.includes('http') && !x.includes('/')) {
+    return `https://instagram.com/${x.replace(/^@/, '')}`;
+  }
+  return null;
+};
+
+const getInstagramInfo = (artist: any): { url: string; source: 'explicit' | 'handle' } | null => {
+  const importedProvided = artist?.metadata?.importedInstagramProvided === true;
+  const manualProvided = artist?.metadata?.manualInstagramProvided === true;
+  if (!importedProvided && !manualProvided) return null;
+
+  const explicitCandidates = [
+    artist?.metadata?.manualInstagramUrl,
+    artist?.metadata?.importedInstagramUrl,
+    artist?.metadata?.instagram_url,
+    artist?.metadata?.instagram
+  ]
+    .map((x: any) => String(x || '').trim())
+    .filter(Boolean);
+
+  let bestUrl: string | null = null;
+  for (const c of explicitCandidates) {
+    const normalized = normalizeInstagramUrl(c);
+    if (normalized) {
+      bestUrl = normalized;
+      break;
+    }
+  }
+
+  if (!bestUrl) {
+    const handle = String(artist?.ig_handle || '').replace(/^@/, '').trim();
+    if (handle && !isPlaceholderHandle(handle)) {
+      bestUrl = `https://instagram.com/${handle}`;
+      return { url: bestUrl, source: 'handle' };
+    }
+  }
+
+  if (bestUrl) return { url: bestUrl, source: 'explicit' };
+  return null;
+};
+
+const resolveInstagramUrl = (artist: any): string | null => getInstagramInfo(artist)?.url || null;
+
+const isActiveDistributor = (artist: any): boolean => {
+  if (!artist) return false;
+  if (artist.metadata?.distributorExcluded === true) return false;
+  return artist.metadata?.isDistributor === true || String(artist.metadata?.distributorStatus || '') === 'qualified';
+};
+
 export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) => void }) {
   const { 
     artists, 
@@ -71,6 +148,7 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
     assignTaskToAccount,
     assignments,
     startAutomationSequence,
+    updateArtist,
     deleteArtist,
     moveArtist
   } = useCRM();
@@ -98,6 +176,12 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
     return text.replace(/\uFFFD/g, '');
   };
 
+  const isPlaceholderGeo = (v: any) => {
+    const x = String(v || '').trim().toLowerCase();
+    if (!x) return true;
+    return x === 'unknown' || x === 'n/a' || x === 'na' || x === 'null' || x === 'undefined';
+  };
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     setUploadError(null);
@@ -110,8 +194,9 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
       'Facebook': 'facebook_id', 'FB': 'facebook_id', 'Facebook URL': 'facebook_id', 'facebook': 'facebook_id',
       'Address': 'address', 'Street': 'address', 'Location_Address': 'address', 'Default Address Address1': 'address', 'Full Address': 'address', 'Formatted Address': 'address', 'address': 'address', 'Full_Address': 'address',
       '地址': 'address', '街道': 'address', '详细地址': 'address',
-      'City': 'location_tag', 'City_Name': 'location_tag', 'Default Address City': 'location_tag', 'State': 'location_tag', 'city': 'location_tag', 'state': 'location_tag', 'Province': 'location_tag',
-      '城市': 'location_tag', '省份': 'location_tag', '州': 'location_tag',
+      'City': 'city', 'City_Name': 'city', 'Default Address City': 'city', 'city': 'city',
+      'State': 'state', 'state': 'state', 'Province': 'state', 'Province Code': 'state', 'Default Address Province Code': 'state',
+      '城市': 'city', '省份': 'state', '州': 'state',
       'Phone': 'phone', 'Phone_Number': 'phone', 'Contact_Phone': 'phone', 'Default Address Phone': 'phone', 'phone': 'phone', 'Phone Number': 'phone',
       '电话': 'phone', '手机': 'phone', '联系电话': 'phone',
       'Website': 'website', 'Web_URL': 'website', 'Site': 'website', 'website': 'website', 'link': 'website', 'URL': 'website',
@@ -293,9 +378,12 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
 
     return artists
       .filter(artist => {
+        if (isActiveDistributor(artist)) return false;
         const matchesStage = activeStage === 'all' ? true : artist.stage === activeStage;
         const matchesLocation = selectedState === 'All Places' || 
-                               artist.location === selectedState || 
+                               artist.location === selectedState ||
+                               artist.state === selectedState ||
+                               artist.country === selectedState ||
                                (typeof artist.address === 'string' && artist.address.includes(selectedState));
         const matchesSearch = (artist.username?.toLowerCase() || '').includes(search.toLowerCase()) || 
                              (artist.fullName?.toLowerCase() || '').includes(search.toLowerCase()) ||
@@ -335,6 +423,411 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
   }, [filteredShops, currentPage]);
 
   const totalPages = Math.ceil(filteredShops.length / itemsPerPage);
+
+  const directSalesCandidates = useMemo(() => {
+    const currentHour = new Date().getHours();
+    const distance = (a: number, b: number) => {
+      const raw = Math.abs(a - b);
+      return Math.min(raw, 24 - raw);
+    };
+    return artists
+      .filter((artist) => {
+        if (isActiveDistributor(artist)) return false;
+        const haystack = `${artist.shopName || ''} ${artist.fullName || ''} ${artist.username || ''}`.toLowerCase();
+        const matchesLocation = selectedState === 'All Places' ||
+          artist.location === selectedState ||
+          artist.state === selectedState ||
+          artist.country === selectedState ||
+          (typeof artist.address === 'string' && artist.address.includes(selectedState));
+        const matchesSearch = haystack.includes(search.toLowerCase());
+        const matchesAccountTag = accountTagFilter === 'all' || artist.account_tag === accountTagFilter;
+        return matchesLocation && matchesSearch && matchesAccountTag;
+      })
+      .map((artist) => {
+        const isDistributor = artist.metadata?.isDistributor === true || String(artist.metadata?.distributorStatus || '') === 'qualified';
+        const activeNow = (artist.socialSignals?.postingHours || []).some((h) => Number.isFinite(h) && distance(Number(h), currentHour) <= 1);
+        const contactCount = [
+          artist.ig_handle,
+          artist.email,
+          artist.phone,
+          artist.facebookId
+        ].filter(Boolean).length;
+        const score =
+          (artist.stage === 'customers' ? 30 : artist.stage === 'engaged' ? 18 : 8) +
+          Math.min(20, (artist.socialSignals?.engagementRate || 0) * 2) +
+          Math.min(12, (artist.socialSignals?.postsPerWeek || 0) * 2) +
+          Math.min(12, contactCount * 3) +
+          (activeNow ? 10 : 0) +
+          (artist.hasFollowedBack ? 8 : 0) +
+          (isDistributor ? -25 : 0);
+        return {
+          artist,
+          directScore: Math.round(score),
+          activeNow,
+          contactCount
+        };
+      })
+      .filter((x) => x.directScore > 20)
+      .sort((a, b) => b.directScore - a.directScore)
+      .slice(0, 40);
+  }, [artists, selectedState, search, accountTagFilter]);
+
+  const distributorCandidates = useMemo(() => {
+    const distributorKeywords = [
+      'supply',
+      'supplier',
+      'wholesale',
+      'distribution',
+      'distributor',
+      'ink supplier',
+      'tattoo supply'
+    ];
+    return artists
+      .filter((artist) => {
+        if (artist.metadata?.distributorExcluded === true) return false;
+        const haystack = `${artist.shopName || ''} ${artist.fullName || ''} ${artist.website || ''}`.toLowerCase();
+        const keywordHit = distributorKeywords.some((k) => haystack.includes(k));
+        const followingHit = Array.isArray(artist.metadata?.followingDistributors) && artist.metadata.followingDistributors.length > 0;
+        const flagged = artist.metadata?.isDistributor === true;
+        const status = String(artist.metadata?.distributorStatus || 'new');
+        // Stricter rule to reduce false positives:
+        // 1) keyword hit, OR
+        // 2) has following evidence, OR
+        // 3) manually flagged + qualified
+        return keywordHit || followingHit || (flagged && status === 'qualified');
+      })
+      .map((artist) => {
+        const distributorHandle = normText(artist.ig_handle || artist.username || '');
+        const distributorName = normText(artist.shopName || artist.fullName || '');
+        const distributorWebsite = normText(artist.website || '');
+        const connectorCandidates = artists
+          .filter((a) => a.id !== artist.id)
+          .map((a) => {
+            const stageBase = a.stage === 'customers' ? 36 : a.stage === 'engaged' ? 24 : 8;
+            const relationScore = (a.replyCount || 0) * 3 + (a.likeCount || 0) + (a.hasFollowedBack ? 12 : 0);
+            const orderScore = Math.min(18, (a.orderCount || 0) * 3);
+            const sameRegion =
+              (a.state && artist.state && a.state === artist.state) ||
+              (a.city && artist.city && a.city === artist.city) ||
+              (a.country && artist.country && a.country === artist.country);
+            const regionScore = sameRegion ? 12 : 0;
+
+            const follows = Array.isArray(a.metadata?.followingDistributors) ? a.metadata.followingDistributors : [];
+            const followsHit = follows.some((x: any) => {
+              const nx = normText(x);
+              return Boolean(nx) && (
+                (distributorHandle && nx.includes(distributorHandle)) ||
+                (distributorName && nx.includes(distributorName)) ||
+                (distributorWebsite && nx.includes(distributorWebsite))
+              );
+            });
+            const referralIds = Array.isArray(a.metadata?.referralDistributorIds) ? a.metadata.referralDistributorIds : [];
+            const explicitHit = referralIds.includes(artist.id) || followsHit;
+            const explicitScore = explicitHit ? 40 : 0;
+
+            const connectorScore = stageBase + relationScore + orderScore + regionScore + explicitScore;
+            return { artist: a, connectorScore, explicitHit };
+          })
+          .filter((x) => x.connectorScore >= 35)
+          .sort((a, b) => b.connectorScore - a.connectorScore)
+          .slice(0, 3);
+
+        const sourceCount = Array.isArray(artist.metadata?.followingDistributors) ? artist.metadata.followingDistributors.length : 0;
+        const brandPartners = Array.isArray(artist.metadata?.brandPartners)
+          ? artist.metadata.brandPartners.length
+          : Number(artist.metadata?.brandPartnerCount || artist.metadata?.brand_count || 0);
+        const followers = Number(artist.followers || 0);
+        const keywordHit = distributorKeywords.some((k) =>
+          `${artist.shopName || ''} ${artist.fullName || ''} ${artist.website || ''}`.toLowerCase().includes(k)
+        );
+        const keywordWeight = keywordHit ? 20 : 0;
+        const status = String(artist.metadata?.distributorStatus || 'new');
+        const isManualFlag = artist.metadata?.isDistributor === true;
+        const hasFollowingEvidence = sourceCount > 0;
+        const reasonTags = [
+          ...(keywordHit ? ['keyword'] : []),
+          ...(hasFollowingEvidence ? ['artist_referral'] : []),
+          ...(isManualFlag ? ['manual_flag'] : []),
+          ...(status === 'qualified' ? ['qualified'] : [])
+        ];
+        const distributorScore =
+          30 +
+          Math.min(30, sourceCount * 6) +
+          Math.min(25, Math.log10(Math.max(10, followers)) * 8) +
+          Math.min(20, brandPartners * 4) +
+          keywordWeight +
+          (artist.website ? 8 : 0) +
+          (artist.email ? 8 : 0) +
+          (status === 'qualified' ? 12 : 0);
+        let tier: 'S' | 'A' | 'B' | 'C' = 'C';
+        if (followers >= 200000 || brandPartners >= 15) tier = 'S';
+        else if (followers >= 50000 || brandPartners >= 8) tier = 'A';
+        else if (followers >= 10000 || brandPartners >= 3) tier = 'B';
+
+        const priority =
+          tier === 'S' ? 'P0' :
+          tier === 'A' ? 'P1' :
+          tier === 'B' ? 'P2' : 'P3';
+
+        return {
+          artist,
+          sourceCount,
+          followers,
+          brandPartners,
+          connectors: connectorCandidates,
+          reasonTags,
+          status,
+          tier,
+          priority,
+          distributorScore: Math.round(distributorScore)
+        };
+      })
+      .sort((a, b) => {
+        const pr = { P0: 4, P1: 3, P2: 2, P3: 1 };
+        const pa = pr[a.priority as keyof typeof pr] || 0;
+        const pb = pr[b.priority as keyof typeof pr] || 0;
+        if (pb !== pa) return pb - pa;
+        return b.distributorScore - a.distributorScore;
+      });
+  }, [artists]);
+
+  const REORDER_STALE_DAYS = 60;
+
+  const distributorLifecycleBuckets = useMemo(() => {
+    const base = distributorCandidates.map(({ artist, priority, tier, distributorScore }) => {
+      const lifecycle = String(artist.metadata?.distributorLifecycle || '');
+      const sampleStatus = String(artist.metadata?.sampleStatus || '');
+      const orderCount = Number(artist.orderCount || 0);
+      const lastOrderAt = artist.lastOrderDate ? new Date(artist.lastOrderDate).getTime() : 0;
+      const daysSinceLastOrder = lastOrderAt ? Math.floor((Date.now() - lastOrderAt) / (1000 * 60 * 60 * 24)) : null;
+
+      let bucket: 'sample_sent' | 'bad_feedback' | 'positive_no_order' | 'one_order_stalled' | 'long_no_order' | 'other' = 'other';
+      if (lifecycle === 'sample_sent' || sampleStatus === 'sent') bucket = 'sample_sent';
+      if (lifecycle === 'bad_feedback' || sampleStatus === 'negative') bucket = 'bad_feedback';
+      if (lifecycle === 'positive_no_order' || (sampleStatus === 'positive' && orderCount === 0)) bucket = 'positive_no_order';
+      if (
+        lifecycle === 'one_order_stalled' ||
+        (orderCount === 1 && (daysSinceLastOrder === null || daysSinceLastOrder >= 21))
+      ) {
+        bucket = 'one_order_stalled';
+      }
+      if (
+        lifecycle === 'long_no_order' ||
+        (orderCount >= 1 && daysSinceLastOrder !== null && daysSinceLastOrder >= REORDER_STALE_DAYS)
+      ) {
+        bucket = 'long_no_order';
+      }
+
+      return { artist, priority, tier, distributorScore, bucket, orderCount, daysSinceLastOrder };
+    });
+
+    return {
+      sample_sent: base.filter((x) => x.bucket === 'sample_sent'),
+      bad_feedback: base.filter((x) => x.bucket === 'bad_feedback'),
+      positive_no_order: base.filter((x) => x.bucket === 'positive_no_order'),
+      one_order_stalled: base.filter((x) => x.bucket === 'one_order_stalled'),
+      long_no_order: base.filter((x) => x.bucket === 'long_no_order')
+    };
+  }, [distributorCandidates, REORDER_STALE_DAYS]);
+
+  const distributorByCountry = useMemo(() => {
+    const US_STATE_CODES = new Set([
+      'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
+      'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC',
+      'SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'
+    ]);
+    const US_STATE_NAMES = new Set([
+      'ALABAMA','ALASKA','ARIZONA','ARKANSAS','CALIFORNIA','COLORADO','CONNECTICUT','DELAWARE','FLORIDA','GEORGIA',
+      'HAWAII','IDAHO','ILLINOIS','INDIANA','IOWA','KANSAS','KENTUCKY','LOUISIANA','MAINE','MARYLAND',
+      'MASSACHUSETTS','MICHIGAN','MINNESOTA','MISSISSIPPI','MISSOURI','MONTANA','NEBRASKA','NEVADA','NEW HAMPSHIRE',
+      'NEW JERSEY','NEW MEXICO','NEW YORK','NORTH CAROLINA','NORTH DAKOTA','OHIO','OKLAHOMA','OREGON','PENNSYLVANIA',
+      'RHODE ISLAND','SOUTH CAROLINA','SOUTH DAKOTA','TENNESSEE','TEXAS','UTAH','VERMONT','VIRGINIA','WASHINGTON',
+      'WEST VIRGINIA','WISCONSIN','WYOMING','DISTRICT OF COLUMBIA'
+    ]);
+    const COUNTRY_CODE_TO_NAME: Record<string, string> = {
+      US: 'USA',
+      UK: 'United Kingdom',
+      GB: 'United Kingdom',
+      CA: 'Canada',
+      AU: 'Australia',
+      NZ: 'New Zealand',
+      DE: 'Germany',
+      FR: 'France',
+      IT: 'Italy',
+      ES: 'Spain',
+      PT: 'Portugal',
+      NL: 'Netherlands',
+      BE: 'Belgium',
+      CH: 'Switzerland',
+      SE: 'Sweden',
+      NO: 'Norway',
+      DK: 'Denmark',
+      FI: 'Finland',
+      IE: 'Ireland',
+      AT: 'Austria',
+      JP: 'Japan',
+      KR: 'South Korea',
+      CN: 'China',
+      TW: 'Taiwan',
+      HK: 'Hong Kong',
+      SG: 'Singapore',
+      MY: 'Malaysia',
+      TH: 'Thailand',
+      VN: 'Vietnam',
+      ID: 'Indonesia',
+      PH: 'Philippines',
+      IN: 'India',
+      MX: 'Mexico',
+      BR: 'Brazil',
+      AR: 'Argentina',
+      CL: 'Chile',
+      CO: 'Colombia',
+      TR: 'Turkey',
+      AE: 'United Arab Emirates',
+      SA: 'Saudi Arabia',
+      IL: 'Israel',
+      ZA: 'South Africa'
+    };
+    const normalizeCountryLabel = (raw: string) => {
+      const v = String(raw || '').trim();
+      const upper = v.toUpperCase();
+      if (!v) return 'UNSET';
+      const isUsToken = (x: string) =>
+        x === 'USA' ||
+        x === 'US' ||
+        x === 'U.S.A' ||
+        x === 'UNITED STATES' ||
+        x === 'UNITED STATES OF AMERICA';
+
+      // 1) Explicit country code/name first (avoid DE/IN/CA being mistaken as US states)
+      if (COUNTRY_CODE_TO_NAME[upper]) return COUNTRY_CODE_TO_NAME[upper];
+      if (isUsToken(upper) || upper.includes('UNITED STATES')) return 'USA';
+      if (/^US[-_\s]*[A-Z]{2}$/.test(upper)) return 'USA';
+
+      // 2) Parse composite values, prefer last token as country
+      const tokenized = upper.split(/[,/|]+/).map((x) => x.trim()).filter(Boolean);
+      const lastToken = tokenized[tokenized.length - 1] || '';
+      if (COUNTRY_CODE_TO_NAME[lastToken]) return COUNTRY_CODE_TO_NAME[lastToken];
+      if (isUsToken(lastToken)) return 'USA';
+      if (tokenized.some((t) => isUsToken(t))) return 'USA';
+
+      // 3) If it's exactly a US state code/name, map to USA
+      if (US_STATE_CODES.has(upper) || US_STATE_NAMES.has(upper)) return 'USA';
+      if (lastToken && (US_STATE_CODES.has(lastToken) || US_STATE_NAMES.has(lastToken))) return 'USA';
+
+      return v;
+    };
+
+    const resolveCountryKey = (artist: any) => {
+      // 1) Manual override from distributor board takes highest priority
+      const geoDisplay = String(artist.metadata?.distributorGeoDisplay || '').trim();
+      if (!isPlaceholderGeo(geoDisplay)) {
+        const segments = geoDisplay.split(',').map((s) => s.trim()).filter(Boolean);
+        const last = String(segments[segments.length - 1] || '');
+        if (last) return normalizeCountryLabel(last);
+      }
+
+      // 2) Fallback to artist country
+      const rawCountry = String(artist.country || '').trim();
+      if (!isPlaceholderGeo(rawCountry)) {
+        return normalizeCountryLabel(rawCountry);
+      }
+
+      // 3) Last fallback: shop location text
+      const locationText = String(artist.location || '').trim();
+      if (!isPlaceholderGeo(locationText)) {
+        const segments = locationText.split(',').map((s) => s.trim()).filter(Boolean);
+        const last = String(segments[segments.length - 1] || '');
+        if (last) return normalizeCountryLabel(last);
+      }
+
+      return 'UNSET';
+    };
+
+    const stats: Record<string, number> = {};
+    distributorCandidates.forEach(({ artist }) => {
+      const key = resolveCountryKey(artist);
+      stats[key] = (stats[key] || 0) + 1;
+    });
+    return Object.entries(stats).sort((a, b) => b[1] - a[1]);
+  }, [distributorCandidates]);
+
+  const markDistributorLifecycle = async (
+    artistId: string,
+    lifecycle: 'sample_sent' | 'bad_feedback' | 'positive_no_order' | 'one_order_stalled' | 'long_no_order',
+    extra: Record<string, any> = {}
+  ) => {
+    const artist = artists.find((a) => a.id === artistId);
+    if (!artist) return;
+    await updateArtist(artistId, {
+      metadata: {
+        ...(artist.metadata || {}),
+        distributorLifecycle: lifecycle,
+        lifecycleUpdatedAt: new Date().toISOString(),
+        ...extra
+      }
+    });
+  };
+
+  const referralReadyArtists = useMemo(() => {
+    return artists
+      .filter((artist) => {
+        const stageScore = artist.stage === 'customers' ? 3 : artist.stage === 'engaged' ? 2 : 0;
+        const interactionScore = (artist.replyCount || 0) + (artist.likeCount || 0) + (artist.hasFollowedBack ? 2 : 0);
+        return stageScore > 0 && interactionScore >= 2;
+      })
+      .map((artist) => {
+        const trustScore =
+          (artist.stage === 'customers' ? 40 : 20) +
+          Math.min(20, (artist.replyCount || 0) * 3) +
+          Math.min(15, (artist.likeCount || 0) * 1.5) +
+          (artist.hasFollowedBack ? 15 : 0) +
+          Math.min(10, (artist.orderCount || 0) * 2);
+        return { artist, trustScore };
+      })
+      .sort((a, b) => b.trustScore - a.trustScore)
+      .slice(0, 20);
+  }, [artists]);
+
+  const buildReferralScript = (name: string, region: string, discount: string) => {
+    return `Hey ${name}, appreciate your support. We're expanding in ${region} and looking for solid local tattoo distributors.\nIf you can intro 1-2 trusted distributor contacts, we can offer your clients a ${discount} partner deal.\nIf useful, just drop their Instagram/WhatsApp and I'll handle the follow-up professionally.`;
+  };
+
+  const handleAddManualDistributor = async () => {
+    const name = window.prompt('Distributor name');
+    if (!name || !name.trim()) return;
+    const igInput = window.prompt('Instagram URL/handle (optional)', '') || '';
+    const igUrl = normalizeInstagramUrl(igInput.trim());
+    const igHandle = igUrl ? igUrl.split('instagram.com/')[1]?.split('/')[0]?.split('?')[0] : '';
+    const city = (window.prompt('City (optional)', '') || '').trim();
+    const state = (window.prompt('State/Region (optional)', '') || '').trim();
+    const country = (window.prompt('Country (optional)', 'USA') || 'USA').trim();
+    const website = (window.prompt('Website (optional)', '') || '').trim();
+    const phone = (window.prompt('Phone (optional)', '') || '').trim();
+    const email = (window.prompt('Email (optional)', '') || '').trim();
+
+    const address = [city, state, country].filter(Boolean).join(', ');
+    await importCSV([{
+      name: name.trim(),
+      ig_handle: igHandle || '',
+      city,
+      state,
+      country,
+      address,
+      website,
+      phone,
+      email,
+      metadata: {
+        isDistributor: true,
+        distributorStatus: 'qualified',
+        ingestSource: 'manual_distributor',
+        manualDistributorEntry: true,
+        ...(igUrl ? { manualInstagramProvided: true, manualInstagramUrl: igUrl } : {})
+      }
+    }], selectedState === 'All Places' ? undefined : selectedState, accountTag, { rawRows: 1, missingNameRows: 0 });
+
+    toast.success('Manual distributor added.');
+  };
 
   // Reset page when filters change
   useEffect(() => {
@@ -1107,7 +1600,13 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
                         <div className="flex flex-col gap-0">
                           <div className="flex items-center gap-1 text-zinc-300 min-w-0">
                             <MapPin className="w-2 h-2 text-zinc-500 shrink-0" />
-                            <span className="text-[10px] font-bold truncate">{cleanDisplay(shop.location || 'No Location')}</span>
+                            <span className="text-[10px] font-bold truncate">
+                              {cleanDisplay(
+                                shop.city && shop.city !== 'Unknown'
+                                  ? `${shop.city}${shop.state && shop.state !== 'Unknown' ? `, ${shop.state}` : ''}`
+                                  : (shop.state && shop.state !== 'Unknown' ? shop.state : (shop.location || 'No Location'))
+                              )}
+                            </span>
                           </div>
                           <span className="text-[7px] text-zinc-500 uppercase tracking-widest ml-3 truncate block">{cleanDisplay(shop.country || 'USA')}</span>
                         </div>
@@ -1225,6 +1724,498 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <div className="mt-6 bg-[#111] border border-zinc-800/50 p-6 rounded-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h5 className="text-white font-black text-lg">Direct Sales List</h5>
+                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">
+                  AI logic: engagement + active time + contact completeness + conversion stage
+                </p>
+              </div>
+              <span className="px-2 py-1 bg-zinc-900 border border-zinc-800 rounded text-[10px] font-black text-zinc-300">
+                {directSalesCandidates.length} leads
+              </span>
+            </div>
+            {directSalesCandidates.length === 0 ? (
+              <p className="text-sm text-zinc-500">No direct-sales candidates yet. Run deep scan and enrich contacts first.</p>
+            ) : (
+              <div className="space-y-2">
+                {directSalesCandidates.slice(0, 30).map(({ artist, directScore, activeNow, contactCount }) => (
+                  <div key={`ds_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-white truncate">{cleanDisplay(artist.shopName || artist.fullName || artist.username)}</p>
+                      <p className="text-[10px] text-zinc-500 truncate">
+                        score {directScore} | contacts {contactCount} | ER {(artist.socialSignals?.engagementRate || 0).toFixed(1)}% | {activeNow ? 'active_now' : 'not_active_now'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => assignTaskToAccount(artist.id)}
+                        className="px-2.5 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 rounded text-[10px] font-black text-blue-200 uppercase tracking-widest"
+                      >
+                        Assign
+                      </button>
+                      <button
+                        onClick={() => moveArtist(artist.id, 'engaged')}
+                        className="px-2.5 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 rounded text-[10px] font-black text-rose-200 uppercase tracking-widest"
+                      >
+                        Push Engaged
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 bg-[#111] border border-zinc-800/50 p-6 rounded-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h5 className="text-white font-black text-lg">Distributor Board</h5>
+                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">
+                  AI logic: distributor keywords + referral mentions + channel readiness
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleAddManualDistributor}
+                  className="px-2 py-1 bg-emerald-600/20 border border-emerald-500/40 rounded text-[10px] font-black text-emerald-200 uppercase tracking-widest"
+                >
+                  Add Distributor
+                </button>
+                <span className="px-2 py-1 bg-zinc-900 border border-zinc-800 rounded text-[10px] font-black text-zinc-300">
+                  {distributorCandidates.length} candidates
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {distributorByCountry.slice(0, 8).map(([country, count]) => (
+                <span
+                  key={`dist_country_${country}`}
+                  className="px-2 py-1 bg-zinc-900 border border-zinc-800 rounded text-[10px] font-black text-zinc-300 uppercase tracking-widest"
+                >
+                  {country}: {count}
+                </span>
+              ))}
+            </div>
+            {distributorCandidates.length === 0 ? (
+              <p className="text-sm text-zinc-500">
+                No distributor candidates yet. After deep scan enriches more profiles, candidates will appear here.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {distributorCandidates.slice(0, 30).map(({ artist, sourceCount, status, distributorScore, followers, brandPartners, tier, priority, connectors, reasonTags }) => {
+                  const instagramUrl = resolveInstagramUrl(artist);
+                  const selectedProducts = Array.isArray(artist.metadata?.cooperationProducts)
+                    ? artist.metadata.cooperationProducts
+                    : String(artist.metadata?.cooperationProducts || '')
+                        .split(',')
+                        .map((x) => x.trim())
+                        .filter(Boolean);
+                  const distributorRegions = Array.isArray(artist.metadata?.distributorRegions)
+                    ? artist.metadata.distributorRegions
+                    : String(artist.metadata?.distributorRegions || '')
+                        .split(',')
+                        .map((x) => x.trim())
+                        .filter(Boolean);
+                  const orderedProductOptions = [
+                    ...COOP_PRODUCT_OPTIONS.filter((opt) => selectedProducts.includes(opt)),
+                    ...COOP_PRODUCT_OPTIONS.filter((opt) => !selectedProducts.includes(opt))
+                  ];
+                  const configuredGeoRaw = String(artist.metadata?.distributorGeoDisplay || '').trim();
+                  const configuredGeoDisplay = isPlaceholderGeo(configuredGeoRaw) ? '' : configuredGeoRaw;
+                  const geoParts = [artist.city, artist.state, artist.country]
+                    .map((v) => String(v || '').trim())
+                    .filter((v) => !isPlaceholderGeo(v));
+                  const fallbackGeo = geoParts.join(', ').trim();
+                  const effectiveGeoDisplay = configuredGeoDisplay || (distributorRegions.length > 0 ? distributorRegions.join(', ') : (fallbackGeo || 'not_set'));
+                  const coverageDisplay = distributorRegions.join(', ');
+                  const showCoverage = distributorRegions.length > 0 && normText(coverageDisplay) !== normText(effectiveGeoDisplay);
+                  return (
+                  <div key={`dist_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-white leading-tight whitespace-normal">{cleanDisplay(artist.shopName || artist.fullName || artist.username)}</p>
+                      <p className="text-[10px] text-zinc-500 truncate">
+                        {priority}/{tier} | score {distributorScore} | followers {Number(followers || 0).toLocaleString()} | brands {brandPartners} | via artists {sourceCount}
+                      </p>
+                      <p className="text-[10px] text-zinc-500 truncate mt-1">
+                        coop: {cleanDisplay(String(artist.metadata?.cooperationStatus || 'unknown'))} | products: {Array.isArray(artist.metadata?.cooperationProducts)
+                          ? artist.metadata.cooperationProducts.join(', ')
+                          : cleanDisplay(String(artist.metadata?.cooperationProducts || 'none'))}
+                      </p>
+                      <p className="text-[10px] text-zinc-500 truncate mt-1">
+                        geo: {cleanDisplay(effectiveGeoDisplay)} | coverage: {showCoverage ? coverageDisplay : 'not_set'}
+                      </p>
+                      <p className="text-[10px] text-zinc-500 truncate mt-1">
+                        reasons: {reasonTags.length > 0 ? reasonTags.join(', ') : 'none'}
+                      </p>
+                      <p className="text-[10px] text-zinc-500 truncate mt-1">
+                        connectors: {connectors.length > 0
+                          ? connectors.map((c, idx) => `${idx + 1}.${cleanDisplay(c.artist.fullName || c.artist.shopName || c.artist.username)}(${Math.round(c.connectorScore)})`).join(' | ')
+                          : 'none'}
+                      </p>
+                      <p className="text-[10px] text-zinc-500 truncate mt-1">
+                        ins: {instagramUrl || 'N/A'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end max-w-[58%]">
+                      <span className={cn(
+                        "text-[9px] uppercase tracking-widest font-black px-1.5 py-1 rounded border",
+                        priority === 'P0' ? "text-rose-200 border-rose-500/40 bg-rose-600/20" :
+                        priority === 'P1' ? "text-amber-200 border-amber-500/40 bg-amber-600/20" :
+                        priority === 'P2' ? "text-blue-200 border-blue-500/40 bg-blue-600/20" :
+                        "text-zinc-300 border-zinc-700 bg-zinc-900"
+                      )}>
+                        {priority}
+                      </span>
+                      <span className="text-[9px] uppercase tracking-widest font-black text-zinc-400">{status}</span>
+                      <button
+                        onClick={() => updateArtist(artist.id, {
+                          metadata: {
+                            ...(artist.metadata || {}),
+                            distributorStatus: status === 'qualified' ? 'new' : 'qualified',
+                            isDistributor: status === 'qualified' ? false : true
+                          }
+                        })}
+                        className="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 rounded text-[9px] font-black text-emerald-200 uppercase tracking-widest"
+                      >
+                        {status === 'qualified' ? 'Unmark' : 'Qualify'}
+                      </button>
+                      <select
+                        value={String(artist.metadata?.cooperationStatus || 'none')}
+                        onChange={async (e) => {
+                          const nextStatus = e.target.value;
+                          await updateArtist(artist.id, {
+                            metadata: {
+                              ...(artist.metadata || {}),
+                              cooperationStatus: nextStatus,
+                              cooperationUpdatedAt: new Date().toISOString()
+                            }
+                          });
+                          toast.success('Cooperation status updated.');
+                        }}
+                        className="px-1.5 py-1 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 rounded text-[9px] font-black text-blue-100 uppercase tracking-widest min-w-[84px]"
+                        style={{ backgroundColor: '#112a56', color: '#eaf2ff' }}
+                      >
+                        <option value="none" style={{ backgroundColor: '#0b1220', color: '#f8fafc' }}>none</option>
+                        <option value="discussing" style={{ backgroundColor: '#0b1220', color: '#f8fafc' }}>discussing</option>
+                        <option value="sample_sent" style={{ backgroundColor: '#0b1220', color: '#f8fafc' }}>sample_sent</option>
+                        <option value="active" style={{ backgroundColor: '#0b1220', color: '#f8fafc' }}>active</option>
+                        <option value="paused" style={{ backgroundColor: '#0b1220', color: '#f8fafc' }}>paused</option>
+                      </select>
+                      <select
+                        multiple
+                        size={2}
+                        value={selectedProducts}
+                        onChange={async (e) => {
+                          const selected = Array.from(e.target.selectedOptions as HTMLCollectionOf<HTMLOptionElement>).map((o) => o.value);
+                          await updateArtist(artist.id, {
+                            metadata: {
+                              ...(artist.metadata || {}),
+                              cooperationProducts: selected,
+                              cooperationUpdatedAt: new Date().toISOString()
+                            }
+                          });
+                          toast.success('Cooperation products updated.');
+                        }}
+                        className="px-1.5 py-1 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 rounded text-[9px] font-black text-amber-200 tracking-widest max-w-[118px]"
+                        title="Coop Products (single or multi-select)"
+                      >
+                        {orderedProductOptions.map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                      {!configuredGeoDisplay ? (
+                        <button
+                          onClick={async () => {
+                            const currentRegions = Array.isArray(artist.metadata?.distributorRegions)
+                              ? artist.metadata.distributorRegions.join(', ')
+                              : String(artist.metadata?.distributorRegions || '');
+                            const regionsInput = window.prompt('Distributor coverage regions (comma separated), e.g. CA, OR, WA', currentRegions);
+                            if (regionsInput === null) return;
+                            const geoDefault = fallbackGeo;
+                            const geoInput = window.prompt('Display geo (City/Region, Country). Example: Los Angeles, CA, USA', geoDefault);
+                            const regions = regionsInput
+                              .split(',')
+                              .map((x) => x.trim().toUpperCase())
+                              .filter(Boolean);
+                            const finalGeoDisplay = String(geoInput || '').trim() || (regions.length > 0 ? regions.join(', ') : geoDefault);
+                            await updateArtist(artist.id, {
+                              metadata: {
+                                ...(artist.metadata || {}),
+                                distributorRegions: regions,
+                                distributorGeoDisplay: finalGeoDisplay,
+                                regionsUpdatedAt: new Date().toISOString()
+                              }
+                            });
+                            toast.success('Distributor geo/regions updated.');
+                          }}
+                          className="px-2 py-1 bg-cyan-600/20 border border-cyan-500/40 rounded text-[10px] font-black text-cyan-200 uppercase tracking-widest"
+                        >
+                          Set Regions
+                        </button>
+                      ) : (
+                        <span
+                          className="px-1.5 py-1 bg-cyan-600/20 border border-cyan-500/40 rounded text-[9px] font-black text-cyan-200 tracking-widest max-w-[120px] truncate"
+                          title={configuredGeoDisplay}
+                        >
+                          {configuredGeoDisplay}
+                        </span>
+                      )}
+                      <button
+                        onClick={async () => {
+                          await updateArtist(artist.id, {
+                            metadata: {
+                              ...(artist.metadata || {}),
+                              distributorExcluded: true,
+                              isDistributor: false,
+                              distributorStatus: 'new'
+                            }
+                          });
+                          toast.success('Removed from distributor list.');
+                        }}
+                        className="px-1.5 py-1 bg-rose-600/20 border border-rose-500/40 rounded text-[9px] font-black text-rose-200 uppercase tracking-widest"
+                        title="Remove from distributor list"
+                      >
+                        Remove
+                      </button>
+                      {instagramUrl ? (
+                        <button
+                          onClick={() => window.open(instagramUrl, '_blank')}
+                          className="px-1.5 py-1 bg-zinc-900 border border-zinc-700 rounded text-[9px] font-black text-zinc-200 uppercase tracking-widest hover:text-rose-300"
+                          title="Open Instagram"
+                        >
+                          IG
+                        </button>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            const input = window.prompt('Set Instagram URL or handle', '');
+                            if (!input) return;
+                            const normalized = normalizeInstagramUrl(input.trim());
+                            if (!normalized) {
+                              toast.error('Invalid Instagram input.');
+                              return;
+                            }
+                            const handle = normalized.includes('instagram.com/')
+                              ? normalized.split('instagram.com/')[1].split('/')[0].split('?')[0]
+                              : '';
+                            await updateArtist(artist.id, {
+                              ig_handle: handle || artist.ig_handle || null,
+                              metadata: {
+                                ...(artist.metadata || {}),
+                                manualInstagramProvided: true,
+                                manualInstagramUrl: normalized
+                              }
+                            });
+                            toast.success('Instagram saved.');
+                          }}
+                          className="px-1.5 py-1 bg-zinc-900 border border-zinc-700 rounded text-[9px] font-black text-zinc-200 uppercase tracking-widest hover:text-emerald-300"
+                          title="Set Instagram"
+                        >
+                          Set IG
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )})}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 bg-[#111] border border-zinc-800/50 p-6 rounded-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h5 className="text-white font-black text-lg">Referral Mining Queue</h5>
+                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">
+                  High-trust artists likely to intro local distributors
+                </p>
+              </div>
+              <span className="px-2 py-1 bg-zinc-900 border border-zinc-800 rounded text-[10px] font-black text-zinc-300">
+                {referralReadyArtists.length} artists
+              </span>
+            </div>
+            {referralReadyArtists.length === 0 ? (
+              <p className="text-sm text-zinc-500">No referral-ready artists yet. Engage more first (reply/follow-back/customers).</p>
+            ) : (
+              <div className="space-y-2">
+                {referralReadyArtists.map(({ artist, trustScore }) => (
+                  <div key={`ref_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-white truncate">{cleanDisplay(artist.fullName || artist.shopName || artist.username)}</p>
+                      <p className="text-[10px] text-zinc-500 truncate">
+                        trust {Math.round(trustScore)} | {artist.city || artist.location || 'Unknown'}, {artist.country || 'USA'} | stage {artist.stage}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={async () => {
+                          const text = buildReferralScript(
+                            cleanDisplay(artist.fullName || artist.shopName || artist.username),
+                            cleanDisplay(`${artist.city || artist.location || 'their area'}, ${artist.country || 'USA'}`),
+                            '10%'
+                          );
+                          await navigator.clipboard.writeText(text);
+                          toast.success('Referral DM script copied.');
+                        }}
+                        className="px-2.5 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 rounded text-[10px] font-black text-blue-200 uppercase tracking-widest"
+                      >
+                        Copy Script
+                      </button>
+                      <button
+                        onClick={() => updateArtist(artist.id, {
+                          metadata: {
+                            ...(artist.metadata || {}),
+                            referralStatus: artist.metadata?.referralStatus === 'requested' ? 'new' : 'requested'
+                          }
+                        })}
+                        className="px-2.5 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 rounded text-[10px] font-black text-amber-200 uppercase tracking-widest"
+                      >
+                        {artist.metadata?.referralStatus === 'requested' ? 'Unmark Requested' : 'Mark Requested'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 bg-[#111] border border-zinc-800/50 p-6 rounded-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h5 className="text-white font-black text-lg">Distributor Lifecycle</h5>
+                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">
+                  Sample feedback and reorder recovery workflow
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">
+                  Sample Sent / Waiting Feedback ({distributorLifecycleBuckets.sample_sent.length})
+                </p>
+                <div className="space-y-2">
+                  {distributorLifecycleBuckets.sample_sent.slice(0, 10).map(({ artist, priority }) => (
+                    <div key={`lc_sample_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
+                      <p className="text-sm text-zinc-200 truncate">{cleanDisplay(artist.shopName || artist.fullName || artist.username)} ({priority})</p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => markDistributorLifecycle(artist.id, 'positive_no_order', { sampleStatus: 'positive' })}
+                          className="px-2 py-1 bg-emerald-600/20 border border-emerald-500/40 rounded text-[10px] font-black text-emerald-200 uppercase tracking-widest"
+                        >
+                          Positive
+                        </button>
+                        <button
+                          onClick={() => markDistributorLifecycle(artist.id, 'bad_feedback', { sampleStatus: 'negative' })}
+                          className="px-2 py-1 bg-rose-600/20 border border-rose-500/40 rounded text-[10px] font-black text-rose-200 uppercase tracking-widest"
+                        >
+                          Negative
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">
+                  Bad Feedback / Need Recovery ({distributorLifecycleBuckets.bad_feedback.length})
+                </p>
+                <div className="space-y-2">
+                  {distributorLifecycleBuckets.bad_feedback.slice(0, 10).map(({ artist, priority }) => (
+                    <div key={`lc_bad_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
+                      <p className="text-sm text-zinc-200 truncate">{cleanDisplay(artist.shopName || artist.fullName || artist.username)} ({priority})</p>
+                      <button
+                        onClick={async () => {
+                          const msg = `Thanks for the honest feedback. We'll replace with an adjusted sample spec + provide a small compensating discount on first paid batch.`;
+                          await navigator.clipboard.writeText(msg);
+                          toast.success('Recovery script copied.');
+                        }}
+                        className="px-2 py-1 bg-amber-600/20 border border-amber-500/40 rounded text-[10px] font-black text-amber-200 uppercase tracking-widest"
+                      >
+                        Copy Recovery Script
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">
+                  Positive Feedback / No Order Yet ({distributorLifecycleBuckets.positive_no_order.length})
+                </p>
+                <div className="space-y-2">
+                  {distributorLifecycleBuckets.positive_no_order.slice(0, 10).map(({ artist, priority }) => (
+                    <div key={`lc_pos_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
+                      <p className="text-sm text-zinc-200 truncate">{cleanDisplay(artist.shopName || artist.fullName || artist.username)} ({priority})</p>
+                      <button
+                        onClick={async () => {
+                          const msg = `Glad the sample worked. If we lock a first distributor order this week, we can include starter margin protection and local territory support.`;
+                          await navigator.clipboard.writeText(msg);
+                          toast.success('Close-order script copied.');
+                        }}
+                        className="px-2 py-1 bg-blue-600/20 border border-blue-500/40 rounded text-[10px] font-black text-blue-200 uppercase tracking-widest"
+                      >
+                        Copy Close Script
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">
+                  One Order Then Stalled ({distributorLifecycleBuckets.one_order_stalled.length})
+                </p>
+                <div className="space-y-2">
+                  {distributorLifecycleBuckets.one_order_stalled.slice(0, 10).map(({ artist, priority, daysSinceLastOrder }) => (
+                    <div key={`lc_stalled_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
+                      <p className="text-sm text-zinc-200 truncate">
+                        {cleanDisplay(artist.shopName || artist.fullName || artist.username)} ({priority}) | last order {daysSinceLastOrder ?? '-'}d
+                      </p>
+                      <button
+                        onClick={async () => {
+                          const msg = `Quick check-in: we can optimize your next order mix based on your first sell-through and add a reorder incentive for this cycle.`;
+                          await navigator.clipboard.writeText(msg);
+                          toast.success('Reorder recovery script copied.');
+                        }}
+                        className="px-2 py-1 bg-purple-600/20 border border-purple-500/40 rounded text-[10px] font-black text-purple-200 uppercase tracking-widest"
+                      >
+                        Copy Reorder Script
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">
+                  Long Time No Order ({distributorLifecycleBuckets.long_no_order.length}, {REORDER_STALE_DAYS}+ days)
+                </p>
+                <div className="space-y-2">
+                  {distributorLifecycleBuckets.long_no_order.slice(0, 12).map(({ artist, priority, daysSinceLastOrder, orderCount }) => (
+                    <div key={`lc_long_no_order_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
+                      <p className="text-sm text-zinc-200 truncate">
+                        {cleanDisplay(artist.shopName || artist.fullName || artist.username)} ({priority}) | orders {orderCount} | last order {daysSinceLastOrder ?? '-'}d
+                      </p>
+                      <button
+                        onClick={async () => {
+                          const msg = `Checking in on restock planning: based on your prior order, we can suggest a faster-turn SKU mix and provide a timed reorder incentive this week.`;
+                          await navigator.clipboard.writeText(msg);
+                          toast.success('No-order follow-up script copied.');
+                        }}
+                        className="px-2 py-1 bg-cyan-600/20 border border-cyan-500/40 rounded text-[10px] font-black text-cyan-200 uppercase tracking-widest"
+                      >
+                        Copy Follow-up Script
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
