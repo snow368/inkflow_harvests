@@ -17,7 +17,7 @@ import {
   LogOut,
   Loader2,
   Zap,
-  Package
+  Box
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
@@ -28,10 +28,12 @@ import { CRMProvider, useCRM } from './contexts/CRMContext';
 import Dashboard from './components/Dashboard';
 import ChatTrainer from './components/ChatTrainer';
 import ArtistAnalyzer from './components/ArtistAnalyzer';
-import CRMLifecycleCenter from './components/CRMLifecycleCenter';
+import CRMManager from './components/CRMManager';
+import DualListManager from './components/DualListManager';
 import AutomationSettings from './components/AutomationSettings';
 import ShopOutreach from './components/ShopOutreach';
 import AutomationCommandCenter from './components/AutomationCommandCenter';
+
 import InventoryManager from './components/InventoryManager';
 
 type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'inventory' | 'automation' | 'settings';
@@ -49,7 +51,7 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
     { id: 'analyzer', label: 'Artist Analyzer', icon: Instagram },
     { id: 'training', label: 'AI Training', icon: MessageSquare },
     { id: 'crm', label: 'CRM (Lifecycle)', icon: Users },
-    { id: 'inventory', label: 'Inventory', icon: Package },
+    { id: 'inventory', label: 'Inventory', icon: Box },
     { id: 'automation', label: 'Automation', icon: Zap },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
@@ -62,10 +64,7 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
     return (
       <button
         key={tab.id}
-        onClick={() => {
-        setActiveTab(tab.id as Tab);
-        sessionStorage.setItem('activeTab', tab.id as string);
-    }}
+        onClick={() => setActiveTab(tab.id as Tab)}
         className={cn(
           "w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group relative",
           isActive 
@@ -194,7 +193,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     analyzer: 'Artist Analyzer',
     training: 'AI Training',
     crm: 'CRM (Lifecycle)',
-    inventory: 'Inventory',
+    inventory: 'Inventory Manager',
     automation: 'Automation Center',
     settings: 'Settings'
   };
@@ -204,8 +203,8 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     outreach: "A large searchable table of tattoo artists and shops.",
     analyzer: "A deep-dive profile page for a single artist and post analysis.",
     training: "Manage AI personas and chat history to refine automation.",
-    crm: 'Lifecycle operating center with communication detail and AI next action.',
-    inventory: "Local-first inventory control and Shopify auto-sync.",
+    crm: "Manage 'Engaged' and 'Customers' through the lifecycle funnel.",
+    inventory: "Master stock management, SKU tracking, and AI-driven restocking alerts.",
     automation: "AdsPower & Playwright multi-account orchestration command center.",
     settings: "Configure API keys and automation safety settings."
   };
@@ -230,7 +229,6 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
           <button 
             onClick={() => {
               setActiveTab('automation');
-              sessionStorage.setItem('activeTab', 'automation');
               toast.success("Campaign Engine Initialized", {
                 description: "Redirecting to Automation Command Center..."
               });
@@ -250,11 +248,11 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
           exit={{ opacity: 0, y: -10 }}
           transition={{ duration: 0.2 }}
         >
-          {activeTab === 'dashboard' && <Dashboard />}
+          {activeTab === 'dashboard' && <Dashboard onNavigate={setActiveTab} />}
           {activeTab === 'outreach' && <ShopOutreach onNavigate={setActiveTab} />}
           {activeTab === 'analyzer' && <ArtistAnalyzer />}
           {activeTab === 'training' && <ChatTrainer />}
-          {activeTab === 'crm' && <CRMLifecycleCenter />}
+          {activeTab === 'crm' && <DualListManager />}
           {activeTab === 'inventory' && <InventoryManager />}
           {activeTab === 'automation' && <AutomationCommandCenter />}
           {activeTab === 'settings' && <AutomationSettings />}
@@ -265,9 +263,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<Tab>(() => {
-  return (sessionStorage.getItem('activeTab') as Tab) || 'dashboard';
-});
+  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
 
   return (
     <CRMProvider>

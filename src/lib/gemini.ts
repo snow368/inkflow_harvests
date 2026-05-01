@@ -1,107 +1,15 @@
+import { GoogleGenAI, Type } from "@google/genai";
 import { toast } from "sonner";
 
-// ========== API 池配置 ==========
-import { toast } from "sonner";
-
-// ========== API 池配置 ==========
-const API_POOL = [
-  {
-    name: 'mistral',
-    url: 'https://api.mistral.ai/v1/chat/completions',
-    key: () => process.env.MISTRAL_API_KEY || '',
-    buildRequest: (prompt: string) => ({
-      model: 'mistral-small',
-      messages: [
-        { role: 'system', content: 'You are a helpful assistant that returns data in JSON format only. No markdown, no extra text.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.3,
-      max_tokens: 4000
-    }),
-    parseResponse: (data: any) => data?.choices?.[0]?.message?.content || '{}'
-  },
-  {
-    name: 'deepseek',
-    url: 'https://api.deepseek.com/chat/completions',
-    key: () => process.env.DEEPSEEK_API_KEY || '',
-    buildRequest: (prompt: string) => ({
-      model: 'deepseek-chat',
-      messages: [
-        { role: 'system', content: 'You are a helpful assistant that returns data in JSON format only. No markdown, no extra text.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.3,
-      max_tokens: 4000
-    }),
-    parseResponse: (data: any) => data?.choices?.[0]?.message?.content || '{}'
-  },
-  {
-    name: 'gemini',
-    url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
-    key: () => process.env.GEMINI_API_KEY || '',
-    buildRequest: (prompt: string) => ({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json' }
-    }),
-    parseResponse: (data: any) => data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
-  }
-];
-// ========== API 池配置结束 ==========
-
-// ========== 带自动切换的调用函数 ==========
-async function callWithFallback(prompt: string): Promise<any> {
-  for (const api of API_POOL) {
-    const apiKey = api.key();
-    if (!apiKey) {
-      console.warn(`⏭️ ${api.name} 未配置 Key，跳过`);
-      continue;
-    }
-
-    try {
-      const headers: any = { 'Content-Type': 'application/json' };
-      if (api.name !== 'gemini') {
-        headers['Authorization'] = `Bearer ${apiKey}`;
-      }
-
-      const url = api.name === 'gemini' ? `${api.url}?key=${apiKey}` : api.url;
-      const body = api.buildRequest(prompt);
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(120000)
-      });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(`${api.name} error: ${response.status} ${JSON.stringify(errData)}`);
-      }
-
-      const data = await response.json();
-      const text = api.parseResponse(data);
-      console.log(`✅ ${api.name} 调用成功`);
-      return safeJsonParse(text, {});
-    } catch (e: any) {
-      console.warn(`⚠️ ${api.name} 失败: ${e.message}，尝试下一个...`);
-    }
-  }
-
-  throw new Error('所有 API 均调用失败');
-}
-// ========== 自动切换函数结束 ==========
+const apiKey = process.env.GEMINI_API_KEY;
+const genAI = new GoogleGenAI({ apiKey: apiKey || "" }) as any;
 
 let isMockMode = false;
-
 export const setMockMode = (mode: boolean) => {
   isMockMode = mode;
 };
 
-function getApiKey() {
-  return process.env.GEMINI_API_KEY || "";
-}
-
-function handleGeminiError(error: any, silent: boolean = false) {
+const handleGeminiError = (error: any, silent: boolean = false) => {
   console.error("Gemini API Error:", error);
   if (silent) return;
   
@@ -113,75 +21,243 @@ function handleGeminiError(error: any, silent: boolean = false) {
   } else {
     toast.error("An error occurred with the AI engine.");
   }
-}
+};
 
-export function safeJsonParse(text: string, fallback: any) {
+const withRetry = async <T>(fn: () => Promise<T>, retries: number = 2, delay: number = 1000): Promise<T> => {
   try {
-    return JSON.parse(text);
-  } catch {
+    return await fn();
+  } catch (error: any) {
+    const message = error?.message || String(error);
+    const isRetryable = message.includes("Rpc failed") || message.includes("xhr error") || message.includes("500") || message.includes("503");
+    
+    if (retries > 0 && isRetryable) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return withRetry(fn, retries - 1, delay * 2);
+    }
+    throw error;
+  }
+};
+
+export const safeJsonParse = (text: any, fallback: any) => {
+  try {
+    if (text === undefined || text === null) return fallback;
+    
+    let stringText = String(text).trim();
+    
+    // Handle literal "undefined" or "null" strings (case-insensitive and with quotes)
+    const lowerText = stringText.toLowerCase();
+    if (
+      stringText === "" || 
+      lowerText === "undefined" || 
+      lowerText === "null" || 
+      lowerText === "\"undefined\"" || 
+      lowerText === "\"null\"" ||
+      stringText === "[object Object]"
+    ) {
+      return fallback;
+    }
+    
+    // Remove markdown code blocks if present
+    const cleanText = stringText.replace(/```json\n?|\n?```/g, "").trim();
+    
+    // Final check for any problematic strings before parsing
+    if (!cleanText || 
+        cleanText === "undefined" || 
+        cleanText.toLowerCase() === "undefined" || 
+        cleanText === "null" ||
+        cleanText === "[object Object]") {
+      return fallback;
+    }
+    
+    try {
+      return JSON.parse(cleanText);
+    } catch (parseError) {
+      // If it fails, try one more thing: wrap in braces if it looks like a list or object but missing them
+      // (though responseSchema should prevent this)
+      console.warn("Retrying parse after second cleanup for text starting with:", cleanText.slice(0, 20));
+      return fallback;
+    }
+  } catch (e) {
+    // If it's still failing with "undefined" error, it means cleanText was somehow "undefined"
+    console.error("JSON Parse Error:", e, "Text:", text);
     return fallback;
   }
+};
+
+export interface ArtistPost {
+  imageUrl: string;
+  caption: string;
 }
 
+export interface AnalysisResult {
+  style: string;
+  comment: string;
+  confidence: number;
+  styleMatch: boolean;
+  tags: string[];
+  interactions: {
+    followedBack: boolean;
+    repliedToComment: boolean;
+    storiesWatched: number;
+    postsLiked: number;
+  };
+  styleProportions: { name: string; value: number }[];
+  suggestedDM: string;
+}
+
+export const analyzeArtistPost = async (post: ArtistPost): Promise<AnalysisResult> => {
+  if (isMockMode) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    return {
+      style: "Hyper-Realism",
+      comment: "The detail on that portrait is absolutely incredible. The lighting is perfect!",
+      confidence: 0.98,
+      styleMatch: true,
+      tags: ["Realism", "Portrait", "Black & Grey", "London"],
+      interactions: {
+        followedBack: true,
+        repliedToComment: true,
+        storiesWatched: 8,
+        postsLiked: 12
+      },
+      styleProportions: [
+        { name: "Realism", value: 85 },
+        { name: "Portrait", value: 10 },
+        { name: "Black & Grey", value: 5 }
+      ],
+      suggestedDM: "Hey! I've been following your realism work for a while and the technical precision is next level. We're actually launching a new needle line specifically for fine-detail portraiture. Would love to send you a sample pack to see what you think?"
+    };
+  }
+
+  try {
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            style: { type: Type.STRING },
+            comment: { type: Type.STRING },
+            confidence: { type: Type.NUMBER },
+            styleMatch: { type: Type.BOOLEAN },
+            tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+            styleProportions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  value: { type: Type.NUMBER }
+                },
+                required: ["name", "value"]
+              }
+            },
+            interactions: {
+              type: Type.OBJECT,
+              properties: {
+                followedBack: { type: Type.BOOLEAN },
+                repliedToComment: { type: Type.BOOLEAN },
+                storiesWatched: { type: Type.NUMBER },
+                postsLiked: { type: Type.NUMBER }
+              },
+              required: ["followedBack", "repliedToComment", "storiesWatched", "postsLiked"]
+            },
+            suggestedDM: { type: Type.STRING }
+          },
+          required: ["style", "comment", "confidence", "styleMatch", "tags", "styleProportions", "interactions", "suggestedDM"],
+        },
+      },
+    });
+
+    const result = await model.generateContent([
+      {
+        text: `Analyze this tattoo artist's post and profile context. 
+        1. Identify the primary tattoo style.
+        2. Generate a professional comment.
+        3. Provide a confidence score (0-1).
+        4. Determine if their style matches our target profile (Style Match: true/false).
+        5. Identify 3-5 relevant tags (style, location, etc.).
+        6. Provide style proportions for: Realism, Traditional, Black & Grey.
+        7. Determine interaction status:
+           - Did they follow back? (true/false)
+           - Did they reply to a comment? (true/false)
+           - How many stories were watched? (0-10)
+           - How many posts were liked? (0-10)
+        8. Generate a high-converting suggested DM script.
+        
+        Caption: ${post.caption}`,
+      },
+      {
+        inlineData: {
+          mimeType: "image/jpeg",
+          data: post.imageUrl.split(',')[1] || "", 
+        },
+      },
+    ]);
+
+    const response = await result.response;
+    const text = await response.text();
+    return safeJsonParse(text || "", {});
+  } catch (e: any) {
+    handleGeminiError(e);
+    throw e;
+  }
+};
+
 export const processArtistBatchAI = async (
-  artists: { id: string; username: string; shopName?: string; bio?: string }[],
+  artists: { id: string, username: string, shopName?: string, bio?: string }[], 
   silent: boolean = false
 ): Promise<Record<string, any>> => {
   if (isMockMode) {
-    // Mock 模式保持不变
     await new Promise(resolve => setTimeout(resolve, 1500));
     const mockResult: Record<string, any> = {};
     artists.forEach(a => {
-      const postsPerWeek = Math.floor(Math.random() * 8) + 1;
-      const avgLikes = Math.floor(Math.random() * 1200) + 80;
-      const avgComments = Math.floor(Math.random() * 120) + 8;
-      const followers = Math.floor(Math.random() * 20000) + 500;
       mockResult[a.id] = {
-        followers,
+        followers: Math.floor(Math.random() * 20000) + 500,
         activityLevel: ['high', 'medium', 'low'][Math.floor(Math.random() * 3)],
         style: ['Realism', 'Traditional', 'Black & Grey', 'Fine Line'][Math.floor(Math.random() * 4)],
         dnaTags: ['#Verified', '#Active', '#ProArtist'],
         realUsername: a.username.includes('user_') || a.username.includes('shopify') ? `artist_${a.id.slice(-4)}` : a.username,
-        realFullName: a.shopName || `Artist ${a.id.slice(-4)}`,
-        postingHours: [11, 12, 13, 19, 20, 21].sort(() => 0.5 - Math.random()).slice(0, 3).sort((x, y) => x - y),
-        postsPerWeek,
-        avgLikes,
-        avgComments,
-        engagementRate: Number(((avgLikes + avgComments * 3) / Math.max(500, followers) * 100).toFixed(2)),
-        followerFollowingRatio: Number((0.8 + Math.random() * 2.4).toFixed(2)),
-        tattooLikelihood: Number((0.7 + Math.random() * 0.3).toFixed(2)),
-        styleVector: {
-          realism: Math.floor(Math.random() * 45),
-          traditional: Math.floor(Math.random() * 45),
-          black_grey: Math.floor(Math.random() * 45),
-          fine_line: Math.floor(Math.random() * 45),
-          blackwork: Math.floor(Math.random() * 45)
-        }
+        realFullName: a.shopName || `Artist ${a.id.slice(-4)}`
       };
     });
     return mockResult;
   }
 
-      try {
+  try {
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
+      generationConfig: {
+        responseMimeType: "application/json",
+      }
+    });
+
     const prompt = `Analyze these ${artists.length} tattoo artists for a tattoo supply business CRM. 
     For each artist, based on their handle (@${artists.map(a => a.username).join(', @')}) and shop name, provide realistic data:
     1. Follower count estimate: Generate a realistic number between 1,200 and 85,000 based on the handle's "vibe".
     2. Activity level: "high", "medium", or "low".
-    3. Primary tattoo style: Be specific (e.g., "Micro-Realism", "American Traditional"). DO NOT use "Various".
-    4. 3-5 professional DNA tags: (e.g. "#Realism", "#FineLine", "#ProTeam").
-    5. A realistic Instagram handle: If the current one is a system ID (like user_123), suggest a professional one.
+    3. Primary tattoo style: Be specific (e.g., "Micro-Realism", "American Traditional", "Fine Line", "Japanese", "Blackwork", "Neo-Traditional"). DO NOT use "Various".
+    4. 3-5 professional DNA tags: (e.g. "#Realism", "#FineLine", "#ProTeam", "#AwardWinner").
+    5. A realistic Instagram handle: If the current one is a system ID (like user_123), suggest a professional one like @ink_by_name or @shopname_tattoo.
     6. The full shop or artist name: Clean up the provided name.
-    7. Estimate active posting hours (0-23) as postingHours array (3-5 integers).
-    8. Estimate postsPerWeek (integer), avgLikes (integer), avgComments (integer), engagementRate (percentage number).
-    9. Estimate followerFollowingRatio (number), tattooLikelihood (0-1), and styleVector object with keys realism/traditional/black_grey/fine_line/blackwork.
     
     Artists to analyze:
     ${artists.map(a => `ID: ${a.id} | Handle: @${a.username} | Shop: ${a.shopName || 'N/A'} | Bio: ${a.bio || 'N/A'}`).join('\n')}
     
-    CRITICAL: Return ONLY valid JSON object where keys are the IDs.`;
+    CRITICAL: You MUST return a valid JSON object where keys are the IDs and values are objects with:
+    - followers: number (integer)
+    - activityLevel: string
+    - style: string (specific style name)
+    - dnaTags: string[]
+    - realUsername: string
+    - realFullName: string`;
 
-    return await callWithFallback(prompt);
-  } catch (e: any) {
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = await response.text();
+    return safeJsonParse(text || "", {});
+  } catch (e) {
     handleGeminiError(e, silent);
     return {};
   }

@@ -533,7 +533,7 @@ export default function ArtistAnalyzer() {
                           {interaction.type === 'comment' && <MessageCircle className="w-5 h-5 text-blue-500" />}
                           {interaction.type === 'follow' && <UserCheck className="w-5 h-5 text-green-500" />}
                           {interaction.type === 'story_view' && <ImageIcon className="w-5 h-5 text-amber-500" />}
-                          {interaction.type === 'reply' && <MessageSquare className="w-5 h-5 text-purple-500" />}
+                          {interaction.type === 'dm_reply' && <MessageSquare className="w-5 h-5 text-purple-500" />}
                         </div>
                         <div className="flex flex-col">
                           <div className="flex items-center justify-between mb-1">

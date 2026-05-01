@@ -77,6 +77,8 @@ export default function DualListManager() {
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 25;
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -92,6 +94,18 @@ export default function DualListManager() {
     const matchesSearch = username.includes(searchQuery.toLowerCase());
     return matchesTab && matchesSearch;
   });
+
+  const paginatedArtists = filteredArtists.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  const totalPages = Math.ceil(filteredArtists.length / itemsPerPage);
+
+  // Reset page when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, searchQuery]);
 
   const tabs: { id: CRMStage; label: string; icon: any }[] = [
     { id: 'outreach', label: 'New Leads', icon: UserPlus },
@@ -177,18 +191,44 @@ export default function DualListManager() {
         </div>
       </div>
 
+      {/* Pagination Controls - New */}
+      {totalPages > 1 && (
+        <div className="px-8 py-3 bg-zinc-900/40 border-b border-zinc-800/50 flex items-center justify-between">
+          <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+            Showing {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredArtists.length)} of {filteredArtists.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-[10px] font-black rounded-xl transition-all"
+            >
+              Previous
+            </button>
+            <span className="text-[10px] font-black text-rose-500 px-4">Page {currentPage} / {totalPages}</span>
+            <button 
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-[10px] font-black rounded-xl transition-all"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Content Area */}
       <div className="flex-1 overflow-hidden relative">
         <AnimatePresence mode="wait">
           <motion.div 
-            key={activeTab}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95 }}
+            key={`${activeTab}-${currentPage}`} // Keys to trigger transition on page change
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
             className="h-full overflow-y-auto p-8"
           >
             <div className="grid grid-cols-1 gap-4">
-              {filteredArtists.map((artist) => (
+              {paginatedArtists.map((artist) => (
                 <motion.div 
                   layout
                   key={artist.id}

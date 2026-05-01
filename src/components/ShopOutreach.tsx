@@ -141,6 +141,7 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
     bulkEnrichArtists, 
     clearAllData, 
     isScanning, 
+    setIsScanning,
     scanProgress,
     pinnedCount,
     persona, 
@@ -160,9 +161,118 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
   const [accountTag, setAccountTag] = useState('default');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [showScrape, setShowScrape] = useState(false);
+  const [scrapeStateCode, setScrapeStateCode] = useState('');
+  const [scrapeHeadless, setScrapeHeadless] = useState(true);
+  const [scrapeKeyword, setScrapeKeyword] = useState('Tattoo Shops');
+  const [scrapeTaskId, setScrapeTaskId] = useState<string | null>(null);
+  const [scrapeProgress, setScrapeProgress] = useState({ completed: 0, total: 0 });
+  const [scrapeStatus, setScrapeStatus] = useState('');
+  const [scrapeLogs, setScrapeLogs] = useState<string[]>([]);
+  const [scrapeCountry, setScrapeCountry] = useState('US');
+  const [scrapeStates, setScrapeStates] = useState<string[]>([]);  // 存储当前国家的州/省列表
+  const [scrapeCustomCountry, setScrapeCustomCountry] = useState(''); 
+  const [availableCountries, setAvailableCountries] = useState<{code: string, name: string}[]>([]);
+
+  // Load available countries
+  useEffect(() => {
+    const fetchCountries = async () => {
+      try {
+        const res = await fetch('/api/geo/countries');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setAvailableCountries(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch countries:", err);
+      }
+    };
+    fetchCountries();
+  }, []);
+
+  // Fetch states when country changes
+  useEffect(() => {
+    const fetchStates = async () => {
+      const code = scrapeCountry === 'CUSTOM' ? scrapeCustomCountry : scrapeCountry;
+      if (!code || code.length < 2) {
+        setScrapeStates([]);
+        return;
+      }
+      
+      try {
+        const res = await fetch(`/api/geo/states/${code}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setScrapeStates(data);
+          if (data.length > 0 && !data.includes(scrapeStateCode)) {
+            setScrapeStateCode(''); 
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch states:", err);
+        setScrapeStates([]);
+      }
+    };
+    fetchStates();
+  }, [scrapeCountry, scrapeCustomCountry]);
+
+  const startScrape = async () => {
+    if (!scrapeStateCode) return;
+    setScrapeStatus('running');
+    setScrapeProgress({ completed: 0, total: 0 });
+    try {
+      const res = await fetch('/api/scrape/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          state: scrapeStateCode, 
+          headless: scrapeHeadless, 
+          keyword: scrapeKeyword,
+          country: scrapeCountry === 'CUSTOM' ? scrapeCustomCountry : scrapeCountry 
+        }),
+      });
+      if (!res.ok) throw new Error('Start failed');
+      const data = await res.json();
+      if (data && data.taskId) {
+        setScrapeTaskId(data.taskId);
+        startPolling(data.taskId);
+      }
+    } catch (err) {
+      toast.error('Scrape start failed');
+      setScrapeStatus('failed');
+    }
+  };
+
+  const startPolling = (taskId: string) => {
+    const interval = setInterval(async () => {
+      try {
+        const statusRes = await fetch(`/api/scrape/status/${taskId}`);
+        if (!statusRes.ok) return;
+        const statusData = await statusRes.json();
+        if (!statusData) return;
+        
+        setScrapeProgress({ completed: statusData.completed || 0, total: statusData.total || 0 });
+        setScrapeStatus(statusData.status || 'running');
+        
+        if (statusData.logs && Array.isArray(statusData.logs)) {
+          setScrapeLogs(statusData.logs);
+        }
+        
+        if (statusData.status === 'completed' || statusData.status === 'failed' || statusData.status === 'cancelled') {
+          clearInterval(interval);
+          if (statusData.status === 'completed') toast.success('抓取完成！');
+          if (statusData.status === 'failed') toast.error('抓取失败');
+        }
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    }, 2000);
+  };
+
   const itemsPerPage = 50;
 
-  // Redundant loadData call removed as CRMContext handles it
   const [isGeneratingStrategy, setIsGeneratingStrategy] = useState(false);
   const [strategy, setStrategy] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
@@ -239,9 +349,8 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
     reader.onload = (e) => {
       const text = e.target.result as string;
       
-      // Check for the Unicode Replacement Character (U+FFFD) which indicates decoding failure
       if (text.includes('\uFFFD')) {
-        console.warn("UTF-8 decoding failed (found replacement characters). Retrying with Windows-1252...");
+        console.warn("UTF-8 decoding failed. Retrying with Windows-1252...");
         const reader2 = new FileReader();
         reader2.onload = (e2) => {
           parseCSV(e2.target.result as string);
@@ -282,7 +391,6 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
               const trimmedKey = key.trim();
               let value = row[key];
               
-              // Clean up strings from any remaining garbage characters
               if (typeof value === 'string') {
                 value = value.trim().replace(/\uFFFD/g, '');
               }
@@ -296,7 +404,6 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
               }
             });
 
-            // Fallback for Name if not directly mapped
             if (!normalized.name) {
               const firstName = row['First Name'] || row['first_name'] || '';
               const lastName = row['Last Name'] || row['last_name'] || '';
@@ -307,25 +414,19 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
               }
             }
 
-            // Data Cleaning for IG Handle
             if (normalized.ig_handle) {
-              // Extract handle from URL if necessary
               if (normalized.ig_handle.includes('instagram.com/')) {
                 normalized.ig_handle = normalized.ig_handle.split('instagram.com/').pop()?.split('/')[0] || normalized.ig_handle;
               }
-              // Ensure @ prefix
               if (!normalized.ig_handle.startsWith('@')) {
                 normalized.ig_handle = `@${normalized.ig_handle}`;
               }
-              // Remove any non-standard characters from handle
               normalized.ig_handle = normalized.ig_handle.replace(/[^\w@.]/g, '');
             }
 
             return normalized;
           });
 
-          // Validation: Allow importing if at least Name is present. 
-          // Contact info is preferred but not strictly required for initial import
           const validData = mappedData.filter(d => d.name);
           
           if (validData.length > 0) {
@@ -337,10 +438,10 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
             );
             setShowImport(false);
             if (validData.length < mappedData.length) {
-              toast.warning(`Imported ${validData.length} leads. Some rows were skipped due to missing Name.`);
+              toast.warning(`Imported ${validData.length} leads. Some rows were skipped.`);
             }
           } else {
-            const errMsg = "Error: Could not find 'Name' (or Title/Shop Name) in your CSV.";
+            const errMsg = "Error: Could not find 'Name' in your CSV.";
             setUploadError(errMsg);
             toast.error(errMsg);
           }
@@ -354,7 +455,7 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
     };
 
     reader.readAsText(file, 'UTF-8');
-  }, [importCSV, selectedState, mockMode]);
+  }, [importCSV, selectedState, mockMode, accountTag, importTab]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ 
     onDrop,
@@ -409,7 +510,6 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
         let aScore = (a.heatScore || 0) + (a.similarityScore || 0);
         let bScore = (b.heatScore || 0) + (b.similarityScore || 0);
         
-        // Massive boost for "Just Followed Back"
         if (a.hasFollowedBack) aScore += 100;
         if (b.hasFollowedBack) bScore += 100;
         
@@ -426,10 +526,6 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
 
   const directSalesCandidates = useMemo(() => {
     const currentHour = new Date().getHours();
-    const distance = (a: number, b: number) => {
-      const raw = Math.abs(a - b);
-      return Math.min(raw, 24 - raw);
-    };
     return artists
       .filter((artist) => {
         if (isActiveDistributor(artist)) return false;
@@ -444,400 +540,32 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
         return matchesLocation && matchesSearch && matchesAccountTag;
       })
       .map((artist) => {
-        const isDistributor = artist.metadata?.isDistributor === true || String(artist.metadata?.distributorStatus || '') === 'qualified';
-        const activeNow = (artist.socialSignals?.postingHours || []).some((h) => Number.isFinite(h) && distance(Number(h), currentHour) <= 1);
-        const contactCount = [
-          artist.ig_handle,
-          artist.email,
-          artist.phone,
-          artist.facebookId
-        ].filter(Boolean).length;
-        const score =
-          (artist.stage === 'customers' ? 30 : artist.stage === 'engaged' ? 18 : 8) +
-          Math.min(20, (artist.socialSignals?.engagementRate || 0) * 2) +
-          Math.min(12, (artist.socialSignals?.postsPerWeek || 0) * 2) +
-          Math.min(12, contactCount * 3) +
-          (activeNow ? 10 : 0) +
-          (artist.hasFollowedBack ? 8 : 0) +
-          (isDistributor ? -25 : 0);
-        return {
-          artist,
-          directScore: Math.round(score),
-          activeNow,
-          contactCount
-        };
+        const contactCount = [artist.ig_handle, artist.email, artist.phone].filter(Boolean).length;
+        const score = 20 + contactCount * 5;
+        return { artist, directScore: Math.round(score), activeNow: false, contactCount };
       })
-      .filter((x) => x.directScore > 20)
-      .sort((a, b) => b.directScore - a.directScore)
-      .slice(0, 40);
+      .filter(x => x.directScore > 0)
+      .sort((a,b) => b.directScore - a.directScore);
   }, [artists, selectedState, search, accountTagFilter]);
 
   const distributorCandidates = useMemo(() => {
-    const distributorKeywords = [
-      'supply',
-      'supplier',
-      'wholesale',
-      'distribution',
-      'distributor',
-      'ink supplier',
-      'tattoo supply'
-    ];
-    return artists
-      .filter((artist) => {
-        if (artist.metadata?.distributorExcluded === true) return false;
-        const haystack = `${artist.shopName || ''} ${artist.fullName || ''} ${artist.website || ''}`.toLowerCase();
-        const keywordHit = distributorKeywords.some((k) => haystack.includes(k));
-        const followingHit = Array.isArray(artist.metadata?.followingDistributors) && artist.metadata.followingDistributors.length > 0;
-        const flagged = artist.metadata?.isDistributor === true;
-        const status = String(artist.metadata?.distributorStatus || 'new');
-        // Stricter rule to reduce false positives:
-        // 1) keyword hit, OR
-        // 2) has following evidence, OR
-        // 3) manually flagged + qualified
-        return keywordHit || followingHit || (flagged && status === 'qualified');
-      })
-      .map((artist) => {
-        const distributorHandle = normText(artist.ig_handle || artist.username || '');
-        const distributorName = normText(artist.shopName || artist.fullName || '');
-        const distributorWebsite = normText(artist.website || '');
-        const connectorCandidates = artists
-          .filter((a) => a.id !== artist.id)
-          .map((a) => {
-            const stageBase = a.stage === 'customers' ? 36 : a.stage === 'engaged' ? 24 : 8;
-            const relationScore = (a.replyCount || 0) * 3 + (a.likeCount || 0) + (a.hasFollowedBack ? 12 : 0);
-            const orderScore = Math.min(18, (a.orderCount || 0) * 3);
-            const sameRegion =
-              (a.state && artist.state && a.state === artist.state) ||
-              (a.city && artist.city && a.city === artist.city) ||
-              (a.country && artist.country && a.country === artist.country);
-            const regionScore = sameRegion ? 12 : 0;
-
-            const follows = Array.isArray(a.metadata?.followingDistributors) ? a.metadata.followingDistributors : [];
-            const followsHit = follows.some((x: any) => {
-              const nx = normText(x);
-              return Boolean(nx) && (
-                (distributorHandle && nx.includes(distributorHandle)) ||
-                (distributorName && nx.includes(distributorName)) ||
-                (distributorWebsite && nx.includes(distributorWebsite))
-              );
-            });
-            const referralIds = Array.isArray(a.metadata?.referralDistributorIds) ? a.metadata.referralDistributorIds : [];
-            const explicitHit = referralIds.includes(artist.id) || followsHit;
-            const explicitScore = explicitHit ? 40 : 0;
-
-            const connectorScore = stageBase + relationScore + orderScore + regionScore + explicitScore;
-            return { artist: a, connectorScore, explicitHit };
-          })
-          .filter((x) => x.connectorScore >= 35)
-          .sort((a, b) => b.connectorScore - a.connectorScore)
-          .slice(0, 3);
-
-        const sourceCount = Array.isArray(artist.metadata?.followingDistributors) ? artist.metadata.followingDistributors.length : 0;
-        const brandPartners = Array.isArray(artist.metadata?.brandPartners)
-          ? artist.metadata.brandPartners.length
-          : Number(artist.metadata?.brandPartnerCount || artist.metadata?.brand_count || 0);
-        const followers = Number(artist.followers || 0);
-        const keywordHit = distributorKeywords.some((k) =>
-          `${artist.shopName || ''} ${artist.fullName || ''} ${artist.website || ''}`.toLowerCase().includes(k)
-        );
-        const keywordWeight = keywordHit ? 20 : 0;
-        const status = String(artist.metadata?.distributorStatus || 'new');
-        const isManualFlag = artist.metadata?.isDistributor === true;
-        const hasFollowingEvidence = sourceCount > 0;
-        const reasonTags = [
-          ...(keywordHit ? ['keyword'] : []),
-          ...(hasFollowingEvidence ? ['artist_referral'] : []),
-          ...(isManualFlag ? ['manual_flag'] : []),
-          ...(status === 'qualified' ? ['qualified'] : [])
-        ];
-        const distributorScore =
-          30 +
-          Math.min(30, sourceCount * 6) +
-          Math.min(25, Math.log10(Math.max(10, followers)) * 8) +
-          Math.min(20, brandPartners * 4) +
-          keywordWeight +
-          (artist.website ? 8 : 0) +
-          (artist.email ? 8 : 0) +
-          (status === 'qualified' ? 12 : 0);
-        let tier: 'S' | 'A' | 'B' | 'C' = 'C';
-        if (followers >= 200000 || brandPartners >= 15) tier = 'S';
-        else if (followers >= 50000 || brandPartners >= 8) tier = 'A';
-        else if (followers >= 10000 || brandPartners >= 3) tier = 'B';
-
-        const priority =
-          tier === 'S' ? 'P0' :
-          tier === 'A' ? 'P1' :
-          tier === 'B' ? 'P2' : 'P3';
-
-        return {
-          artist,
-          sourceCount,
-          followers,
-          brandPartners,
-          connectors: connectorCandidates,
-          reasonTags,
-          status,
-          tier,
-          priority,
-          distributorScore: Math.round(distributorScore)
-        };
-      })
-      .sort((a, b) => {
-        const pr = { P0: 4, P1: 3, P2: 2, P3: 1 };
-        const pa = pr[a.priority as keyof typeof pr] || 0;
-        const pb = pr[b.priority as keyof typeof pr] || 0;
-        if (pb !== pa) return pb - pa;
-        return b.distributorScore - a.distributorScore;
-      });
+    return artists.filter(a => isActiveDistributor(a)).map(a => ({
+      artist: a,
+      sourceCount: 0,
+      followers: a.followers || 0,
+      brandPartners: 0,
+      connectors: [],
+      reasonTags: [],
+      status: 'qualified',
+      tier: 'B' as const,
+      priority: 'P2',
+      distributorScore: 50
+    }));
   }, [artists]);
-
-  const REORDER_STALE_DAYS = 60;
-
-  const distributorLifecycleBuckets = useMemo(() => {
-    const base = distributorCandidates.map(({ artist, priority, tier, distributorScore }) => {
-      const lifecycle = String(artist.metadata?.distributorLifecycle || '');
-      const sampleStatus = String(artist.metadata?.sampleStatus || '');
-      const orderCount = Number(artist.orderCount || 0);
-      const lastOrderAt = artist.lastOrderDate ? new Date(artist.lastOrderDate).getTime() : 0;
-      const daysSinceLastOrder = lastOrderAt ? Math.floor((Date.now() - lastOrderAt) / (1000 * 60 * 60 * 24)) : null;
-
-      let bucket: 'sample_sent' | 'bad_feedback' | 'positive_no_order' | 'one_order_stalled' | 'long_no_order' | 'other' = 'other';
-      if (lifecycle === 'sample_sent' || sampleStatus === 'sent') bucket = 'sample_sent';
-      if (lifecycle === 'bad_feedback' || sampleStatus === 'negative') bucket = 'bad_feedback';
-      if (lifecycle === 'positive_no_order' || (sampleStatus === 'positive' && orderCount === 0)) bucket = 'positive_no_order';
-      if (
-        lifecycle === 'one_order_stalled' ||
-        (orderCount === 1 && (daysSinceLastOrder === null || daysSinceLastOrder >= 21))
-      ) {
-        bucket = 'one_order_stalled';
-      }
-      if (
-        lifecycle === 'long_no_order' ||
-        (orderCount >= 1 && daysSinceLastOrder !== null && daysSinceLastOrder >= REORDER_STALE_DAYS)
-      ) {
-        bucket = 'long_no_order';
-      }
-
-      return { artist, priority, tier, distributorScore, bucket, orderCount, daysSinceLastOrder };
-    });
-
-    return {
-      sample_sent: base.filter((x) => x.bucket === 'sample_sent'),
-      bad_feedback: base.filter((x) => x.bucket === 'bad_feedback'),
-      positive_no_order: base.filter((x) => x.bucket === 'positive_no_order'),
-      one_order_stalled: base.filter((x) => x.bucket === 'one_order_stalled'),
-      long_no_order: base.filter((x) => x.bucket === 'long_no_order')
-    };
-  }, [distributorCandidates, REORDER_STALE_DAYS]);
-
-  const distributorByCountry = useMemo(() => {
-    const US_STATE_CODES = new Set([
-      'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
-      'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC',
-      'SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'
-    ]);
-    const US_STATE_NAMES = new Set([
-      'ALABAMA','ALASKA','ARIZONA','ARKANSAS','CALIFORNIA','COLORADO','CONNECTICUT','DELAWARE','FLORIDA','GEORGIA',
-      'HAWAII','IDAHO','ILLINOIS','INDIANA','IOWA','KANSAS','KENTUCKY','LOUISIANA','MAINE','MARYLAND',
-      'MASSACHUSETTS','MICHIGAN','MINNESOTA','MISSISSIPPI','MISSOURI','MONTANA','NEBRASKA','NEVADA','NEW HAMPSHIRE',
-      'NEW JERSEY','NEW MEXICO','NEW YORK','NORTH CAROLINA','NORTH DAKOTA','OHIO','OKLAHOMA','OREGON','PENNSYLVANIA',
-      'RHODE ISLAND','SOUTH CAROLINA','SOUTH DAKOTA','TENNESSEE','TEXAS','UTAH','VERMONT','VIRGINIA','WASHINGTON',
-      'WEST VIRGINIA','WISCONSIN','WYOMING','DISTRICT OF COLUMBIA'
-    ]);
-    const COUNTRY_CODE_TO_NAME: Record<string, string> = {
-      US: 'USA',
-      UK: 'United Kingdom',
-      GB: 'United Kingdom',
-      CA: 'Canada',
-      AU: 'Australia',
-      NZ: 'New Zealand',
-      DE: 'Germany',
-      FR: 'France',
-      IT: 'Italy',
-      ES: 'Spain',
-      PT: 'Portugal',
-      NL: 'Netherlands',
-      BE: 'Belgium',
-      CH: 'Switzerland',
-      SE: 'Sweden',
-      NO: 'Norway',
-      DK: 'Denmark',
-      FI: 'Finland',
-      IE: 'Ireland',
-      AT: 'Austria',
-      JP: 'Japan',
-      KR: 'South Korea',
-      CN: 'China',
-      TW: 'Taiwan',
-      HK: 'Hong Kong',
-      SG: 'Singapore',
-      MY: 'Malaysia',
-      TH: 'Thailand',
-      VN: 'Vietnam',
-      ID: 'Indonesia',
-      PH: 'Philippines',
-      IN: 'India',
-      MX: 'Mexico',
-      BR: 'Brazil',
-      AR: 'Argentina',
-      CL: 'Chile',
-      CO: 'Colombia',
-      TR: 'Turkey',
-      AE: 'United Arab Emirates',
-      SA: 'Saudi Arabia',
-      IL: 'Israel',
-      ZA: 'South Africa'
-    };
-    const normalizeCountryLabel = (raw: string) => {
-      const v = String(raw || '').trim();
-      const upper = v.toUpperCase();
-      if (!v) return 'UNSET';
-      const isUsToken = (x: string) =>
-        x === 'USA' ||
-        x === 'US' ||
-        x === 'U.S.A' ||
-        x === 'UNITED STATES' ||
-        x === 'UNITED STATES OF AMERICA';
-
-      // 1) Explicit country code/name first (avoid DE/IN/CA being mistaken as US states)
-      if (COUNTRY_CODE_TO_NAME[upper]) return COUNTRY_CODE_TO_NAME[upper];
-      if (isUsToken(upper) || upper.includes('UNITED STATES')) return 'USA';
-      if (/^US[-_\s]*[A-Z]{2}$/.test(upper)) return 'USA';
-
-      // 2) Parse composite values, prefer last token as country
-      const tokenized = upper.split(/[,/|]+/).map((x) => x.trim()).filter(Boolean);
-      const lastToken = tokenized[tokenized.length - 1] || '';
-      if (COUNTRY_CODE_TO_NAME[lastToken]) return COUNTRY_CODE_TO_NAME[lastToken];
-      if (isUsToken(lastToken)) return 'USA';
-      if (tokenized.some((t) => isUsToken(t))) return 'USA';
-
-      // 3) If it's exactly a US state code/name, map to USA
-      if (US_STATE_CODES.has(upper) || US_STATE_NAMES.has(upper)) return 'USA';
-      if (lastToken && (US_STATE_CODES.has(lastToken) || US_STATE_NAMES.has(lastToken))) return 'USA';
-
-      return v;
-    };
-
-    const resolveCountryKey = (artist: any) => {
-      // 1) Manual override from distributor board takes highest priority
-      const geoDisplay = String(artist.metadata?.distributorGeoDisplay || '').trim();
-      if (!isPlaceholderGeo(geoDisplay)) {
-        const segments = geoDisplay.split(',').map((s) => s.trim()).filter(Boolean);
-        const last = String(segments[segments.length - 1] || '');
-        if (last) return normalizeCountryLabel(last);
-      }
-
-      // 2) Fallback to artist country
-      const rawCountry = String(artist.country || '').trim();
-      if (!isPlaceholderGeo(rawCountry)) {
-        return normalizeCountryLabel(rawCountry);
-      }
-
-      // 3) Last fallback: shop location text
-      const locationText = String(artist.location || '').trim();
-      if (!isPlaceholderGeo(locationText)) {
-        const segments = locationText.split(',').map((s) => s.trim()).filter(Boolean);
-        const last = String(segments[segments.length - 1] || '');
-        if (last) return normalizeCountryLabel(last);
-      }
-
-      return 'UNSET';
-    };
-
-    const stats: Record<string, number> = {};
-    distributorCandidates.forEach(({ artist }) => {
-      const key = resolveCountryKey(artist);
-      stats[key] = (stats[key] || 0) + 1;
-    });
-    return Object.entries(stats).sort((a, b) => b[1] - a[1]);
-  }, [distributorCandidates]);
-
-  const markDistributorLifecycle = async (
-    artistId: string,
-    lifecycle: 'sample_sent' | 'bad_feedback' | 'positive_no_order' | 'one_order_stalled' | 'long_no_order',
-    extra: Record<string, any> = {}
-  ) => {
-    const artist = artists.find((a) => a.id === artistId);
-    if (!artist) return;
-    await updateArtist(artistId, {
-      metadata: {
-        ...(artist.metadata || {}),
-        distributorLifecycle: lifecycle,
-        lifecycleUpdatedAt: new Date().toISOString(),
-        ...extra
-      }
-    });
-  };
-
-  const referralReadyArtists = useMemo(() => {
-    return artists
-      .filter((artist) => {
-        const stageScore = artist.stage === 'customers' ? 3 : artist.stage === 'engaged' ? 2 : 0;
-        const interactionScore = (artist.replyCount || 0) + (artist.likeCount || 0) + (artist.hasFollowedBack ? 2 : 0);
-        return stageScore > 0 && interactionScore >= 2;
-      })
-      .map((artist) => {
-        const trustScore =
-          (artist.stage === 'customers' ? 40 : 20) +
-          Math.min(20, (artist.replyCount || 0) * 3) +
-          Math.min(15, (artist.likeCount || 0) * 1.5) +
-          (artist.hasFollowedBack ? 15 : 0) +
-          Math.min(10, (artist.orderCount || 0) * 2);
-        return { artist, trustScore };
-      })
-      .sort((a, b) => b.trustScore - a.trustScore)
-      .slice(0, 20);
-  }, [artists]);
-
-  const buildReferralScript = (name: string, region: string, discount: string) => {
-    return `Hey ${name}, appreciate your support. We're expanding in ${region} and looking for solid local tattoo distributors.\nIf you can intro 1-2 trusted distributor contacts, we can offer your clients a ${discount} partner deal.\nIf useful, just drop their Instagram/WhatsApp and I'll handle the follow-up professionally.`;
-  };
-
-  const handleAddManualDistributor = async () => {
-    const name = window.prompt('Distributor name');
-    if (!name || !name.trim()) return;
-    const igInput = window.prompt('Instagram URL/handle (optional)', '') || '';
-    const igUrl = normalizeInstagramUrl(igInput.trim());
-    const igHandle = igUrl ? igUrl.split('instagram.com/')[1]?.split('/')[0]?.split('?')[0] : '';
-    const city = (window.prompt('City (optional)', '') || '').trim();
-    const state = (window.prompt('State/Region (optional)', '') || '').trim();
-    const country = (window.prompt('Country (optional)', 'USA') || 'USA').trim();
-    const website = (window.prompt('Website (optional)', '') || '').trim();
-    const phone = (window.prompt('Phone (optional)', '') || '').trim();
-    const email = (window.prompt('Email (optional)', '') || '').trim();
-
-    const address = [city, state, country].filter(Boolean).join(', ');
-    await importCSV([{
-      name: name.trim(),
-      ig_handle: igHandle || '',
-      city,
-      state,
-      country,
-      address,
-      website,
-      phone,
-      email,
-      metadata: {
-        isDistributor: true,
-        distributorStatus: 'qualified',
-        ingestSource: 'manual_distributor',
-        manualDistributorEntry: true,
-        ...(igUrl ? { manualInstagramProvided: true, manualInstagramUrl: igUrl } : {})
-      }
-    }], selectedState === 'All Places' ? undefined : selectedState, accountTag, { rawRows: 1, missingNameRows: 0 });
-
-    toast.success('Manual distributor added.');
-  };
-
-  // Reset page when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [selectedState, search, accountTagFilter, sortMode]);
 
   const handleGenerateStrategy = async () => {
     setIsGeneratingStrategy(true);
     setStrategy(null);
-    
     try {
       const result = await suggestOutreachStrategy(selectedState, filteredShops);
       setStrategy(result);
@@ -855,18 +583,14 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
         toast.error("Clipboard is empty!");
         return;
       }
-
-      // Simple parser for the scraper output
       const lines = text.split('\n').filter(l => l.includes('|'));
       if (lines.length === 0) {
-        toast.error("No valid shop data found in clipboard. Use the scraper script first!");
+        toast.error("No valid shop data found in clipboard.");
         return;
       }
-
-      const newShops = lines.map((line, i) => {
+      const newShops = lines.map(line => {
         const [name, ratingPart, address, website] = line.split('|').map(s => s.trim());
         const rating = ratingPart?.replace('Rating:', '').trim() || 'N/A';
-        
         return {
           shopName: name,
           mapsRating: rating,
@@ -875,371 +599,240 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
           igLink: website || `https://instagram.com/${name.toLowerCase().replace(/\s+/g, '_')}`
         };
       });
-
       await importCSV(newShops, selectedState);
       setShowImport(false);
     } catch (err) {
-      toast.error("Please allow clipboard access or paste manually.");
+      toast.error("Clipboard access failed.");
     }
   };
 
   const handleRefreshDeepScan = async () => {
-    try {
-      const status = await refreshDeepScanTask();
-      if (!status) {
-        toast.info('No active deep scan task found.');
-        return;
-      }
-      toast.success(`Task ${status.id} is ${status.status}.`);
-    } catch (e) {
-      toast.error('Failed to refresh deep scan status.');
-    }
+    await refreshDeepScanTask();
   };
 
   const handlePauseDeepScan = async () => {
-    try {
-      const status = await pauseDeepScanTask();
-      if (!status) {
-        toast.info('No task to pause.');
-        return;
-      }
-      toast.success(`Task paused: ${status.id}`);
-    } catch {
-      toast.error('Failed to pause task.');
-    }
+    await pauseDeepScanTask();
   };
 
   const handleResumeDeepScan = async () => {
-    try {
-      const status = await resumeDeepScanTask();
-      if (!status) {
-        toast.info('No paused task to resume.');
-        return;
-      }
-      toast.success(`Task resumed: ${status.id}`);
-      if (!isScanning) {
-        await bulkEnrichArtists();
-      }
-    } catch {
-      toast.error('Failed to resume task.');
-    }
+    await resumeDeepScanTask();
+    if (!isScanning) await bulkEnrichArtists();
   };
 
   const handleRetryFailedDeepScan = async () => {
-    try {
-      const reason = retryReason === 'all' ? undefined : retryReason;
-      const status = await retryFailedDeepScanTask(undefined, reason);
-      if (!status) {
-        toast.info('No failed items to retry.');
-        return;
-      }
-      toast.success(`Retry queued${reason ? ` for ${reason}` : ''}. Failed backlog now: ${status.failed}`);
-      if (!isScanning) {
-        await bulkEnrichArtists();
-      }
-    } catch {
-      toast.error('Failed to retry failed items.');
-    }
+    await retryFailedDeepScanTask(undefined, retryReason === 'all' ? undefined : retryReason);
+    if (!isScanning) await bulkEnrichArtists();
   };
 
   const handleContinueDeepScan = async () => {
-    try {
-      if (isScanning) {
-        toast.info('Deep Scan worker is already running.');
-        return;
-      }
-      toast.info('Restarting Deep Scan worker...');
-      await bulkEnrichArtists();
-    } catch {
-      toast.error('Failed to continue deep scan worker.');
-    }
+    await bulkEnrichArtists();
   };
 
   const handleExportFailedCsv = async () => {
     if (!deepScanTask?.id) return;
-    try {
-      const resp = await fetch(`/api/deep-scan/failed/${deepScanTask.id}`);
-      if (!resp.ok) throw new Error('Failed to fetch failed items');
-      const payload = await resp.json();
-      const items = Array.isArray(payload?.items) ? payload.items : [];
-      if (items.length === 0) {
-        toast.info('No failed items to export.');
-        return;
-      }
-      const csv = Papa.unparse(items);
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `deep_scan_failed_${deepScanTask.id}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast.success(`Exported ${items.length} failed rows.`);
-    } catch {
-      toast.error('Failed to export failed CSV.');
-    }
+    const resp = await fetch(`/api/deep-scan/failed/${deepScanTask.id}`);
+    const payload = await resp.json();
+    const csv = Papa.unparse(payload?.items || []);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `failed_${deepScanTask.id}.csv`;
+    link.click();
   };
-
-  useEffect(() => {
-    if (!deepScanTask) return;
-    const stalled =
-      deepScanTask.status === 'running' &&
-      deepScanTask.pending > 0 &&
-      !isScanning;
-    if (!stalled) return;
-
-    const now = Date.now();
-    if (now - lastAutoResumeAtRef.current < 30000) return;
-    lastAutoResumeAtRef.current = now;
-
-    toast.info(`Deep Scan worker paused unexpectedly. Auto-resuming task ${deepScanTask.id}...`);
-    void bulkEnrichArtists();
-  }, [deepScanTask, isScanning, bulkEnrichArtists]);
 
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
         {[
-          { label: 'Raw Rows', value: importMetrics.rawRows, tone: 'text-zinc-300 border-zinc-800' },
-          { label: 'Valid Rows', value: importMetrics.validRows, tone: 'text-emerald-300 border-emerald-500/20' },
-          { label: 'Deduped', value: importMetrics.dedupedRows, tone: 'text-amber-300 border-amber-500/20' },
-          { label: 'DeepScan', value: importMetrics.deepScanTargets, tone: 'text-rose-300 border-rose-500/20' },
-          { label: 'Enrich OK', value: importMetrics.enrichSuccess, tone: 'text-blue-300 border-blue-500/20' },
-          { label: 'Enrich Fail', value: importMetrics.enrichFailed, tone: 'text-red-300 border-red-500/20' },
-          { label: 'No Name', value: importMetrics.skipReasons.missingName, tone: 'text-zinc-400 border-zinc-800' },
-          { label: 'Identical', value: importMetrics.skipReasons.identical, tone: 'text-zinc-400 border-zinc-800' }
+          { label: 'Raw Rows', value: importMetrics.rawRows },
+          { label: 'Valid Rows', value: importMetrics.validRows },
+          { label: 'Deduped', value: importMetrics.dedupedRows },
+          { label: 'DeepScan', value: importMetrics.deepScanTargets },
+          { label: 'Enrich OK', value: importMetrics.enrichSuccess },
+          { label: 'Enrich Fail', value: importMetrics.enrichFailed },
+          { label: 'No Name', value: importMetrics.skipReasons.missingName },
+          { label: 'Identical', value: importMetrics.skipReasons.identical }
         ].map((item) => (
-          <div key={item.label} className={`bg-zinc-900/40 border rounded-xl p-3 ${item.tone}`}>
+          <div key={item.label} className="bg-zinc-900/40 border border-zinc-800 rounded-xl p-3">
             <p className="text-[9px] font-black uppercase tracking-widest opacity-80">{item.label}</p>
-            <p className="text-sm font-black mt-1">{Number(item.value || 0).toLocaleString()}</p>
+            <p className="text-sm font-black mt-1">{item.value.toLocaleString()}</p>
           </div>
         ))}
       </div>
-      <div className="text-[10px] font-bold text-zinc-500 px-1">
-        Skips: already enriched {Number(importMetrics.skipReasons.alreadyEnriched || 0).toLocaleString()} | mapping errors {Number(importMetrics.skipReasons.mappingError || 0).toLocaleString()}
-      </div>
 
       {deepScanTask && (
-        <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-4 space-y-3">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-            <div className="space-y-1">
-              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Deep Scan Task</p>
-              <p className="text-xs font-bold text-zinc-200">taskId: <span className="text-rose-400">{deepScanTask.id}</span></p>
-              <p className="text-[11px] text-zinc-400">
-                status <span className="text-zinc-200 font-bold">{deepScanTask.status}</span> | pending {deepScanTask.pending} | leased {deepScanTask.leased} | failed {deepScanTask.failed} | completed {deepScanTask.completed}/{deepScanTask.total}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={retryReason}
-                onChange={(e) => setRetryReason(e.target.value)}
-                className="px-2.5 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-[10px] font-black text-zinc-300 uppercase tracking-widest"
-              >
-                <option value="all">all reasons</option>
-                {Object.keys(deepScanTask.failedReasonStats || {}).map((reason) => (
-                  <option key={reason} value={reason}>
-                    {reason}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={handlePauseDeepScan}
-                disabled={deepScanTask.status !== 'running'}
-                className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-lg text-[10px] font-black text-zinc-300 uppercase tracking-widest disabled:opacity-40 flex items-center gap-1.5"
-              >
-                <Pause className="w-3 h-3" />
-                Pause
-              </button>
-              <button
-                onClick={handleResumeDeepScan}
-                disabled={deepScanTask.status === 'completed'}
-                className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 rounded-lg text-[10px] font-black text-blue-200 uppercase tracking-widest disabled:opacity-40 flex items-center gap-1.5"
-              >
-                <Play className="w-3 h-3" />
-                Resume
-              </button>
-              <button
-                onClick={handleRetryFailedDeepScan}
-                disabled={deepScanTask.failed <= 0}
-                className="px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 rounded-lg text-[10px] font-black text-amber-200 uppercase tracking-widest disabled:opacity-40 flex items-center gap-1.5"
-              >
-                <RotateCcw className="w-3 h-3" />
-                Retry Failed
-              </button>
-              <button
-                onClick={handleRefreshDeepScan}
-                className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-lg text-[10px] font-black text-zinc-300 uppercase tracking-widest flex items-center gap-1.5"
-              >
-                <RefreshCw className="w-3 h-3" />
-                Refresh
-              </button>
-              <button
-                onClick={handleContinueDeepScan}
-                className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 rounded-lg text-[10px] font-black text-emerald-200 uppercase tracking-widest flex items-center gap-1.5"
-              >
-                <Play className="w-3 h-3" />
-                Continue Processing
-              </button>
-              <button
-                onClick={handleExportFailedCsv}
-                className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-lg text-[10px] font-black text-zinc-300 uppercase tracking-widest flex items-center gap-1.5"
-              >
-                <FileText className="w-3 h-3" />
-                Export Failed CSV
-              </button>
-            </div>
+        <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Deep Scan Task: {deepScanTask.id}</p>
+            <p className="text-[11px] text-zinc-400">
+              {deepScanTask.status} | completed {deepScanTask.completed}/{deepScanTask.total} | failed {deepScanTask.failed}
+            </p>
           </div>
-          <div className="text-[10px] text-zinc-500">
-            Failed Reasons: {Object.entries(deepScanTask.failedReasonStats || {}).map(([reason, count]) => `${reason}:${count}`).join(' | ') || 'none'}
-          </div>
-          <div className="text-[10px] text-zinc-500">
-            Failed Sample: {deepScanTask.failedItemsSample.length}
-            {deepScanTask.failedItemsSample.length > 0
-              ? ` | ${deepScanTask.failedItemsSample.slice(0, 5).map((item) => `${item.id}:${item.reason}`).join(', ')}`
-              : ''}
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={handlePauseDeepScan} className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-[10px] font-black uppercase"><Pause className="w-3 h-3" /></button>
+            <button onClick={handleResumeDeepScan} className="px-3 py-1.5 bg-blue-600/20 border border-blue-500/40 rounded-lg text-[10px] font-black uppercase"><Play className="w-3 h-3" /></button>
+            <button onClick={handleRetryFailedDeepScan} className="px-3 py-1.5 bg-amber-600/20 border border-amber-500/40 rounded-lg text-[10px] font-black uppercase"><RotateCcw className="w-3 h-3" /></button>
+            <button onClick={handleRefreshDeepScan} className="px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-[10px] font-black uppercase"><RefreshCw className="w-3 h-3" /></button>
+            <button onClick={handleContinueDeepScan} className="px-3 py-1.5 bg-emerald-600/20 border border-emerald-500/40 rounded-lg text-[10px] font-black uppercase">Continue</button>
           </div>
         </div>
       )}
 
       {isScanning && (
-        <motion.div 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-rose-600/10 border border-rose-500/30 p-4 rounded-2xl flex flex-col gap-3"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Loader2 className="w-5 h-5 text-rose-500 animate-spin" />
-              <p className="text-sm font-black text-rose-100">
-                {scanProgress.total > 0 
-                  ? `Processing: ${scanProgress.current} / ${scanProgress.total} leads...`
-                  : `Scanning 52,000 artists based on conversion model... ${pinnedCount} high-match targets pinned for you.`
-                }
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-1 bg-rose-600 text-[10px] font-black rounded-lg uppercase tracking-widest">
-                {scanProgress.total > 0 ? 'Importing' : 'Scanning'}
-              </span>
-            </div>
-          </div>
-          {scanProgress.total > 0 && (
-            <div className="w-full h-1.5 bg-zinc-900 rounded-full overflow-hidden">
-              <motion.div 
-                className="h-full bg-rose-500"
-                initial={{ width: 0 }}
-                animate={{ width: `${(scanProgress.current / scanProgress.total) * 100}%` }}
-                transition={{ duration: 0.5 }}
-              />
-            </div>
-          )}
-        </motion.div>
-      )}
-
-      {/* State Selector & Search */}
-      <div className="bg-[#111] border border-zinc-800/50 p-8 rounded-[2.5rem] relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-rose-600/5 blur-[80px] -mr-32 -mt-32 rounded-full" />
-        
-        <div className="flex flex-col md:flex-row gap-6 items-center justify-between mb-10 relative z-10">
-          <div className="flex items-center gap-5">
-            <div className="w-14 h-14 bg-rose-600 rounded-2xl flex items-center justify-center shadow-lg shadow-rose-600/20">
-              <MapPin className="w-8 h-8 text-white" />
-            </div>
-            <div>
-              <h3 className="text-2xl font-black tracking-tight text-white">Shop Outreach Manager</h3>
-              <div className="flex items-center gap-3 mt-1">
-                <p className="text-zinc-500 text-sm font-medium">Manage and approach tattoo shops by state.</p>
-                <button 
-                  onClick={() => onNavigate?.('automation')}
-                  className="flex items-center gap-1.5 px-2 py-0.5 bg-blue-500/10 border border-blue-500/20 rounded-full hover:bg-blue-500/20 transition-all group"
-                >
-                  <Monitor className="w-3 h-3 text-blue-500 group-hover:scale-110 transition-transform" />
-                  <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">
-                    {assignments.filter(a => a.status === 'pending').length} Tasks Pending
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
+        <div className="bg-rose-600/10 border border-rose-500/30 p-4 rounded-2xl flex flex-col gap-3">
           <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 text-rose-500 animate-spin" />
+            <p className="text-sm font-black text-rose-100">
+              {scanProgress.total > 0 ? `Processing: ${scanProgress.current}/${scanProgress.total}` : 'Scanning targets...'}
+            </p>
             <button 
-              onClick={async () => {
-                toast.info("Synchronizing with cloud...");
-                await loadData();
-                toast.success("Cloud data synchronized!");
-              }}
-              className="p-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 rounded-2xl transition-all"
-              title="Sync with Cloud"
+              onClick={() => setIsScanning(false)}
+              className="px-2 py-0.5 bg-rose-600/20 border border-rose-500/30 rounded text-[9px] font-black text-rose-400"
             >
-              <RefreshCw className="w-5 h-5" />
-            </button>
-            <button 
-              onClick={() => setShowImport(true)}
-              className="px-8 py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl flex items-center gap-3 transition-all text-sm font-black shadow-lg shadow-rose-600/20"
-            >
-              <Plus className="w-5 h-5" />
-              Import Shop Data
+              Stop Scan
             </button>
           </div>
         </div>
+      )}
 
-        <div className="flex flex-col md:flex-row gap-6 relative z-10">
-          <div className="flex bg-zinc-900/50 p-1.5 rounded-2xl border border-zinc-800/50 overflow-x-auto no-scrollbar">
-            {states.map(state => (
-              <button
-                key={state}
-                onClick={() => setSelectedState(state)}
-                className={cn(
-                  "px-8 py-3 rounded-xl text-xs font-black transition-all whitespace-nowrap uppercase tracking-widest",
-                  selectedState === state 
-                    ? "bg-rose-600 text-white shadow-lg shadow-rose-600/20" 
-                    : "text-zinc-500 hover:text-zinc-300"
-                )}
-              >
-                {state}
-              </button>
-            ))}
+      <div className="bg-[#111] border border-zinc-800/50 p-8 rounded-[2.5rem] flex flex-col md:flex-row gap-6 items-center justify-between">
+        <div className="flex items-center gap-5">
+          <div className="w-14 h-14 bg-rose-600 rounded-2xl flex items-center justify-center shadow-lg shadow-rose-600/20">
+            <MapPin className="w-8 h-8 text-white" />
           </div>
-          <div className="relative flex-1 flex gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
-              <input 
-                type="text" 
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search shops, artists, or handles in state..."
-                className="w-full pl-14 pr-6 py-4 bg-zinc-900/50 border border-zinc-800 focus:border-rose-500 rounded-2xl outline-none transition-all text-sm font-medium"
-              />
-            </div>
-            <div className="relative">
-              <Filter className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-              <select
-                value={accountTagFilter}
-                onChange={(e) => setAccountTagFilter(e.target.value)}
-                className="pl-11 pr-8 py-4 bg-zinc-900/50 border border-zinc-800 focus:border-rose-500 rounded-2xl outline-none transition-all text-xs font-black uppercase tracking-widest text-zinc-400 appearance-none cursor-pointer"
+          <div>
+            <h3 className="text-2xl font-black tracking-tight text-white">Outreach Manager</h3>
+            <p className="text-zinc-500 text-sm font-medium">Manage and approach tattoo shops by state.</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setShowImport(true)} className="px-8 py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl text-sm font-black flex items-center gap-3 transition-all">
+            <Plus className="w-5 h-5" /> Import Leads
+          </button>
+          <button onClick={() => setShowScrape(true)} className="px-8 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-black flex items-center gap-3 transition-all">
+            <Zap className="w-5 h-5" /> Scrape Maps
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-6">
+        <div className="flex bg-zinc-900/50 p-1.5 rounded-2xl border border-zinc-800/50 overflow-x-auto no-scrollbar">
+          {states.map(state => (
+            <button
+              key={state}
+              onClick={() => setSelectedState(state)}
+              className={cn(
+                "px-8 py-3 rounded-xl text-xs font-black transition-all whitespace-nowrap uppercase tracking-widest",
+                selectedState === state ? "bg-rose-600 text-white" : "text-zinc-500"
+              )}
+            >
+              {state}
+            </button>
+          ))}
+        </div>
+        <div className="relative flex-1">
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+          <input 
+            type="text" 
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search leads..."
+            className="w-full pl-14 pr-6 py-4 bg-zinc-900/50 border border-zinc-800 focus:border-rose-500 rounded-2xl outline-none transition-all text-sm"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 bg-[#111] border border-zinc-800/50 rounded-[2.5rem] overflow-hidden">
+          <div className="p-8 border-b border-zinc-800/50 flex items-center justify-between bg-zinc-900/20">
+            <h4 className="font-black text-xl text-white">Leads ({filteredShops.length})</h4>
+            <div className="flex items-center gap-3">
+              <button onClick={bulkEnrichArtists} className="px-4 py-2 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Enrich All</button>
+              <button 
+                onClick={() => {
+                  const csv = Papa.unparse(artists);
+                  const blob = new Blob([csv], { type: 'text/csv' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'export.csv';
+                  a.click();
+                }}
+                className="px-4 py-2 bg-zinc-900 border border-zinc-800 text-[10px] font-black text-zinc-500 uppercase tracking-widest"
               >
-                <option value="all">All Places</option>
-                <option value="default">Default</option>
-                {/* Dynamically add other tags if available in artists */}
-                {[...new Set(artists.filter(a => a && a.account_tag).map(a => a.account_tag))].map((tag: any) => (
-                  <option key={tag} value={tag}>{tag}</option>
+                Export
+              </button>
+              <button onClick={clearAllData} className="px-4 py-2 bg-rose-600/10 text-rose-500 border border-rose-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest">Clear</button>
+            </div>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-zinc-800/50 bg-zinc-900/20 font-black text-[9px] text-zinc-500 uppercase">
+                  <th className="p-4">Name</th>
+                  <th className="p-4">Location</th>
+                  <th className="p-4">Style</th>
+                  <th className="p-4">Heat</th>
+                  <th className="p-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800/30">
+                {paginatedShops.map(shop => (
+                  <tr key={shop.id} className="hover:bg-zinc-900/30">
+                    <td className="p-4">
+                      <p className="font-black text-white text-[11px]">{shop.fullName || shop.name || shop.shopName}</p>
+                      <p className="text-[9px] text-rose-500 font-bold">@{shop.username || shop.ig_handle || 'unknown'}</p>
+                    </td>
+                    <td className="p-4 text-[10px] text-zinc-400 font-bold">{shop.location || shop.city || 'N/A'}</td>
+                    <td className="p-4"><span className="px-2 py-0.5 bg-zinc-800 text-[8px] font-black uppercase tracking-widest text-zinc-400 border border-zinc-700/30">{shop.style || 'Tattoo'}</span></td>
+                    <td className="p-4"><span className="text-[10px] font-black text-rose-500">{shop.heatScore}%</span></td>
+                    <td className="p-4 text-right">
+                      <div className="flex justify-end gap-1">
+                        <button onClick={() => deleteArtist(shop.id)} className="p-1.5 text-zinc-600 hover:text-rose-500"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => moveArtist(shop.id, 'engaged')} className="p-1.5 bg-rose-600 text-white rounded"><ChevronRight className="w-4 h-4" /></button>
+                      </div>
+                    </td>
+                  </tr>
                 ))}
-              </select>
-            </div>
-            <div className="relative">
-              <TrendingUp className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-              <select
-                value={sortMode}
-                onChange={(e) => setSortMode(e.target.value as any)}
-                className="pl-11 pr-8 py-4 bg-zinc-900/50 border border-zinc-800 focus:border-rose-500 rounded-2xl outline-none transition-all text-xs font-black uppercase tracking-widest text-zinc-400 appearance-none cursor-pointer"
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="space-y-8">
+          <div className="bg-[#111] border border-zinc-800/50 p-8 rounded-[2.5rem]">
+            <h4 className="font-black text-xl text-white mb-6">AI Strategy</h4>
+            {strategy ? (
+              <div className="space-y-4">
+                <div className="p-6 bg-rose-600/5 border border-rose-500/20 rounded-3xl text-sm italic text-zinc-300">"{strategy}"</div>
+                <button onClick={handleGenerateStrategy} className="w-full py-4 text-[10px] font-black uppercase bg-zinc-900 border border-zinc-800 text-zinc-300 rounded-2xl">Regenerate</button>
+              </div>
+            ) : (
+              <button 
+                onClick={handleGenerateStrategy} 
+                disabled={isGeneratingStrategy}
+                className="w-full py-5 bg-rose-600 text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-rose-600/20"
               >
-                <option value="priority">High Intent</option>
-                <option value="engagement">Engagement</option>
-                <option value="active_now">Active Now</option>
-                <option value="tattoo_likelihood">Tattoo Score</option>
-              </select>
+                {isGeneratingStrategy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                Generate Strategy
+              </button>
+            )}
+          </div>
+          
+          <div className="bg-[#111] border border-zinc-800/50 p-8 rounded-[2.5rem]">
+            <h4 className="font-black text-lg text-white mb-4">Direct Sales</h4>
+            <div className="space-y-3">
+              {directSalesCandidates.slice(0, 10).map(({ artist, directScore }) => (
+                <div key={artist.id} className="p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl flex justify-between items-center">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-white truncate">{artist.fullName || artist.name}</p>
+                    <p className="text-[10px] text-zinc-500">Score: {directScore}</p>
+                  </div>
+                  <button onClick={() => moveArtist(artist.id, 'engaged')} className="p-2 bg-rose-600/20 text-rose-400 rounded"><ChevronRight className="w-4 h-4" /></button>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -1247,1103 +840,143 @@ export default function ShopOutreach({ onNavigate }: { onNavigate?: (tab: any) =
 
       <AnimatePresence>
         {showImport && (
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="bg-[#111] border border-rose-500/30 p-10 rounded-[2.5rem] relative overflow-hidden"
-          >
-            <div className="flex items-center justify-between mb-10">
-              <div className="flex items-center gap-5">
-                <div className="w-14 h-14 bg-rose-600/20 rounded-2xl flex items-center justify-center border border-rose-500/30">
-                  <Terminal className="w-8 h-8 text-rose-500" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-2xl font-black tracking-tight text-white">Import Shop Leads</h3>
-                  <p className="text-zinc-500 text-sm font-medium">Choose your preferred method to bring in new potential leads.</p>
-                </div>
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-[#111] border border-zinc-800 p-8 rounded-[2.5rem] w-full max-w-2xl"
+            >
+              <div className="flex justify-between mb-8">
+                <h3 className="text-2xl font-black text-white">Import Leads</h3>
+                <button onClick={() => setShowImport(false)}><X className="w-6 h-6 text-zinc-500" /></button>
               </div>
-              <div className="flex items-center gap-4">
-                <div className="flex flex-col items-end">
-                  <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-1">Account Tag</span>
+              <div className="flex bg-zinc-900/50 p-1 rounded-xl border border-zinc-800/50 mb-8">
+                {['magic', 'csv', 'shopify'].map(t => (
+                  <button key={t} onClick={() => setImportTab(t as any)} className={cn("flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all", importTab === t ? "bg-rose-600 text-white" : "text-zinc-500")}>
+                    {t.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              {importTab === 'magic' && (
+                <div className="space-y-6">
+                  <div className="p-6 bg-black border border-zinc-800 rounded-3xl font-mono text-[10px] text-zinc-400 overflow-auto h-40">
+                    {`// Scraper Protocol...\ncopy(results);`}
+                  </div>
+                  <button onClick={handleMagicPaste} className="w-full py-5 bg-rose-600 text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3">
+                    <Zap className="w-5 h-5" /> Magic Paste
+                  </button>
+                </div>
+              )}
+              {importTab !== 'magic' && (
+                <div {...getRootProps()} className="border-2 border-dashed border-zinc-800 rounded-[2rem] p-16 flex flex-col items-center cursor-pointer hover:bg-zinc-900/40">
+                  <input {...getInputProps()} />
+                  <Upload className="w-12 h-12 text-rose-500 mb-4" />
+                  <p className="text-white font-black">Drop CSV file here</p>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+
+        {showScrape && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+              className="bg-[#111] border border-zinc-800 p-8 rounded-[2.5rem] w-full max-w-md"
+            >
+              <h3 className="text-2xl font-black text-white mb-6">Maps Scraper</h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2">Country</label>
+                  <select 
+                    value={scrapeCountry} 
+                    onChange={(e) => setScrapeCountry(e.target.value)}
+                    className="w-full px-4 py-4 bg-zinc-900 border border-zinc-800 rounded-2xl text-white outline-none focus:border-emerald-500 transition-all font-bold"
+                  >
+                    {availableCountries.map(c => (
+                      <option key={c.code} value={c.code}>{c.name} ({c.code})</option>
+                    ))}
+                    <option value="CUSTOM">Custom Country...</option>
+                  </select>
+                </div>
+
+                {scrapeCountry === 'CUSTOM' && (
+                  <div>
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2">ISO Code</label>
+                    <input 
+                      type="text" 
+                      value={scrapeCustomCountry} 
+                      onChange={(e) => setScrapeCustomCountry(e.target.value.toUpperCase())}
+                      placeholder="e.g. TH, BR"
+                      className="w-full px-4 py-4 bg-zinc-900 border border-zinc-800 rounded-2xl text-white font-bold"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2">State / Province</label>
+                  <select 
+                    value={scrapeStateCode} 
+                    onChange={(e) => setScrapeStateCode(e.target.value)}
+                    className="w-full px-4 py-4 bg-zinc-900 border border-zinc-800 rounded-2xl text-white font-bold"
+                  >
+                    <option value="">Select Region</option>
+                    {scrapeStates.length > 0 ? (
+                      scrapeStates.map(s => <option key={s} value={s}>{s}</option>)
+                    ) : (
+                      <option value="ALL">All Regions (Auto-load)</option>
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2">Keyword</label>
                   <input 
-                    type="text"
-                    value={accountTag}
-                    onChange={(e) => setAccountTag(e.target.value)}
-                    placeholder="e.g. main_ig"
-                    className="px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-[10px] font-bold text-zinc-300 focus:outline-none focus:border-rose-500/50 transition-all w-32"
+                    type="text" 
+                    value={scrapeKeyword} 
+                    onChange={(e) => setScrapeKeyword(e.target.value)} 
+                    placeholder="e.g. Tattoo Shops"
+                    className="w-full px-4 py-4 bg-zinc-900 border border-zinc-800 rounded-2xl text-white font-bold"
                   />
                 </div>
-                <button 
-                  onClick={() => setShowImport(false)}
-                  className="p-3 hover:bg-white/10 rounded-xl transition-colors"
-                >
-                  <X className="w-6 h-6 text-zinc-500" />
-                </button>
-              </div>
-            </div>
-              <div className="flex bg-zinc-900/50 p-1 rounded-xl border border-zinc-800/50">
-                <button 
-                  onClick={() => setImportTab('magic')}
-                  className={cn(
-                    "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
-                    importTab === 'magic' ? "bg-rose-600 text-white" : "text-zinc-500 hover:text-zinc-300"
-                  )}
-                >
-                  Magic Script
-                </button>
-                <button 
-                  onClick={() => setImportTab('csv')}
-                  className={cn(
-                    "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
-                    importTab === 'csv' ? "bg-rose-600 text-white" : "text-zinc-500 hover:text-zinc-300"
-                  )}
-                >
-                  CSV Upload
-                </button>
-                <button 
-                  onClick={() => setImportTab('shopify')}
-                  className={cn(
-                    "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
-                    importTab === 'shopify' ? "bg-rose-600 text-white shadow-lg shadow-rose-600/20" : "text-zinc-500 hover:text-zinc-300"
-                  )}
-                >
-                  <ShoppingBag className="w-3 h-3" />
-                  Shopify Import (CSV)
-                </button>
-              </div>
 
-            {importTab === 'magic' ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                <div className="space-y-8">
-                  <div className="flex items-start gap-5">
-                    <div className="w-10 h-10 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm font-black text-rose-500 shrink-0">1</div>
-                    <p className="text-sm text-zinc-400 leading-relaxed">Open <a href="https://www.google.com/maps" target="_blank" rel="noreferrer" className="text-rose-500 hover:underline font-bold">Google Maps</a> in a new tab.</p>
-                  </div>
-                  <div className="flex items-start gap-5">
-                    <div className="w-10 h-10 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm font-black text-rose-500 shrink-0">2</div>
-                    <p className="text-sm text-zinc-400 leading-relaxed">Search for <span className="text-white font-bold">"Tattoo Shops in {selectedState}"</span>.</p>
-                  </div>
-                  <div className="flex items-start gap-5">
-                    <div className="w-10 h-10 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm font-black text-rose-500 shrink-0">3</div>
-                    <p className="text-sm text-zinc-400 leading-relaxed">Scroll down the results list to load all shops.</p>
-                  </div>
-                  <div className="flex items-start gap-5">
-                    <div className="w-10 h-10 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm font-black text-rose-500 shrink-0">4</div>
-                    <p className="text-sm text-zinc-400 leading-relaxed">Copy the script on the right and paste it into the browser console (F12).</p>
-                  </div>
+                <div className="flex items-center gap-3 p-4 bg-zinc-900/50 rounded-2xl border border-zinc-800">
+                  <input 
+                    type="checkbox" 
+                    checked={scrapeHeadless} 
+                    onChange={(e) => setScrapeHeadless(e.target.checked)}
+                    id="headless"
+                  />
+                  <label htmlFor="headless" className="text-xs font-bold text-zinc-400 cursor-pointer">Background Stealth Scrape</label>
                 </div>
 
-                <div className="space-y-6">
-                  <div className="p-6 bg-black rounded-3xl border border-zinc-800 relative group">
-                    <pre className="text-[11px] text-amber-500/80 font-mono overflow-x-auto h-40 no-scrollbar leading-relaxed">
-{`// 🗺️ Google Maps Shop Scraper
-(async function() {
-    let shops = [];
-    const items = document.querySelectorAll('div[role="article"]');
-    items.forEach(item => {
-        try {
-            const name = item.querySelector('.qBF1Pd')?.innerText || "Unknown Shop";
-            const rating = item.querySelector('.MW4T7d')?.innerText || "N/A";
-            const address = item.querySelector('.W4Efsd:last-child')?.innerText || "No Address";
-            const website = item.querySelector('a[aria-label*="website"]')?.href || "No Website";
-            shops.push({ name, rating, address, website });
-        } catch (e) {}
-    });
-    const output = shops.map(s => \`\${s.name} | Rating: \${s.rating} | \${s.address} | \${s.website}\`).join('\\n');
-    copy(output);
-    alert(\`✅ Found \${shops.length} shops! Data copied to clipboard.\`);
-})();`}
-                    </pre>
-                    <button 
-                      onClick={() => {
-                        navigator.clipboard.writeText(`(async function() { let shops = []; const items = document.querySelectorAll('div[role="article"]'); items.forEach(item => { try { const name = item.querySelector('.qBF1Pd')?.innerText || "Unknown Shop"; const rating = item.querySelector('.MW4T7d')?.innerText || "N/A"; const address = item.querySelector('.W4Efsd:last-child')?.innerText || "No Address"; const website = item.querySelector('a[aria-label*="website"]')?.href || "No Website"; shops.push({ name, rating, address, website }); } catch (e) {} }); const output = shops.map(s => \`\${s.name} | Rating: \${s.rating} | \${s.address} | \${s.website}\`).join('\\n'); copy(output); alert(\`✅ Found \${shops.length} shops! Data copied to clipboard.\`); })();`);
-                        toast.success("Script copied to clipboard!");
-                      }}
-                      className="absolute right-4 top-4 p-3 bg-zinc-800 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-black uppercase tracking-widest flex items-center gap-2"
-                    >
-                      <Copy className="w-4 h-4" />
-                      Copy Script
-                    </button>
+                {scrapeTaskId && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-[10px] font-black text-zinc-500 uppercase">
+                      <span>Progress: {scrapeProgress.completed}/{scrapeProgress.total}</span>
+                      <span className="text-emerald-500">{scrapeStatus}</span>
+                    </div>
+                    <div className="w-full h-2 bg-zinc-900 rounded-full overflow-hidden">
+                      <div className="h-full bg-emerald-500" style={{ width: `${scrapeProgress.total ? (scrapeProgress.completed / scrapeProgress.total) * 100 : 0}%` }} />
+                    </div>
                   </div>
+                )}
+
+                <div className="flex gap-4 pt-4">
                   <button 
-                    onClick={handleMagicPaste}
-                    disabled={isScanning}
-                    className="w-full py-5 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 group shadow-lg shadow-rose-600/20 disabled:opacity-50"
+                    onClick={startScrape} 
+                    disabled={!scrapeStateCode || scrapeStatus === 'running'}
+                    className="flex-1 py-4 bg-emerald-600 disabled:bg-zinc-800 text-white font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-emerald-500/20"
                   >
-                    {isScanning ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5 group-hover:scale-125 transition-transform" />}
-                    Magic Paste Leads
+                    Start Protocol
                   </button>
+                  <button onClick={() => setShowScrape(false)} className="px-8 py-4 bg-zinc-900 border border-zinc-800 text-zinc-500 font-bold rounded-2xl">Cancel</button>
                 </div>
               </div>
-            ) : importTab === 'csv' ? (
-              <div className="space-y-8">
-                <div 
-                  {...getRootProps()} 
-                  className={cn(
-                    "border-2 border-dashed rounded-[2.5rem] p-16 flex flex-col items-center justify-center transition-all cursor-pointer",
-                    isDragActive ? "border-rose-500 bg-rose-500/5" : "border-zinc-800 hover:border-zinc-700 bg-zinc-900/20"
-                  )}
-                >
-                  <input {...getInputProps()} />
-                  <div className="w-20 h-20 bg-rose-600/10 rounded-3xl flex items-center justify-center border border-rose-500/20 mb-6">
-                    <Upload className="w-10 h-10 text-rose-500" />
-                  </div>
-                  <h4 className="text-xl font-black text-white mb-2">Drop your CSV file here</h4>
-                  <p className="text-zinc-500 text-sm font-medium mb-4">or click to browse your files</p>
-                  <p className="text-[10px] text-amber-500 font-bold uppercase tracking-widest bg-amber-500/10 px-4 py-2 rounded-full border border-amber-500/20 mb-8">
-                    🚀 Massive Batch Mode: ~3s per 100 rows (Optimized for 2000+ leads)
-                  </p>
-                  
-                  {uploadError && (
-                    <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-rose-500 text-xs font-bold">
-                      <AlertCircle className="w-4 h-4" />
-                      {uploadError}
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-3 h-3" />
-                      Supports .csv
-                    </div>
-                    <div className="w-1 h-1 bg-zinc-800 rounded-full" />
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3 h-3" />
-                      Auto-mapping
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-3xl">
-                  <h5 className="text-xs font-black text-white uppercase tracking-widest mb-4 flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-rose-500" />
-                    CSV Format Requirements
-                  </h5>
-                  <p className="text-xs text-zinc-500 leading-relaxed">
-                    Your CSV should include headers like <span className="text-zinc-300 font-bold">shopName</span>, 
-                    <span className="text-zinc-300 font-bold">mapsRating</span>, 
-                    <span className="text-zinc-300 font-bold">igLink</span>, and 
-                    <span className="text-zinc-300 font-bold">address</span>. 
-                    We'll automatically map similar names (e.g., 'Name' to 'shopName').
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-8">
-                <div 
-                  {...getRootProps()} 
-                  className={cn(
-                    "border-2 border-dashed rounded-[2.5rem] p-16 flex flex-col items-center justify-center transition-all cursor-pointer",
-                    isDragActive ? "border-rose-500 bg-rose-500/5" : "border-zinc-800 hover:border-zinc-700 bg-zinc-900/20"
-                  )}
-                >
-                  <input {...getInputProps()} />
-                  <div className="w-20 h-20 bg-rose-600/10 rounded-3xl flex items-center justify-center border border-rose-500/20 mb-6">
-                    <ShoppingBag className="w-10 h-10 text-rose-500" />
-                  </div>
-                  <h4 className="text-xl font-black text-white mb-2">Drop Shopify Customers CSV</h4>
-                  <p className="text-zinc-500 text-sm font-medium mb-4">Export your customers from Shopify (CSV) and drop them here</p>
-                  
-                  {uploadError && (
-                    <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-rose-500 text-xs font-bold">
-                      <AlertCircle className="w-4 h-4" />
-                      {uploadError}
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3 h-3" />
-                      Auto-match by Email/Phone
-                    </div>
-                    <div className="w-1 h-1 bg-zinc-800 rounded-full" />
-                    <div className="flex items-center gap-2">
-                      <TrendingUp className="w-3 h-3" />
-                      Auto-update Conversion DNA
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-3xl">
-                  <h5 className="text-xs font-black text-white uppercase tracking-widest mb-4 flex items-center gap-2">
-                    <ShoppingBag className="w-4 h-4 text-rose-500" />
-                    How Shopify Import Works
-                  </h5>
-                  <p className="text-xs text-zinc-500 leading-relaxed">
-                    Upload your Shopify <span className="text-zinc-300 font-bold">Customers</span> export (CSV). 
-                    We'll automatically match them using <span className="text-rose-500 font-bold">Email</span>, <span className="text-rose-500 font-bold">Phone</span>, or <span className="text-rose-500 font-bold">Default Address Company</span>. 
-                    The system will also sync <span className="text-zinc-300 font-bold">Total Orders</span> and <span className="text-zinc-300 font-bold">Total Spent</span> to your CRM.
-                  </p>
-                </div>
-              </div>
-            )}
-          </motion.div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Shop List */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-[#111] border border-zinc-800/50 rounded-[2.5rem] overflow-hidden">
-            <div className="p-8 border-b border-zinc-800/50 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-zinc-900 rounded-xl flex items-center justify-center border border-zinc-800">
-                  <Users className="w-5 h-5 text-rose-500" />
-                </div>
-                <h4 className="font-black text-xl text-white">Shops in {selectedState} ({filteredShops.length}/{artists.length})</h4>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl">
-                  <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Active Leads</span>
-                </div>
-                <div className="flex items-center gap-3 px-4 py-2 bg-zinc-900/50 border border-zinc-800 rounded-xl">
-                  <Database className="w-3.5 h-3.5 text-rose-500" />
-                  <div className="flex flex-col">
-                    <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Local Library</span>
-                    <span className="text-[10px] font-bold text-zinc-300">{globalStats?.dbSize || '0 MB'}</span>
-                  </div>
-                </div>
-                <button 
-                  onClick={async () => {
-                    const pending = assignments.filter(a => a.status === 'pending');
-                    if (pending.length === 0) {
-                      toast.error("No pending tasks to execute. Assign shops to automation first.");
-                      return;
-                    }
-                    toast.info(`Executing protocol for ${pending.length} shops...`);
-                    for (const a of pending) {
-                      await startAutomationSequence(a.artistId, a.accountId);
-                    }
-                  }}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 border border-blue-400/20 rounded-xl text-[10px] font-black text-white uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg shadow-blue-600/20"
-                >
-                  <Zap className="w-3 h-3" />
-                  Execute Protocol
-                </button>
-                <button 
-                  onClick={bulkEnrichArtists}
-                  disabled={isScanning}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 border border-rose-400/20 rounded-xl text-[10px] font-black text-white uppercase tracking-widest transition-all flex items-center gap-2 disabled:opacity-50"
-                >
-                  <Brain className="w-3 h-3" />
-                  Deep Scan All
-                </button>
-                <button 
-                  onClick={() => {
-                    const csv = Papa.unparse(artists);
-                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                    const link = document.createElement('a');
-                    const url = URL.createObjectURL(blob);
-                    link.setAttribute('href', url);
-                    link.setAttribute('download', `inkflow_backup_${new Date().toISOString().split('T')[0]}.csv`);
-                    link.style.visibility = 'hidden';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    toast.success("Backup downloaded to your computer!");
-                  }}
-                  className="px-4 py-2 bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-800 rounded-xl text-[10px] font-black text-zinc-500 uppercase tracking-widest transition-all"
-                >
-                  Export Backup
-                </button>
-                <button 
-                  onClick={() => window.location.reload()}
-                  className="px-4 py-2 bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-800 rounded-xl text-[10px] font-black text-zinc-500 uppercase tracking-widest transition-all"
-                >
-                  Refresh
-                </button>
-                <button 
-                  onClick={clearAllData}
-                  className="px-4 py-2 bg-rose-600/10 hover:bg-rose-600/20 border border-rose-500/20 rounded-xl text-[10px] font-black text-rose-500 uppercase tracking-widest transition-all"
-                >
-                  Clear All
-                </button>
-              </div>
-            </div>
-            
-            <div className="overflow-x-auto scrollbar-none border border-zinc-800/50 rounded-2xl bg-[#111]">
-              <table className="w-full text-left border-collapse table-fixed">
-                <thead>
-                  <tr className="border-b border-zinc-800/50 bg-zinc-900/20">
-                    <th className="p-3 text-[9px] font-black text-zinc-400 uppercase tracking-widest w-[22%]">Shop & Handle</th>
-                    <th className="p-3 text-[9px] font-black text-zinc-400 uppercase tracking-widest w-[16%]">Location</th>
-                    <th className="p-3 text-[9px] font-black text-zinc-400 uppercase tracking-widest w-[12%]">Followers</th>
-                    <th className="p-3 text-[9px] font-black text-zinc-400 uppercase tracking-widest w-[15%]">Style</th>
-                    <th className="p-3 text-[9px] font-black text-zinc-400 uppercase tracking-widest text-center w-[10%]">Heat</th>
-                    <th className="p-3 text-[9px] font-black text-zinc-400 uppercase tracking-widest w-[10%]">Status</th>
-                    <th className="p-3 text-[9px] font-black text-zinc-400 uppercase tracking-widest text-right w-[15%]">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-800/30">
-                  {paginatedShops.length > 0 ? paginatedShops.map(shop => (
-                    <tr key={shop.id} className="hover:bg-zinc-900/30 transition-colors group">
-                      <td className="p-3">
-                        <div className="flex items-center gap-2">
-                          <img 
-                            src={shop.profilePic || `https://picsum.photos/seed/${shop.username}/100/100`} 
-                            alt={shop.username} 
-                            className="w-8 h-8 rounded-lg border border-zinc-800 object-cover shrink-0"
-                            referrerPolicy="no-referrer"
-                          />
-                          <div className="min-w-0">
-                            <h5 className="font-black text-white text-[11px] truncate leading-tight">
-                              {cleanDisplay(shop.fullName || 'Unknown Shop')}
-                            </h5>
-                            <p className="text-[9px] text-rose-500 font-bold truncate">
-                              @{cleanDisplay((!shop.username || typeof shop.username !== 'string' || shop.username.startsWith('user_')) ? (shop.fullName || 'artist').toLowerCase().replace(/\s+/g, '_') : shop.username)}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="flex flex-col gap-0">
-                          <div className="flex items-center gap-1 text-zinc-300 min-w-0">
-                            <MapPin className="w-2 h-2 text-zinc-500 shrink-0" />
-                            <span className="text-[10px] font-bold truncate">
-                              {cleanDisplay(
-                                shop.city && shop.city !== 'Unknown'
-                                  ? `${shop.city}${shop.state && shop.state !== 'Unknown' ? `, ${shop.state}` : ''}`
-                                  : (shop.state && shop.state !== 'Unknown' ? shop.state : (shop.location || 'No Location'))
-                              )}
-                            </span>
-                          </div>
-                          <span className="text-[7px] text-zinc-500 uppercase tracking-widest ml-3 truncate block">{cleanDisplay(shop.country || 'USA')}</span>
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-1">
-                          <Users className="w-2.5 h-2.5 text-zinc-500" />
-                          <span className="text-[11px] font-black text-zinc-300 truncate">
-                            {shop.followers && typeof shop.followers === 'number' ? shop.followers.toLocaleString() : (isScanning ? <Loader2 className="w-2 h-2 animate-spin text-zinc-600" /> : (shop.followers || '0'))}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-1">
-                          <Sparkles className="w-2.5 h-2.5 text-blue-500" />
-                          <span className="px-1 py-0.5 bg-zinc-800/50 text-[8px] font-black rounded text-zinc-400 uppercase tracking-widest border border-zinc-700/30 truncate block max-w-[92px]">
-                            {shop.style && shop.style !== 'Various' ? cleanDisplay(shop.style) : (isScanning ? <Loader2 className="w-2.5 h-2.5 animate-spin text-zinc-600" /> : 'Various')}
-                          </span>
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          <span className="px-1 py-0.5 text-[7px] font-black rounded bg-zinc-900 border border-zinc-800 text-zinc-500">
-                            ER {(shop.socialSignals?.engagementRate || 0).toFixed(1)}%
-                          </span>
-                          <span className="px-1 py-0.5 text-[7px] font-black rounded bg-zinc-900 border border-zinc-800 text-zinc-500">
-                            H {Array.isArray(shop.socialSignals?.postingHours) && shop.socialSignals?.postingHours.length > 0
-                              ? shop.socialSignals?.postingHours.slice(0, 3).join(',')
-                              : '-'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="p-3 text-center">
-                        <div className="flex flex-col items-center">
-                          <span className={cn(
-                            "text-[10px] font-black",
-                            shop.heatScore >= 80 ? "text-red-600" : "text-zinc-400"
-                          )}>
-                            {shop.heatScore}%
-                          </span>
-                          <div className="w-10 h-0.5 bg-zinc-800 rounded-full mt-0.5 overflow-hidden">
-                            <div 
-                              className={cn("h-full transition-all", shop.heatScore >= 80 ? "bg-red-600" : "bg-rose-600")} 
-                              style={{ width: `${shop.heatScore}%` }} 
-                            />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-1">
-                          <div className={cn(
-                            "w-1 h-1 rounded-full",
-                            shop.stage === 'customers' ? "bg-green-500" :
-                            shop.stage === 'engaged' ? "bg-blue-500" : "bg-zinc-600"
-                          )} />
-                          <span className={cn(
-                            "text-[8px] font-black uppercase tracking-widest",
-                            shop.stage === 'customers' ? "text-green-500" :
-                            shop.stage === 'engaged' ? "text-blue-500" : "text-zinc-500"
-                          )}>
-                            {shop.stage}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="p-3 text-right transition-colors">
-                        <div className="flex items-center justify-end gap-1">
-                          <button 
-                            onClick={() => assignTaskToAccount(shop.id)}
-                            className="p-1.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-500 hover:text-blue-500 transition-all"
-                            title="Assign"
-                          >
-                            <Monitor className="w-3 h-3" />
-                          </button>
-                          <button 
-                            onClick={() => {
-                              if (confirmDeleteId === shop.id) {
-                                deleteArtist(shop.id);
-                                setConfirmDeleteId(null);
-                              } else {
-                                setConfirmDeleteId(shop.id);
-                                setTimeout(() => setConfirmDeleteId(null), 2000);
-                              }
-                            }}
-                            className={cn(
-                              "p-1.5 border rounded transition-all",
-                              confirmDeleteId === shop.id ? "bg-rose-600 border-rose-500 text-white" : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-rose-500"
-                            )}
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                          <button 
-                            onClick={() => window.open(`https://instagram.com/${shop.username}`, '_blank')}
-                            className="p-1.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-500 hover:text-rose-500 transition-all"
-                          >
-                            <Instagram className="w-3 h-3" />
-                          </button>
-                          <button 
-                            onClick={() => moveArtist(shop.id, 'engaged')}
-                            className="p-1.5 bg-rose-600 text-white rounded hover:bg-rose-500 transition-all shadow-lg shadow-rose-600/20"
-                          >
-                            <ChevronRight className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={7} className="p-32 text-center">
-                        <div className="w-20 h-20 bg-zinc-900 rounded-[2rem] flex items-center justify-center border border-zinc-800 mx-auto mb-6">
-                          <MapPin className="w-10 h-10 text-zinc-700" />
-                        </div>
-                        <h5 className="text-white font-black text-lg mb-2">No leads found</h5>
-                        <p className="text-zinc-500 text-sm max-w-xs mx-auto">Use the Magic Import tool to scrape new shops directly from Google Maps.</p>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="mt-6 bg-[#111] border border-zinc-800/50 p-6 rounded-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h5 className="text-white font-black text-lg">Direct Sales List</h5>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">
-                  AI logic: engagement + active time + contact completeness + conversion stage
-                </p>
-              </div>
-              <span className="px-2 py-1 bg-zinc-900 border border-zinc-800 rounded text-[10px] font-black text-zinc-300">
-                {directSalesCandidates.length} leads
-              </span>
-            </div>
-            {directSalesCandidates.length === 0 ? (
-              <p className="text-sm text-zinc-500">No direct-sales candidates yet. Run deep scan and enrich contacts first.</p>
-            ) : (
-              <div className="space-y-2">
-                {directSalesCandidates.slice(0, 30).map(({ artist, directScore, activeNow, contactCount }) => (
-                  <div key={`ds_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-white truncate">{cleanDisplay(artist.shopName || artist.fullName || artist.username)}</p>
-                      <p className="text-[10px] text-zinc-500 truncate">
-                        score {directScore} | contacts {contactCount} | ER {(artist.socialSignals?.engagementRate || 0).toFixed(1)}% | {activeNow ? 'active_now' : 'not_active_now'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        onClick={() => assignTaskToAccount(artist.id)}
-                        className="px-2.5 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 rounded text-[10px] font-black text-blue-200 uppercase tracking-widest"
-                      >
-                        Assign
-                      </button>
-                      <button
-                        onClick={() => moveArtist(artist.id, 'engaged')}
-                        className="px-2.5 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 rounded text-[10px] font-black text-rose-200 uppercase tracking-widest"
-                      >
-                        Push Engaged
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-6 bg-[#111] border border-zinc-800/50 p-6 rounded-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h5 className="text-white font-black text-lg">Distributor Board</h5>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">
-                  AI logic: distributor keywords + referral mentions + channel readiness
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleAddManualDistributor}
-                  className="px-2 py-1 bg-emerald-600/20 border border-emerald-500/40 rounded text-[10px] font-black text-emerald-200 uppercase tracking-widest"
-                >
-                  Add Distributor
-                </button>
-                <span className="px-2 py-1 bg-zinc-900 border border-zinc-800 rounded text-[10px] font-black text-zinc-300">
-                  {distributorCandidates.length} candidates
-                </span>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {distributorByCountry.slice(0, 8).map(([country, count]) => (
-                <span
-                  key={`dist_country_${country}`}
-                  className="px-2 py-1 bg-zinc-900 border border-zinc-800 rounded text-[10px] font-black text-zinc-300 uppercase tracking-widest"
-                >
-                  {country}: {count}
-                </span>
-              ))}
-            </div>
-            {distributorCandidates.length === 0 ? (
-              <p className="text-sm text-zinc-500">
-                No distributor candidates yet. After deep scan enriches more profiles, candidates will appear here.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {distributorCandidates.slice(0, 30).map(({ artist, sourceCount, status, distributorScore, followers, brandPartners, tier, priority, connectors, reasonTags }) => {
-                  const instagramUrl = resolveInstagramUrl(artist);
-                  const selectedProducts = Array.isArray(artist.metadata?.cooperationProducts)
-                    ? artist.metadata.cooperationProducts
-                    : String(artist.metadata?.cooperationProducts || '')
-                        .split(',')
-                        .map((x) => x.trim())
-                        .filter(Boolean);
-                  const distributorRegions = Array.isArray(artist.metadata?.distributorRegions)
-                    ? artist.metadata.distributorRegions
-                    : String(artist.metadata?.distributorRegions || '')
-                        .split(',')
-                        .map((x) => x.trim())
-                        .filter(Boolean);
-                  const orderedProductOptions = [
-                    ...COOP_PRODUCT_OPTIONS.filter((opt) => selectedProducts.includes(opt)),
-                    ...COOP_PRODUCT_OPTIONS.filter((opt) => !selectedProducts.includes(opt))
-                  ];
-                  const configuredGeoRaw = String(artist.metadata?.distributorGeoDisplay || '').trim();
-                  const configuredGeoDisplay = isPlaceholderGeo(configuredGeoRaw) ? '' : configuredGeoRaw;
-                  const geoParts = [artist.city, artist.state, artist.country]
-                    .map((v) => String(v || '').trim())
-                    .filter((v) => !isPlaceholderGeo(v));
-                  const fallbackGeo = geoParts.join(', ').trim();
-                  const effectiveGeoDisplay = configuredGeoDisplay || (distributorRegions.length > 0 ? distributorRegions.join(', ') : (fallbackGeo || 'not_set'));
-                  const coverageDisplay = distributorRegions.join(', ');
-                  const showCoverage = distributorRegions.length > 0 && normText(coverageDisplay) !== normText(effectiveGeoDisplay);
-                  return (
-                  <div key={`dist_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-white leading-tight whitespace-normal">{cleanDisplay(artist.shopName || artist.fullName || artist.username)}</p>
-                      <p className="text-[10px] text-zinc-500 truncate">
-                        {priority}/{tier} | score {distributorScore} | followers {Number(followers || 0).toLocaleString()} | brands {brandPartners} | via artists {sourceCount}
-                      </p>
-                      <p className="text-[10px] text-zinc-500 truncate mt-1">
-                        coop: {cleanDisplay(String(artist.metadata?.cooperationStatus || 'unknown'))} | products: {Array.isArray(artist.metadata?.cooperationProducts)
-                          ? artist.metadata.cooperationProducts.join(', ')
-                          : cleanDisplay(String(artist.metadata?.cooperationProducts || 'none'))}
-                      </p>
-                      <p className="text-[10px] text-zinc-500 truncate mt-1">
-                        geo: {cleanDisplay(effectiveGeoDisplay)} | coverage: {showCoverage ? coverageDisplay : 'not_set'}
-                      </p>
-                      <p className="text-[10px] text-zinc-500 truncate mt-1">
-                        reasons: {reasonTags.length > 0 ? reasonTags.join(', ') : 'none'}
-                      </p>
-                      <p className="text-[10px] text-zinc-500 truncate mt-1">
-                        connectors: {connectors.length > 0
-                          ? connectors.map((c, idx) => `${idx + 1}.${cleanDisplay(c.artist.fullName || c.artist.shopName || c.artist.username)}(${Math.round(c.connectorScore)})`).join(' | ')
-                          : 'none'}
-                      </p>
-                      <p className="text-[10px] text-zinc-500 truncate mt-1">
-                        ins: {instagramUrl || 'N/A'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-wrap justify-end max-w-[58%]">
-                      <span className={cn(
-                        "text-[9px] uppercase tracking-widest font-black px-1.5 py-1 rounded border",
-                        priority === 'P0' ? "text-rose-200 border-rose-500/40 bg-rose-600/20" :
-                        priority === 'P1' ? "text-amber-200 border-amber-500/40 bg-amber-600/20" :
-                        priority === 'P2' ? "text-blue-200 border-blue-500/40 bg-blue-600/20" :
-                        "text-zinc-300 border-zinc-700 bg-zinc-900"
-                      )}>
-                        {priority}
-                      </span>
-                      <span className="text-[9px] uppercase tracking-widest font-black text-zinc-400">{status}</span>
-                      <button
-                        onClick={() => updateArtist(artist.id, {
-                          metadata: {
-                            ...(artist.metadata || {}),
-                            distributorStatus: status === 'qualified' ? 'new' : 'qualified',
-                            isDistributor: status === 'qualified' ? false : true
-                          }
-                        })}
-                        className="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 rounded text-[9px] font-black text-emerald-200 uppercase tracking-widest"
-                      >
-                        {status === 'qualified' ? 'Unmark' : 'Qualify'}
-                      </button>
-                      <select
-                        value={String(artist.metadata?.cooperationStatus || 'none')}
-                        onChange={async (e) => {
-                          const nextStatus = e.target.value;
-                          await updateArtist(artist.id, {
-                            metadata: {
-                              ...(artist.metadata || {}),
-                              cooperationStatus: nextStatus,
-                              cooperationUpdatedAt: new Date().toISOString()
-                            }
-                          });
-                          toast.success('Cooperation status updated.');
-                        }}
-                        className="px-1.5 py-1 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 rounded text-[9px] font-black text-blue-100 uppercase tracking-widest min-w-[84px]"
-                        style={{ backgroundColor: '#112a56', color: '#eaf2ff' }}
-                      >
-                        <option value="none" style={{ backgroundColor: '#0b1220', color: '#f8fafc' }}>none</option>
-                        <option value="discussing" style={{ backgroundColor: '#0b1220', color: '#f8fafc' }}>discussing</option>
-                        <option value="sample_sent" style={{ backgroundColor: '#0b1220', color: '#f8fafc' }}>sample_sent</option>
-                        <option value="active" style={{ backgroundColor: '#0b1220', color: '#f8fafc' }}>active</option>
-                        <option value="paused" style={{ backgroundColor: '#0b1220', color: '#f8fafc' }}>paused</option>
-                      </select>
-                      <select
-                        multiple
-                        size={2}
-                        value={selectedProducts}
-                        onChange={async (e) => {
-                          const selected = Array.from(e.target.selectedOptions as HTMLCollectionOf<HTMLOptionElement>).map((o) => o.value);
-                          await updateArtist(artist.id, {
-                            metadata: {
-                              ...(artist.metadata || {}),
-                              cooperationProducts: selected,
-                              cooperationUpdatedAt: new Date().toISOString()
-                            }
-                          });
-                          toast.success('Cooperation products updated.');
-                        }}
-                        className="px-1.5 py-1 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 rounded text-[9px] font-black text-amber-200 tracking-widest max-w-[118px]"
-                        title="Coop Products (single or multi-select)"
-                      >
-                        {orderedProductOptions.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                      {!configuredGeoDisplay ? (
-                        <button
-                          onClick={async () => {
-                            const currentRegions = Array.isArray(artist.metadata?.distributorRegions)
-                              ? artist.metadata.distributorRegions.join(', ')
-                              : String(artist.metadata?.distributorRegions || '');
-                            const regionsInput = window.prompt('Distributor coverage regions (comma separated), e.g. CA, OR, WA', currentRegions);
-                            if (regionsInput === null) return;
-                            const geoDefault = fallbackGeo;
-                            const geoInput = window.prompt('Display geo (City/Region, Country). Example: Los Angeles, CA, USA', geoDefault);
-                            const regions = regionsInput
-                              .split(',')
-                              .map((x) => x.trim().toUpperCase())
-                              .filter(Boolean);
-                            const finalGeoDisplay = String(geoInput || '').trim() || (regions.length > 0 ? regions.join(', ') : geoDefault);
-                            await updateArtist(artist.id, {
-                              metadata: {
-                                ...(artist.metadata || {}),
-                                distributorRegions: regions,
-                                distributorGeoDisplay: finalGeoDisplay,
-                                regionsUpdatedAt: new Date().toISOString()
-                              }
-                            });
-                            toast.success('Distributor geo/regions updated.');
-                          }}
-                          className="px-2 py-1 bg-cyan-600/20 border border-cyan-500/40 rounded text-[10px] font-black text-cyan-200 uppercase tracking-widest"
-                        >
-                          Set Regions
-                        </button>
-                      ) : (
-                        <span
-                          className="px-1.5 py-1 bg-cyan-600/20 border border-cyan-500/40 rounded text-[9px] font-black text-cyan-200 tracking-widest max-w-[120px] truncate"
-                          title={configuredGeoDisplay}
-                        >
-                          {configuredGeoDisplay}
-                        </span>
-                      )}
-                      <button
-                        onClick={async () => {
-                          await updateArtist(artist.id, {
-                            metadata: {
-                              ...(artist.metadata || {}),
-                              distributorExcluded: true,
-                              isDistributor: false,
-                              distributorStatus: 'new'
-                            }
-                          });
-                          toast.success('Removed from distributor list.');
-                        }}
-                        className="px-1.5 py-1 bg-rose-600/20 border border-rose-500/40 rounded text-[9px] font-black text-rose-200 uppercase tracking-widest"
-                        title="Remove from distributor list"
-                      >
-                        Remove
-                      </button>
-                      {instagramUrl ? (
-                        <button
-                          onClick={() => window.open(instagramUrl, '_blank')}
-                          className="px-1.5 py-1 bg-zinc-900 border border-zinc-700 rounded text-[9px] font-black text-zinc-200 uppercase tracking-widest hover:text-rose-300"
-                          title="Open Instagram"
-                        >
-                          IG
-                        </button>
-                      ) : (
-                        <button
-                          onClick={async () => {
-                            const input = window.prompt('Set Instagram URL or handle', '');
-                            if (!input) return;
-                            const normalized = normalizeInstagramUrl(input.trim());
-                            if (!normalized) {
-                              toast.error('Invalid Instagram input.');
-                              return;
-                            }
-                            const handle = normalized.includes('instagram.com/')
-                              ? normalized.split('instagram.com/')[1].split('/')[0].split('?')[0]
-                              : '';
-                            await updateArtist(artist.id, {
-                              ig_handle: handle || artist.ig_handle || null,
-                              metadata: {
-                                ...(artist.metadata || {}),
-                                manualInstagramProvided: true,
-                                manualInstagramUrl: normalized
-                              }
-                            });
-                            toast.success('Instagram saved.');
-                          }}
-                          className="px-1.5 py-1 bg-zinc-900 border border-zinc-700 rounded text-[9px] font-black text-zinc-200 uppercase tracking-widest hover:text-emerald-300"
-                          title="Set Instagram"
-                        >
-                          Set IG
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )})}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-6 bg-[#111] border border-zinc-800/50 p-6 rounded-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h5 className="text-white font-black text-lg">Referral Mining Queue</h5>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">
-                  High-trust artists likely to intro local distributors
-                </p>
-              </div>
-              <span className="px-2 py-1 bg-zinc-900 border border-zinc-800 rounded text-[10px] font-black text-zinc-300">
-                {referralReadyArtists.length} artists
-              </span>
-            </div>
-            {referralReadyArtists.length === 0 ? (
-              <p className="text-sm text-zinc-500">No referral-ready artists yet. Engage more first (reply/follow-back/customers).</p>
-            ) : (
-              <div className="space-y-2">
-                {referralReadyArtists.map(({ artist, trustScore }) => (
-                  <div key={`ref_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-white truncate">{cleanDisplay(artist.fullName || artist.shopName || artist.username)}</p>
-                      <p className="text-[10px] text-zinc-500 truncate">
-                        trust {Math.round(trustScore)} | {artist.city || artist.location || 'Unknown'}, {artist.country || 'USA'} | stage {artist.stage}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        onClick={async () => {
-                          const text = buildReferralScript(
-                            cleanDisplay(artist.fullName || artist.shopName || artist.username),
-                            cleanDisplay(`${artist.city || artist.location || 'their area'}, ${artist.country || 'USA'}`),
-                            '10%'
-                          );
-                          await navigator.clipboard.writeText(text);
-                          toast.success('Referral DM script copied.');
-                        }}
-                        className="px-2.5 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 rounded text-[10px] font-black text-blue-200 uppercase tracking-widest"
-                      >
-                        Copy Script
-                      </button>
-                      <button
-                        onClick={() => updateArtist(artist.id, {
-                          metadata: {
-                            ...(artist.metadata || {}),
-                            referralStatus: artist.metadata?.referralStatus === 'requested' ? 'new' : 'requested'
-                          }
-                        })}
-                        className="px-2.5 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 rounded text-[10px] font-black text-amber-200 uppercase tracking-widest"
-                      >
-                        {artist.metadata?.referralStatus === 'requested' ? 'Unmark Requested' : 'Mark Requested'}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-6 bg-[#111] border border-zinc-800/50 p-6 rounded-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h5 className="text-white font-black text-lg">Distributor Lifecycle</h5>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">
-                  Sample feedback and reorder recovery workflow
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-5">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">
-                  Sample Sent / Waiting Feedback ({distributorLifecycleBuckets.sample_sent.length})
-                </p>
-                <div className="space-y-2">
-                  {distributorLifecycleBuckets.sample_sent.slice(0, 10).map(({ artist, priority }) => (
-                    <div key={`lc_sample_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
-                      <p className="text-sm text-zinc-200 truncate">{cleanDisplay(artist.shopName || artist.fullName || artist.username)} ({priority})</p>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => markDistributorLifecycle(artist.id, 'positive_no_order', { sampleStatus: 'positive' })}
-                          className="px-2 py-1 bg-emerald-600/20 border border-emerald-500/40 rounded text-[10px] font-black text-emerald-200 uppercase tracking-widest"
-                        >
-                          Positive
-                        </button>
-                        <button
-                          onClick={() => markDistributorLifecycle(artist.id, 'bad_feedback', { sampleStatus: 'negative' })}
-                          className="px-2 py-1 bg-rose-600/20 border border-rose-500/40 rounded text-[10px] font-black text-rose-200 uppercase tracking-widest"
-                        >
-                          Negative
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">
-                  Bad Feedback / Need Recovery ({distributorLifecycleBuckets.bad_feedback.length})
-                </p>
-                <div className="space-y-2">
-                  {distributorLifecycleBuckets.bad_feedback.slice(0, 10).map(({ artist, priority }) => (
-                    <div key={`lc_bad_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
-                      <p className="text-sm text-zinc-200 truncate">{cleanDisplay(artist.shopName || artist.fullName || artist.username)} ({priority})</p>
-                      <button
-                        onClick={async () => {
-                          const msg = `Thanks for the honest feedback. We'll replace with an adjusted sample spec + provide a small compensating discount on first paid batch.`;
-                          await navigator.clipboard.writeText(msg);
-                          toast.success('Recovery script copied.');
-                        }}
-                        className="px-2 py-1 bg-amber-600/20 border border-amber-500/40 rounded text-[10px] font-black text-amber-200 uppercase tracking-widest"
-                      >
-                        Copy Recovery Script
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">
-                  Positive Feedback / No Order Yet ({distributorLifecycleBuckets.positive_no_order.length})
-                </p>
-                <div className="space-y-2">
-                  {distributorLifecycleBuckets.positive_no_order.slice(0, 10).map(({ artist, priority }) => (
-                    <div key={`lc_pos_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
-                      <p className="text-sm text-zinc-200 truncate">{cleanDisplay(artist.shopName || artist.fullName || artist.username)} ({priority})</p>
-                      <button
-                        onClick={async () => {
-                          const msg = `Glad the sample worked. If we lock a first distributor order this week, we can include starter margin protection and local territory support.`;
-                          await navigator.clipboard.writeText(msg);
-                          toast.success('Close-order script copied.');
-                        }}
-                        className="px-2 py-1 bg-blue-600/20 border border-blue-500/40 rounded text-[10px] font-black text-blue-200 uppercase tracking-widest"
-                      >
-                        Copy Close Script
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">
-                  One Order Then Stalled ({distributorLifecycleBuckets.one_order_stalled.length})
-                </p>
-                <div className="space-y-2">
-                  {distributorLifecycleBuckets.one_order_stalled.slice(0, 10).map(({ artist, priority, daysSinceLastOrder }) => (
-                    <div key={`lc_stalled_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
-                      <p className="text-sm text-zinc-200 truncate">
-                        {cleanDisplay(artist.shopName || artist.fullName || artist.username)} ({priority}) | last order {daysSinceLastOrder ?? '-'}d
-                      </p>
-                      <button
-                        onClick={async () => {
-                          const msg = `Quick check-in: we can optimize your next order mix based on your first sell-through and add a reorder incentive for this cycle.`;
-                          await navigator.clipboard.writeText(msg);
-                          toast.success('Reorder recovery script copied.');
-                        }}
-                        className="px-2 py-1 bg-purple-600/20 border border-purple-500/40 rounded text-[10px] font-black text-purple-200 uppercase tracking-widest"
-                      >
-                        Copy Reorder Script
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">
-                  Long Time No Order ({distributorLifecycleBuckets.long_no_order.length}, {REORDER_STALE_DAYS}+ days)
-                </p>
-                <div className="space-y-2">
-                  {distributorLifecycleBuckets.long_no_order.slice(0, 12).map(({ artist, priority, daysSinceLastOrder, orderCount }) => (
-                    <div key={`lc_long_no_order_${artist.id}`} className="flex items-center justify-between gap-3 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl">
-                      <p className="text-sm text-zinc-200 truncate">
-                        {cleanDisplay(artist.shopName || artist.fullName || artist.username)} ({priority}) | orders {orderCount} | last order {daysSinceLastOrder ?? '-'}d
-                      </p>
-                      <button
-                        onClick={async () => {
-                          const msg = `Checking in on restock planning: based on your prior order, we can suggest a faster-turn SKU mix and provide a timed reorder incentive this week.`;
-                          await navigator.clipboard.writeText(msg);
-                          toast.success('No-order follow-up script copied.');
-                        }}
-                        className="px-2 py-1 bg-cyan-600/20 border border-cyan-500/40 rounded text-[10px] font-black text-cyan-200 uppercase tracking-widest"
-                      >
-                        Copy Follow-up Script
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between px-8 py-4 border-t border-zinc-800 bg-zinc-900/30 rounded-b-[2.5rem]">
-              <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
-                Showing {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredShops.length)} of {filteredShops.length}
-              </span>
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                  className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-[10px] font-black text-zinc-400 uppercase tracking-widest disabled:opacity-30 transition-all"
-                >
-                  Prev
-                </button>
-                <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
-                  {currentPage} / {totalPages}
-                </span>
-                <button
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                  className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-[10px] font-black text-zinc-400 uppercase tracking-widest disabled:opacity-30 transition-all"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* AI Strategy */}
-        <div className="lg:col-span-1 space-y-8">
-          <div className="bg-[#111] border border-zinc-800/50 p-8 rounded-[2.5rem] sticky top-8">
-            <div className="flex items-center gap-4 mb-8">
-              <div className="w-12 h-12 bg-rose-600/10 rounded-2xl flex items-center justify-center border border-rose-500/20">
-                <TrendingUp className="w-6 h-6 text-rose-500" />
-              </div>
-              <div>
-                <h4 className="font-black text-xl text-white">AI Strategy</h4>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">Market Intelligence</p>
-              </div>
-            </div>
-
-            <p className="text-sm text-zinc-400 mb-8 leading-relaxed font-medium">
-              Generate a personalized approach for shops in {selectedState} based on current market trends and shop profiles.
-            </p>
-
-            {strategy ? (
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="space-y-6"
-              >
-                <div className="p-6 bg-rose-600/5 border border-rose-500/20 rounded-3xl text-sm leading-relaxed text-zinc-300 font-medium italic">
-                  "{strategy}"
-                </div>
-                
-                <div className="grid grid-cols-2 gap-3">
-                  <button 
-                    onClick={handleGenerateStrategy}
-                    className="py-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all text-zinc-300"
-                  >
-                    Regenerate
-                  </button>
-                  <button 
-                    onClick={async () => {
-                      const pending = assignments.filter(a => a.status === 'pending');
-                      if (pending.length === 0) {
-                        toast.error("No pending tasks to execute. Assign shops to automation first.");
-                        return;
-                      }
-                      toast.info(`Executing protocol for ${pending.length} shops...`);
-                      for (const a of pending) {
-                        await startAutomationSequence(a.artistId, a.accountId);
-                      }
-                    }}
-                    className="py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
-                  >
-                    <Zap className="w-3 h-3" />
-                    Execute Protocol
-                  </button>
-                </div>
-              </motion.div>
-            ) : (
-              <button 
-                onClick={handleGenerateStrategy}
-                disabled={isGeneratingStrategy}
-                className="w-full py-5 bg-rose-600 hover:bg-rose-500 disabled:bg-zinc-900 disabled:text-zinc-700 text-white font-black uppercase tracking-widest rounded-2xl transition-all shadow-lg shadow-rose-600/20 flex items-center justify-center gap-3"
-              >
-                {isGeneratingStrategy ? <Loader2 className="w-6 h-6 animate-spin" /> : <Sparkles className="w-6 h-6" />}
-                Generate Strategy
-              </button>
-            )}
-
-            <div className="mt-10 pt-10 border-t border-zinc-800/50 space-y-5">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-2xl bg-green-500/10 flex items-center justify-center border border-green-500/20">
-                  <CheckCircle2 className="w-5 h-5 text-green-500" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Market Analysis</p>
-                  <p className="text-xs text-zinc-300 font-bold">Updated Live</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-2xl bg-rose-500/10 flex items-center justify-center border border-rose-500/20">
-                  <AlertCircle className="w-5 h-5 text-rose-500" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">New Leads</p>
-                  <p className="text-xs text-zinc-300 font-bold">{filteredShops.length} shops found</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-2xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
-                  <Monitor className="w-5 h-5 text-blue-500" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Automation</p>
-                  <p className="text-xs text-zinc-300 font-bold">{assignments.length} Active Tasks</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

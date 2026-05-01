@@ -48,6 +48,7 @@ export default function CRMManager() {
     importCSV,
     deleteArtist,
     isScanning,
+    setIsScanning,
     scanProgress,
     pinnedCount,
     submitFeedback
@@ -153,6 +154,14 @@ export default function CRMManager() {
                   : `Scanning 52,000 artists based on conversion model... ${pinnedCount} high-match targets pinned for you.`
                 }
               </p>
+              {scanProgress.total > 0 && (
+                <button 
+                  onClick={() => setIsScanning(false)}
+                  className="px-2 py-0.5 bg-rose-600/20 hover:bg-rose-600/40 border border-rose-500/30 rounded text-[9px] font-black uppercase tracking-widest text-rose-400 transition-all ml-2"
+                >
+                  Stop Scan
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <span className="px-2 py-1 bg-rose-600 text-[10px] font-black rounded-lg uppercase tracking-widest">
@@ -466,7 +475,7 @@ export default function CRMManager() {
                         {activeStage === 'outreach' && (
                           <>
                             <button 
-                              onClick={() => addInteraction(artist.id, 'story_view')}
+                              onClick={() => addInteraction(artist.id, 'story-view')}
                               className="p-3 bg-zinc-900 border border-zinc-800 hover:border-red-500/50 hover:text-red-500 rounded-xl transition-all group/btn"
                               title="Simulate Story View (+5)"
                             >
@@ -487,7 +496,7 @@ export default function CRMManager() {
                               <MessageCircle className="w-4 h-4" />
                             </button>
                             <button 
-                              onClick={() => addInteraction(artist.id, 'follow_back')}
+                              onClick={() => addInteraction(artist.id, 'follow-back')}
                               className="p-3 bg-zinc-900 border border-zinc-800 hover:border-blue-500/50 hover:text-blue-500 rounded-xl transition-all group/btn"
                               title="Simulate Follow Back (+40)"
                             >
