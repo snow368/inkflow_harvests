@@ -43,8 +43,9 @@ import OrderManager from './components/OrderManager';
 import BotWorkerManager from './components/BotWorkerManager';
 import PublishCalendar from './components/PublishCalendar';
 import InkFlowOutreach from './components/InkFlowOutreach';
+import ScrapeConfig from './components/ScrapeConfig';
 
-type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'settings' | 'publish' | 'inkflow-outreach';
+type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'settings' | 'publish' | 'scrape' | 'inkflow-outreach';
 
 const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (tab: Tab) => void }) => {
   const { artists, user, logout } = useCRM();
@@ -65,6 +66,7 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
     { id: 'automation', label: 'Automation', icon: Zap },
     { id: 'publish', label: 'Publish Calendar', icon: Calendar },
     { id: 'botworkers', label: 'Bot Workers', icon: Bot },
+    { id: 'scrape', label: 'Scrape', icon: Search },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -223,7 +225,8 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     botworkers: 'Bot Workers',
     settings: 'Settings',
     publish: 'Publish Calendar',
-    'inkflow-outreach': 'InkFlow 获客'
+    'inkflow-outreach': 'InkFlow 获客',
+    scrape: 'Scrape'
   };
 
   const descriptions: Record<Tab, string> = {
@@ -238,7 +241,8 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     botworkers: "Start, stop, and manage bot worker processes...",
     settings: "Configure API keys and automation safety settings.",
     publish: "Schedule and publish content to social platforms.",
-    'inkflow-outreach': "Shared resource pool for InkFlow customer outreach. Only visible to dev users."
+    'inkflow-outreach': "Shared resource pool for InkFlow customer outreach. Only visible to dev users.",
+    scrape: 'Configure and submit data scraping tasks by keyword and location.'
   };
 
   return (
@@ -292,6 +296,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
           {activeTab === 'botworkers' && <BotWorkerManager />}
           {activeTab === 'publish' && <PublishCalendar />}
           {activeTab === 'settings' && <AutomationSettings />}
+          {activeTab === 'scrape' && <ScrapeConfig />}
           {activeTab === 'inkflow-outreach' && <InkFlowOutreach />}
         </motion.div>
       </AnimatePresence>
