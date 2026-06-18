@@ -26,8 +26,8 @@ const sql = neon(process.env.NEON_DATABASE_URL || process.env.VITE_NEON_DATABASE
 
 // 常见列名映射
 const COLUMN_MAP: Record<string, string> = {
-  // 店名
-  'shop name': 'name', 'name': 'name', 'store name': 'name', 'business name': 'name', 'studio name': 'name',
+  // 店名 → shop_name（数据库字段名）
+  'shop name': 'shop_name', 'name': 'shop_name', 'store name': 'shop_name', 'business name': 'shop_name', 'studio name': 'shop_name',
   // IG
   'instagram': 'ig_handle', 'ig handle': 'ig_handle', 'ig_handle': 'ig_handle', 'instagram handle': 'ig_handle',
   // 地址
@@ -116,7 +116,7 @@ async function main() {
     const batch = rows.slice(i, i + BATCH);
 
     for (const r of batch) {
-      const name = colMap['name'] ? (r[colMap['name']] || '').trim() : '';
+      const name = colMap['shop_name'] ? (r[colMap['shop_name']] || '').trim() : '';
       let igHandle = colMap['ig_handle'] ? (r[colMap['ig_handle']] || '').trim() : '';
       const address = colMap['address'] ? (r[colMap['address']] || '').trim() : '';
       const city = colMap['city'] ? (r[colMap['city']] || '').trim() : '';
@@ -149,7 +149,7 @@ async function main() {
       try {
         // 用 upsert：存在则更新，不存在则插入
         await sql`
-          INSERT INTO artists (id, name, ig_handle, address, city, state, phone, website, email, rating, review_count, import_region, updated_at)
+          INSERT INTO artists (id, shop_name, ig_handle, address, city, state, phone, website, email, rating, review_count, import_region, updated_at)
           VALUES (${id}, ${name}, ${igHandle}, ${address}, ${city}, ${state}, ${phone}, ${website || null}, ${email || null}, ${rating}, ${reviewCount}, ${state}, NOW())
           ON CONFLICT (id) DO UPDATE SET
             ig_handle = COALESCE(NULLIF(EXCLUDED.ig_handle, ''), artists.ig_handle),
