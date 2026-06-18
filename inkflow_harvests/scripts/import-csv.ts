@@ -156,7 +156,7 @@ async function main() {
             website = COALESCE(NULLIF(EXCLUDED.website, ''), artists.website),
             email = COALESCE(NULLIF(EXCLUDED.email, ''), artists.email),
             rating = CASE WHEN EXCLUDED.rating > 0 THEN EXCLUDED.rating ELSE artists.rating END,
-            review_count = CASE WHEN EXCLUDED.review_count > 0 THEN EXCLUDED.review_count ELSE artists.review_count END,
+            reviews = CASE WHEN EXCLUDED.reviews > 0 THEN EXCLUDED.reviews ELSE artists.reviews END,
             updated_at = NOW()
         `;
         inserted++;
