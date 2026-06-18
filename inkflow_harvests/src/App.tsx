@@ -44,8 +44,9 @@ import BotWorkerManager from './components/BotWorkerManager';
 import PublishCalendar from './components/PublishCalendar';
 import InkFlowOutreach from './components/InkFlowOutreach';
 import ScrapeConfig from './components/ScrapeConfig';
+import AdminUsers from './components/AdminUsers';
 
-type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'settings' | 'publish' | 'scrape' | 'inkflow-outreach';
+type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'settings' | 'publish' | 'scrape' | 'admin' | 'inkflow-outreach';
 
 const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (tab: Tab) => void }) => {
   const { artists, user, logout } = useCRM();
@@ -70,10 +71,11 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
-  // InkFlow outreach — only visible to snow368@gmail.com
+  // Admin-only tabs
   const isSnow368 = user?.email === 'snow368@gmail.com';
   const inkflowTab = { id: 'inkflow-outreach', label: 'InkFlow 获客', icon: Target };
-  const allTabs = isSnow368 ? [...tabs, inkflowTab] : tabs;
+  const adminTab = { id: 'admin', label: 'Admin', icon: Users };
+  const allTabs = isSnow368 ? [...tabs, adminTab, inkflowTab] : tabs;
 
   const renderTab = (tab: typeof tabs[0]) => {
     const Icon = tab.icon;
@@ -146,6 +148,7 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
             <div className="space-y-1">
               <p className="px-4 text-[10px] font-black text-rose-600/50 uppercase tracking-widest mb-2">Snow Only</p>
               {renderTab(inkflowTab)}
+              {renderTab(adminTab)}
             </div>
           )}
         </div>
@@ -226,7 +229,8 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     settings: 'Settings',
     publish: 'Publish Calendar',
     'inkflow-outreach': 'InkFlow 获客',
-    scrape: 'Scrape'
+    scrape: 'Scrape',
+    admin: 'Admin'
   };
 
   const descriptions: Record<Tab, string> = {
@@ -242,7 +246,8 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     settings: "Configure API keys and automation safety settings.",
     publish: "Schedule and publish content to social platforms.",
     'inkflow-outreach': "Shared resource pool for InkFlow customer outreach. Only visible to dev users.",
-    scrape: 'Configure and submit data scraping tasks by keyword and location.'
+    scrape: 'Configure and submit data scraping tasks by keyword and location.',
+    admin: 'User management, quotas, and system stats.'
   };
 
   return (
@@ -297,6 +302,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
           {activeTab === 'publish' && <PublishCalendar />}
           {activeTab === 'settings' && <AutomationSettings />}
           {activeTab === 'scrape' && <ScrapeConfig />}
+          {activeTab === 'admin' && <AdminUsers />}
           {activeTab === 'inkflow-outreach' && <InkFlowOutreach />}
         </motion.div>
       </AnimatePresence>
