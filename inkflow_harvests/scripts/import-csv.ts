@@ -43,7 +43,7 @@ const COLUMN_MAP: Record<string, string> = {
   // 评分
   'rating': 'rating', 'stars': 'rating', 'score': 'rating',
   // 评价数
-  'reviews': 'review_count', 'review count': 'review_count', 'review_count': 'review_count',
+  'reviews': 'reviews', 'review count': 'reviews', 'review_count': 'reviews',
   // 邮箱
   'email': 'email', 'e-mail': 'email', 'mail': 'email',
 };
@@ -149,7 +149,7 @@ async function main() {
       try {
         // 用 upsert：存在则更新，不存在则插入
         await sql`
-          INSERT INTO artists (id, shop_name, ig_handle, address, city, state, phone, website, email, rating, review_count, import_region, updated_at)
+          INSERT INTO artists (id, shop_name, ig_handle, address, city, state, phone, website, email, rating, reviews, import_region, last_updated)
           VALUES (${id}, ${name}, ${igHandle}, ${address}, ${city}, ${state}, ${phone}, ${website || null}, ${email || null}, ${rating}, ${reviewCount}, ${state}, NOW())
           ON CONFLICT (id) DO UPDATE SET
             ig_handle = COALESCE(NULLIF(EXCLUDED.ig_handle, ''), artists.ig_handle),
