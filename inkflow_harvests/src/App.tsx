@@ -73,7 +73,7 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
   // InkFlow outreach — only visible to snow368@gmail.com
   const isSnow368 = user?.email === 'snow368@gmail.com';
   const inkflowTab = { id: 'inkflow-outreach', label: 'InkFlow 获客', icon: Target };
-  const allTabs = [...tabs, inkflowTab];
+  const allTabs = isSnow368 ? [...tabs, inkflowTab] : tabs;
 
   const renderTab = (tab: typeof tabs[0]) => {
     const Icon = tab.icon;
