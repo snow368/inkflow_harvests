@@ -15,8 +15,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+        working-directory: inkflow_harvests
       - run: npm run build
+        working-directory: inkflow_harvests
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
-          command: pages deploy dist/ --project-name=harvests
+          command: pages deploy inkflow_harvests/dist --project-name=harvests
