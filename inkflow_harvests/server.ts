@@ -9177,6 +9177,7 @@ loadQueue('pending');
           middlewareMode: true,
           watch: {
             ignored: [
+              '**/profiles/**',
               '**/data/**',
               '**/data/**/*.db',
               '**/data/**/*.db-*',
@@ -9184,7 +9185,7 @@ loadQueue('pending');
               '**/data/**/*.wal',
               '**/data/**/*.shm',
               '**/backups/**',
-              '**/.cloakbrowser_cache/**'
+              '**/.cloakbrowser_cache/**',
             ]
           }
         },
