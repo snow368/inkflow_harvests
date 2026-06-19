@@ -7,7 +7,7 @@ import {
   MessageSquare, Zap, Activity, Clock, Settings, Globe, Monitor,
   ChevronDown, ChevronRight, RefreshCw, Cpu, Plus, Trash2,
   PlayCircle, StopCircle, User, Shield, Wifi,
-  Brain, Target, BarChart3, TrendingUp, MessageCircle
+  Brain, Target, BarChart3, TrendingUp, MessageCircle, ListTodo
 } from 'lucide-react';
 
 type BotConfig = {
@@ -114,14 +114,16 @@ export default function BotWorkerManager() {
   const [accounts, setAccounts] = useState<AccountEntry[]>(() => loadAccounts());
   const [learnProfiles, setLearnProfiles] = useState<any[]>([]);
   const [dmTaskCount, setDmTaskCount] = useState(0);
+  const [neonTasks, setNeonTasks] = useState<any[]>([]);
 
   const fetchData = useCallback(async () => {
     try {
-      const [fnRes, wRes, learnRes, dmStatsRes] = await Promise.all([
+      const [fnRes, wRes, learnRes, dmStatsRes, neonRes] = await Promise.all([
         fetch('/api/bot/functions'),
         fetch('/api/bot/workers'),
         fetch('/api/bot/learn/status'),
         fetch('/api/marketing/tasks/stats'),
+        fetch('/api/automation/neon-tasks?limit=50').catch(() => null),
       ]);
       if (fnRes.ok) {
         const fnData = await fnRes.json();
@@ -150,6 +152,10 @@ export default function BotWorkerManager() {
       if (dmStatsRes?.ok) {
         const d = await dmStatsRes.json();
         setDmTaskCount(d?.total || 0);
+      }
+      if (neonRes?.ok) {
+        const n = await neonRes.json();
+        setNeonTasks(n?.tasks || []);
       }
     } catch { /* ignore */ }
     setLoading(false);
@@ -411,6 +417,104 @@ export default function BotWorkerManager() {
             <p className="text-[10px] text-zinc-400 mt-1 font-medium">Bots analyze behavior every 20 tasks and auto-adjust strategies (like strategy, risk profile, active schedule).</p>
           </div>
         </div>
+      </div>
+
+      {/* Bot Task Queue — tasks from Neon automation_tasks */}
+      <div className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <ListTodo className="w-5 h-5 text-cyan-500" />
+            <h4 className="text-sm font-bold text-white">Bot 任务队列 (Neon)</h4>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-zinc-500">
+            <span className={`px-2 py-0.5 rounded-full font-medium ${
+              neonTasks.filter(t => t.status === 'pending').length > 0
+                ? 'bg-amber-500/20 text-amber-400'
+                : 'bg-zinc-800 text-zinc-500'
+            }`}>
+              {neonTasks.filter(t => t.status === 'pending').length} pending
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500 font-medium">
+              {neonTasks.filter(t => t.status === 'leased').length} leased
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 font-medium">
+              {neonTasks.filter(t => t.status === 'done').length} done
+            </span>
+          </div>
+        </div>
+
+        {/* Summary by bot */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-4">
+          {(() => {
+            const byBot: Record<string, { pending: number; leased: number; done: number; failed: number; latest: string }> = {};
+            for (const t of neonTasks) {
+              const bot = String(t.payload?.botId || t.leasedBy || 'unassigned');
+              if (!byBot[bot]) byBot[bot] = { pending: 0, leased: 0, done: 0, failed: 0, latest: '' };
+              byBot[bot][t.status as keyof typeof byBot[string]]++;
+              if (t.status === 'leased' && !byBot[bot].latest) byBot[bot].latest = t.payload?.artistHandle || t.id;
+            }
+            return Object.entries(byBot).map(([botId, stats]) => {
+              const isRunning = workers.some(w => w.botId === botId && w.running);
+              const isBusy = stats.leased > 0;
+              return (
+                <div key={botId} className="p-3 bg-zinc-900/40 rounded-xl border border-zinc-800/40">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className={`w-2 h-2 rounded-full ${isRunning ? (isBusy ? 'bg-green-500' : 'bg-amber-400') : 'bg-zinc-600'}`} />
+                    <span className="text-xs font-bold text-white truncate">{botId}</span>
+                  </div>
+                  {isBusy ? (
+                    <p className="text-[10px] text-cyan-400 truncate" title={stats.latest}>
+                      ▶ {stats.latest}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-zinc-500">空闲</p>
+                  )}
+                  <div className="flex gap-2 mt-1 text-[9px] text-zinc-500">
+                    <span className={stats.pending > 0 ? 'text-amber-400' : ''}>P:{stats.pending}</span>
+                    <span className={stats.leased > 0 ? 'text-cyan-400' : ''}>L:{stats.leased}</span>
+                    <span>D:{stats.done}</span>
+                  </div>
+                </div>
+              );
+            });
+          })()}
+        </div>
+
+        {/* Recent tasks table */}
+        {neonTasks.filter(t => t.status !== 'done').length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="text-zinc-600 border-b border-zinc-800/50">
+                  <th className="text-left py-2 pr-2 font-medium">Bot</th>
+                  <th className="text-left py-2 pr-2 font-medium">Target</th>
+                  <th className="text-left py-2 pr-2 font-medium">Status</th>
+                  <th className="text-left py-2 pr-2 font-medium">Since</th>
+                </tr>
+              </thead>
+              <tbody>
+                {neonTasks.filter(t => t.status !== 'done').slice(0, 10).map(t => (
+                  <tr key={t.id} className="border-b border-zinc-800/20">
+                    <td className="py-1.5 pr-2 text-zinc-300">{t.payload?.botId || t.leasedBy || '-'}</td>
+                    <td className="py-1.5 pr-2 text-zinc-400">
+                      {t.payload?.artistHandle || t.payload?.shopName || t.id?.slice(0, 24)}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                        t.status === 'pending' ? 'bg-amber-500/20 text-amber-400' :
+                        t.status === 'leased' ? 'bg-cyan-500/20 text-cyan-400' :
+                        t.status === 'failed' ? 'bg-red-500/20 text-red-400' : ''
+                      }`}>{t.status}</span>
+                    </td>
+                    <td className="py-1.5 text-zinc-500">
+                      {t.createdAt ? Math.floor((Date.now() - t.createdAt) / 60000) + 'm ago' : '-'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Bot Function Cards */}
