@@ -1,0 +1,20 @@
+{
+  "name": "harvests-cloud-api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute harvests-db --file=../inkflow_harvests/scripts/schema-d1.sql",
+    "db:migrate": "node scripts/migrate-to-d1.mjs"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "hono": "^4.6.0",
+    "jose": "^6.2.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "wrangler": "^4.101.0"
+  }
+}
