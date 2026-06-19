@@ -8456,6 +8456,67 @@ async function startServer() {
       return res.json({ ok: true, updated: result.changes || 0 });
     });
 
+    // GET /api/automation/stats/dashboard — per-bot daily summary for frontend
+    app.get('/api/automation/stats/dashboard', async (req, res) => {
+      try {
+        const days = Math.max(1, Math.min(90, Number(req.query?.days) || 14));
+        const since = Date.now() - days * 86400000;
+
+        // Query Neon automation_tasks for daily stats
+        const neonStats = await sql`
+          SELECT
+            DATE(to_timestamp(created_at / 1000)) as day,
+            COALESCE(payload->>'botId', leased_by, 'unknown') as bot,
+            status,
+            COUNT(*) as cnt
+          FROM automation_tasks
+          WHERE created_at >= ${since}
+          GROUP BY day, bot, status
+          ORDER BY day DESC, bot
+        `;
+
+        // Process into structured format
+        const byDay: Record<string, any> = {};
+        const byBot: Record<string, any> = {};
+        let total = 0;
+
+        for (const row of neonStats) {
+          const day = String(row.day).slice(0, 10);
+          const bot = String(row.bot || 'unknown');
+          const st = String(row.status || 'unknown');
+          const cnt = Number(row.cnt || 0);
+
+          if (!byDay[day]) byDay[day] = { day, pending: 0, leased: 0, done: 0, failed: 0, total: 0 };
+          if (!byBot[bot]) byBot[bot] = { bot, pending: 0, leased: 0, done: 0, failed: 0, total: 0 };
+
+          byDay[day][st] = (byDay[day][st] || 0) + cnt;
+          byDay[day].total += cnt;
+          byBot[bot][st] = (byBot[bot][st] || 0) + cnt;
+          byBot[bot].total += cnt;
+          total += cnt;
+        }
+
+        // Also get bot_accounts info
+        const accounts = await sql`SELECT account_id, ig_handle, stage, daily_task_limit, speed_factor FROM bot_accounts`;
+
+        return res.json({
+          ok: true,
+          total,
+          days: Object.values(byDay).sort((a: any, b: any) => String(b.day).localeCompare(String(a.day))),
+          bots: Object.values(byBot).sort((a: any, b: any) => b.total - a.total),
+          accounts: accounts.map((a: any) => ({
+            accountId: a.account_id,
+            igHandle: a.ig_handle,
+            stage: a.stage,
+            dailyLimit: a.daily_task_limit,
+            speed: a.speed_factor,
+          })),
+        });
+      } catch (e: any) {
+        return res.status(500).json({ error: String(e?.message || e) });
+      }
+    });
+
     // ========== Intel Review Web UI — human verification interface ==========
     app.get('/intel/review', (_req, res) => {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');

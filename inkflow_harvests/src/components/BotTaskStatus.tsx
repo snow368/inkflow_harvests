@@ -1,127 +1,212 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, Loader2, RefreshCw, ListTodo } from 'lucide-react';
+import { Bot, Loader2, RefreshCw, ListTodo, BarChart3, Calendar } from 'lucide-react';
 import { apiFetch } from '../lib/api-auth';
 
-type NeoTask = {
-  id: string;
-  payload: any;
-  status: string;
-  leasedBy: string | null;
-  createdAt: number;
+type BotAccount = {
+  accountId: string;
+  igHandle: string;
+  stage: string;
+  dailyLimit: number;
+  speed: number;
 };
 
-type BotSummary = {
-  botId: string;
+type BotStat = {
+  bot: string;
   pending: number;
   leased: number;
   done: number;
   failed: number;
-  busy: boolean;
-  currentTarget: string;
+  total: number;
+};
+
+type DayStat = {
+  day: string;
+  pending: number;
+  leased: number;
+  done: number;
+  failed: number;
+  total: number;
+};
+
+type Dashboard = {
+  total: number;
+  days: DayStat[];
+  bots: BotStat[];
+  accounts: BotAccount[];
+};
+
+const STAGE_LABELS: Record<string, string> = {
+  new: '萌芽',
+  transition: '过渡',
+  growing: '成长',
+  stable: '稳定',
+  mature: '成熟',
+};
+
+const STAGE_COLORS: Record<string, string> = {
+  new: 'text-zinc-400',
+  transition: 'text-amber-400',
+  growing: 'text-green-400',
+  stable: 'text-blue-400',
+  mature: 'text-purple-400',
 };
 
 export default function BotTaskStatus() {
-  const [tasks, setTasks] = useState<NeoTask[]>([]);
+  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
-  const [useWorker, setUseWorker] = useState(true); // try Worker first
 
-  const fetchTasks = async () => {
+  const fetchData = async () => {
     setLoading(true);
+    // Try Cloudflare Worker first, fallback to VPS server
+    const tryFetch = async (url: string) => {
+      if (url.includes('workers.dev')) {
+        return apiFetch(url.replace('https://harvests-cloud-api.inkflowapp.workers.dev', ''));
+      }
+      const res = await fetch(url);
+      return res;
+    };
+
     try {
-      // Try Cloudflare Worker first (works on harvests.pages.dev)
-      if (useWorker) {
-        const res = await apiFetch('/api/automation/tasks?limit=50');
-        if (res.ok) {
-          const data = await res.json();
-          setTasks(data.tasks || []);
-          return;
-        }
-      }
-      // Fallback to local VPS server (works on localhost:3000)
-      const res = await fetch('/api/automation/neon-tasks?limit=50');
-      if (res.ok) {
-        const data = await res.json();
-        setTasks(data.tasks || []);
-        setUseWorker(false);
-      }
-    } catch { /* ignore */ }
+      // Try Worker
+      const res1 = await tryFetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/automation/stats/dashboard?days=14');
+      if (res1.ok) { const d = await res1.json(); if (d.ok) { setDashboard(d); setLoading(false); return; } }
+    } catch {}
+
+    try {
+      // Fallback VPS
+      const res2 = await fetch('/api/automation/stats/dashboard?days=14');
+      if (res2.ok) { const d = await res2.json(); if (d.ok) { setDashboard(d); } }
+    } catch {}
+
     setLoading(false);
   };
 
-  useEffect(() => { fetchTasks(); }, []);
+  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { const iv = setInterval(fetchData, 30000); return () => clearInterval(iv); }, []);
 
-  // Auto-refresh every 10s
-  useEffect(() => {
-    const iv = setInterval(fetchTasks, 10000);
-    return () => clearInterval(iv);
-  }, []);
-
-  // Group by bot
-  const byBot = new Map<string, BotSummary>();
-  for (const t of tasks) {
-    const bot = String(t.payload?.botId || t.leasedBy || 'unassigned');
-    if (!byBot.has(bot)) byBot.set(bot, { botId: bot, pending: 0, leased: 0, done: 0, failed: 0, busy: false, currentTarget: '' });
-    const s = byBot.get(bot)!;
-    if (t.status === 'pending') s.pending++;
-    else if (t.status === 'leased') { s.leased++; s.busy = true; s.currentTarget = t.payload?.artistHandle || ''; }
-    else if (t.status === 'done') s.done++;
-    else if (t.status === 'failed') s.failed++;
+  if (loading && !dashboard) {
+    return (
+      <div className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6 text-center">
+        <Loader2 className="w-6 h-6 mx-auto animate-spin text-zinc-500" />
+        <p className="text-xs text-zinc-500 mt-2">加载任务数据...</p>
+      </div>
+    );
   }
-  const bots = Array.from(byBot.values());
 
-  const totalPending = tasks.filter(t => t.status === 'pending').length;
-  const totalLeased = tasks.filter(t => t.status === 'leased').length;
-  const totalDone = tasks.filter(t => t.status === 'done').length;
+  if (!dashboard) {
+    return (
+      <div className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6 text-center">
+        <Bot className="w-8 h-8 mx-auto text-zinc-600" />
+        <p className="text-xs text-zinc-500 mt-2">暂无任务数据</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <ListTodo className="w-5 h-5 text-cyan-500" />
-          <h4 className="text-sm font-bold text-white">Bot 任务队列</h4>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1.5 text-[10px] font-medium">
-            <span className={`px-2 py-0.5 rounded-full ${totalPending > 0 ? 'bg-amber-500/20 text-amber-400' : 'bg-zinc-800 text-zinc-500'}`}>
-              {totalPending} pending
-            </span>
-            <span className={`px-2 py-0.5 rounded-full ${totalLeased > 0 ? 'bg-cyan-500/20 text-cyan-400' : 'bg-zinc-800 text-zinc-500'}`}>
-              {totalLeased} leased
-            </span>
-            <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500">{totalDone} done</span>
+    <div className="space-y-4">
+      {/* 账号概览 */}
+      {dashboard.accounts.length > 0 && (
+        <div className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Bot className="w-5 h-5 text-rose-500" />
+            <h4 className="text-sm font-bold text-white">Bot 账号</h4>
           </div>
-          <button onClick={fetchTasks} className="p-1.5 hover:bg-zinc-800 rounded-lg transition-colors">
-            {loading ? <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 text-zinc-500" />}
-          </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {dashboard.accounts.map(a => (
+              <div key={a.accountId} className="p-3 bg-zinc-900/40 rounded-xl border border-zinc-800/40">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className={`w-2 h-2 rounded-full ${a.stage === 'new' ? 'bg-zinc-500' : a.stage === 'transition' ? 'bg-amber-500' : a.stage === 'growing' ? 'bg-green-500' : a.stage === 'stable' ? 'bg-blue-500' : 'bg-purple-500'}`} />
+                  <span className="text-xs font-bold text-white">@{a.igHandle}</span>
+                  <span className={`text-[9px] font-medium ${STAGE_COLORS[a.stage] || 'text-zinc-500'}`}>{STAGE_LABELS[a.stage] || a.stage}</span>
+                </div>
+                <div className="text-[10px] text-zinc-500">
+                  日 {a.dailyLimit} 任务 · 速度 {a.speed}x
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
+      )}
+
+      {/* 累计统计 */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: '累计任务', value: dashboard.total, color: 'text-blue-500', icon: BarChart3 },
+          { label: '待处理', value: dashboard.bots.reduce((s: number, b: BotStat) => s + b.pending, 0), color: 'text-amber-500', icon: ListTodo },
+          { label: '执行中', value: dashboard.bots.reduce((s: number, b: BotStat) => s + b.leased, 0), color: 'text-cyan-500', icon: Loader2 },
+          { label: '已完成', value: dashboard.bots.reduce((s: number, b: BotStat) => s + b.done, 0), color: 'text-green-500', icon: RefreshCw },
+        ].map((stat, i) => (
+          <div key={i} className="p-4 bg-[#111] border border-zinc-800/50 rounded-2xl">
+            <div className="flex items-center gap-2 mb-1">
+              <stat.icon className={`w-3.5 h-3.5 ${stat.color}`} />
+              <span className="text-[10px] text-zinc-500">{stat.label}</span>
+            </div>
+            <p className={`text-xl font-black ${stat.color}`}>{stat.value}</p>
+          </div>
+        ))}
       </div>
 
-      {bots.length === 0 ? (
-        <div className="text-center py-8 text-zinc-600">
-          <Bot className="w-8 h-8 mx-auto mb-2 opacity-30" />
-          <p className="text-xs font-medium">暂无任务数据</p>
-          <p className="text-[10px] mt-1">等待调度器创建任务...</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3">
-          {bots.map(bot => (
-            <div key={bot.botId} className="p-3 bg-zinc-900/40 rounded-xl border border-zinc-800/40">
-              <div className="flex items-center gap-2 mb-1.5">
-                <div className={`w-2 h-2 rounded-full ${bot.busy ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]' : 'bg-zinc-600'}`} />
-                <span className="text-xs font-bold text-white truncate" title={bot.botId}>{bot.botId}</span>
+      {/* 各 Bot 统计 */}
+      {dashboard.bots.length > 0 && (
+        <div className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <BarChart3 className="w-5 h-5 text-cyan-500" />
+            <h4 className="text-sm font-bold text-white">Bot 任务分布</h4>
+          </div>
+          {dashboard.bots.map(b => (
+            <div key={b.bot} className="mb-3 last:mb-0">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold text-white">{b.bot}</span>
+                <span className="text-[10px] text-zinc-500">{b.total} 任务</span>
               </div>
-              {bot.busy ? (
-                <p className="text-[10px] text-cyan-400 truncate" title={bot.currentTarget}>▶ {bot.currentTarget}</p>
-              ) : (
-                <p className="text-[10px] text-zinc-500">空闲</p>
-              )}
-              <div className="flex gap-2 mt-1.5 text-[9px] text-zinc-500">
-                <span className={bot.pending > 0 ? 'text-amber-400' : ''}>待:{bot.pending}</span>
-                <span className={bot.leased > 0 ? 'text-cyan-400' : ''}>跑:{bot.leased}</span>
-                <span>完:{bot.done}</span>
+              <div className="flex h-2 rounded-full bg-zinc-800 overflow-hidden">
+                {b.done > 0 && <div className="bg-green-600 h-full" style={{ width: `${(b.done/b.total)*100}%` }} title={`完成 ${b.done}`} />}
+                {b.leased > 0 && <div className="bg-cyan-600 h-full" style={{ width: `${(b.leased/b.total)*100}%` }} title={`进行中 ${b.leased}`} />}
+                {b.pending > 0 && <div className="bg-amber-600 h-full" style={{ width: `${(b.pending/b.total)*100}%` }} title={`等待 ${b.pending}`} />}
+                {b.failed > 0 && <div className="bg-red-600 h-full" style={{ width: `${(b.failed/b.total)*100}%` }} title={`失败 ${b.failed}`} />}
+              </div>
+              <div className="flex gap-3 mt-1 text-[9px] text-zinc-500">
+                <span className="text-green-500">✓ {b.done}</span>
+                <span className="text-cyan-500">▶ {b.leased}</span>
+                <span className="text-amber-500">○ {b.pending}</span>
+                {b.failed > 0 && <span className="text-red-500">✗ {b.failed}</span>}
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* 每日趋势 */}
+      {dashboard.days.length > 0 && (
+        <div className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Calendar className="w-5 h-5 text-violet-500" />
+            <h4 className="text-sm font-bold text-white">每日任务</h4>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="text-zinc-600 border-b border-zinc-800/50">
+                  <th className="text-left py-2 pr-3 font-medium">日期</th>
+                  <th className="text-right py-2 pr-3 font-medium">总计</th>
+                  <th className="text-right py-2 pr-3 font-medium">完成</th>
+                  <th className="text-right py-2 pr-3 font-medium">进行中</th>
+                  <th className="text-right py-2 font-medium">等待</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dashboard.days.map(d => (
+                  <tr key={d.day} className="border-b border-zinc-800/20">
+                    <td className="py-1.5 pr-3 text-zinc-300">{d.day}</td>
+                    <td className="py-1.5 pr-3 text-right text-zinc-400">{d.total}</td>
+                    <td className="py-1.5 pr-3 text-right text-green-500">{d.done || 0}</td>
+                    <td className="py-1.5 pr-3 text-right text-cyan-500">{d.leased || 0}</td>
+                    <td className="py-1.5 text-right text-amber-500">{d.pending || 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
