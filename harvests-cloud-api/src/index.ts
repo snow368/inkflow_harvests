@@ -4,14 +4,17 @@ import { createRemoteJWKSet, jwtVerify } from 'jose'
 
 type UserInfo = { uid: string; email?: string }
 
-// Neon HTTP query helper — raw fetch, no SDK dependency
+// Neon HTTP query helper — uses Neon SQL-over-HTTP API with Basic auth
 async function neonQuery(connStr: string, query: string): Promise<any[]> {
   if (!connStr) throw new Error('NEON_DATABASE_URL not configured');
-  const host = connStr.match(/@([^/]+)/)?.[1];
-  if (!host) throw new Error('Invalid Neon URL');
+  // Parse connection string: postgresql://user:pass@host/db?...
+  const m = connStr.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^/]+)\/neondb/);
+  if (!m) throw new Error('Invalid Neon URL format');
+  const [, user, pass, host] = m;
+  const basic = Buffer.from(`${user}:${pass}`).toString('base64');
   const resp = await fetch(`https://${host}/v2/query`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Neon-Connection-String': connStr },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${basic}` },
     body: JSON.stringify({ query }),
   });
   if (!resp.ok) { const t = await resp.text(); throw new Error(`Neon ${resp.status}: ${t.slice(0,200)}`); }
