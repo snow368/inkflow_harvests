@@ -8141,6 +8141,32 @@ async function startServer() {
       const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(50, Math.floor(limitRaw)) : 10;
       const taskType = String(req.query?.taskType || '').trim(); // optional: ig_outreach | reddit_scrape | supply_analysis
 
+      // Sync pending tasks from Neon automation_tasks to local SQLite (cloud-native scheduler support)
+      try {
+        sql`
+          SELECT id, payload::text, run_at, created_at, updated_at
+          FROM automation_tasks
+          WHERE status = 'pending' AND run_at <= ${Date.now()}
+          ORDER BY run_at ASC
+          LIMIT 20
+        `.then((neonTasks: any[]) => {
+          if (neonTasks.length > 0) {
+            const syncStmt = deepScanDb.prepare(`
+              INSERT OR IGNORE INTO automation_tasks (id, payload, status, run_at, attempts, max_attempts, created_at, updated_at)
+              VALUES (?, ?, 'pending', ?, 0, 3, ?, ?)
+            `);
+            let synced = 0;
+            for (const t of neonTasks) {
+              const result = syncStmt.run(t.id, t.payload, Number(t.run_at) || Date.now(), Number(t.created_at) || Date.now(), Date.now());
+              if (result.changes > 0) synced++;
+            }
+            if (synced > 0) console.log(`[automation/poll] synced ${synced} tasks from Neon to SQLite`);
+          }
+        }).catch((e: any) => {
+          // Neon table not created yet — expected for fresh deployments, silently fall through
+        });
+      } catch {}
+
       recycleExpiredAutomationLeases();
       const now = Date.now();
       const DEDUP_WINDOW = 7 * 24 * 60 * 60 * 1000;
@@ -8348,6 +8374,18 @@ async function startServer() {
       if ((updated.changes || 0) === 0) {
         return res.status(409).json({ error: 'Task not leased by this bot or already resolved' });
       }
+      // Also update status in Neon if the task originated from there (cloud-native scheduler)
+      try {
+        sql`
+          UPDATE automation_tasks
+          SET status = ${status},
+              lease_until = NULL,
+              leased_by = NULL,
+              error_reason = ${status === 'failed' ? (errorReason || 'unknown') : null},
+              updated_at = ${now}
+          WHERE id = ${commandId} AND status = 'pending'
+        `.catch(() => {});
+      } catch {}
       return res.json({ ok: true, commandId, status });
     });
 
