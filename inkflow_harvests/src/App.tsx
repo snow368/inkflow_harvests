@@ -41,6 +41,7 @@ import TaskManager from './components/TaskManager';
 import InventoryManager from './components/InventoryManager';
 import OrderManager from './components/OrderManager';
 import BotWorkerManager from './components/BotWorkerManager';
+import BotTaskStatus from './components/BotTaskStatus';
 import PublishCalendar from './components/PublishCalendar';
 import InkFlowOutreach from './components/InkFlowOutreach';
 import ScrapeConfig from './components/ScrapeConfig';
@@ -298,7 +299,12 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
           {activeTab === 'orders' && <OrderManager />}
           {activeTab === 'tasks' && <TaskManager />}
           {activeTab === 'automation' && <AutomationCommandCenter />}
-          {activeTab === 'botworkers' && <BotWorkerManager />}
+          {activeTab === 'botworkers' && (
+            <div className="space-y-6">
+              <BotTaskStatus />
+              <BotWorkerManager />
+            </div>
+          )}
           {activeTab === 'publish' && <PublishCalendar />}
           {activeTab === 'settings' && <AutomationSettings />}
           {activeTab === 'scrape' && <ScrapeConfig />}
