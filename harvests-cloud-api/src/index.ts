@@ -1,9 +1,23 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
-import { neon } from '@neondatabase/serverless'
 
 type UserInfo = { uid: string; email?: string }
+
+// Neon HTTP query helper — raw fetch, no SDK dependency
+async function neonQuery(connStr: string, query: string): Promise<any[]> {
+  if (!connStr) throw new Error('NEON_DATABASE_URL not configured');
+  const host = connStr.match(/@([^/]+)/)?.[1];
+  if (!host) throw new Error('Invalid Neon URL');
+  const resp = await fetch(`https://${host}/v2/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Neon-Connection-String': connStr },
+    body: JSON.stringify({ query }),
+  });
+  if (!resp.ok) { const t = await resp.text(); throw new Error(`Neon ${resp.status}: ${t.slice(0,200)}`); }
+  const data: any = await resp.json();
+  return data.rows || data;
+}
 
 type Bindings = {
   DB: D1Database
@@ -760,22 +774,17 @@ app.get('/api/automation/tasks', async (c) => {
   const status = (c.req.query('status') || '').trim()
 
   try {
-    const sql = neon(c.env.NEON_DATABASE_URL, { method: 'http' })
     let query = `SELECT id, payload::text as payload, status, run_at, lease_until, leased_by,
                  attempts, max_attempts, error_reason, created_at, updated_at
                  FROM automation_tasks WHERE 1=1`
-    const params: any[] = []
 
-    if (status) { query += ` AND status = $${params.length + 1}`; params.push(status) }
+    if (status) query += ` AND status = '${status.replace(/'/g, "''")}'`
     if (!isAdmin) {
-      // Non-admin only sees their own bot's tasks
-      query += ` AND (leased_by = $${params.length + 1} OR payload->>'botId' = $${params.length + 1})`
-      params.push(`user_${uid}`)
+      query += ` AND (leased_by = 'user_${uid.replace(/'/g, "''")}' OR payload->>'botId' = 'user_${uid.replace(/'/g, "''")}')`
     }
-    query += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`
-    params.push(limit)
+    query += ` ORDER BY created_at DESC LIMIT ${Math.min(limit, 200)}`
 
-    const result = await sql(query, params) as any[]
+    const result = await neonQuery(c.env.NEON_DATABASE_URL, query)
     const tasks = result.map((r: any) => ({
       id: r.id,
       payload: (() => { try { return JSON.parse(r.payload) } catch { return r.payload } })(),
@@ -801,9 +810,7 @@ app.get('/api/automation/stats/dashboard', async (c) => {
   try {
     const days = Math.max(1, Math.min(90, Number(c.req.query('days')) || 14));
     const since = Date.now() - days * 86400000;
-    const sql = neon(c.env.NEON_DATABASE_URL, { method: 'http' });
-
-    const neonStats = await sql`
+    const query = `
       SELECT
         DATE(to_timestamp(created_at / 1000)) as day,
         COALESCE(payload->>'botId', leased_by, 'unknown') as bot,
@@ -814,6 +821,7 @@ app.get('/api/automation/stats/dashboard', async (c) => {
       GROUP BY day, bot, status
       ORDER BY day DESC, bot
     `;
+    const neonStats = await neonQuery(c.env.NEON_DATABASE_URL, query);
 
     const byDay: Record<string, any> = {};
     const byBot: Record<string, any> = {};
@@ -832,7 +840,7 @@ app.get('/api/automation/stats/dashboard', async (c) => {
       total += cnt;
     }
 
-    const accounts = await sql`SELECT account_id, ig_handle, stage, daily_task_limit, speed_factor FROM bot_accounts`;
+    const accounts = await neonQuery(c.env.NEON_DATABASE_URL, 'SELECT account_id, ig_handle, stage, daily_task_limit, speed_factor FROM bot_accounts');
 
     return c.json({
       ok: true, total,
