@@ -8340,6 +8340,44 @@ async function startServer() {
       return res.json({ ok: true, total, counts });
     });
 
+    // GET /api/automation/neon-tasks — view tasks in Neon automation_tasks (cloud scheduler)
+    app.get('/api/automation/neon-tasks', async (req, res) => {
+      try {
+        const limitRaw = Number(req.query?.limit);
+        const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(200, Math.floor(limitRaw)) : 50;
+        const status = String(req.query?.status || '').trim();
+        const botId = String(req.query?.botId || '').trim();
+
+        let query = sql`
+          SELECT id, payload::text as payload, status, run_at, lease_until, leased_by,
+                 attempts, max_attempts, error_reason, created_at, updated_at
+          FROM automation_tasks
+          WHERE 1=1
+        `;
+        if (status) query = sql`${query} AND status = ${status}`;
+        if (botId) query = sql`${query} AND (leased_by = ${botId} OR payload->>'botId' = ${botId})`;
+        query = sql`${query} ORDER BY created_at DESC LIMIT ${limit}`;
+
+        const rows = await query;
+        const tasks = (rows as any[]).map(r => ({
+          id: r.id,
+          payload: (() => { try { return JSON.parse(r.payload); } catch { return r.payload; } })(),
+          status: r.status,
+          runAt: Number(r.run_at),
+          leaseUntil: r.lease_until ? Number(r.lease_until) : null,
+          leasedBy: r.leased_by,
+          attempts: Number(r.attempts || 0),
+          maxAttempts: Number(r.max_attempts || 3),
+          errorReason: r.error_reason,
+          createdAt: Number(r.created_at),
+          updatedAt: Number(r.updated_at),
+        }));
+        return res.json({ ok: true, total: tasks.length, source: 'neon', tasks });
+      } catch (e: any) {
+        return res.status(500).json({ error: 'Failed to query Neon automation_tasks', details: e?.message || String(e) });
+      }
+    });
+
     app.post('/api/automation/report', (req, res) => {
       if (!requireBotAuth(req, res)) return;
       const botId = String(req.body?.botId || '').trim();
