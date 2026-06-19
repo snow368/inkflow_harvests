@@ -7290,10 +7290,20 @@ async function startServer() {
         if (fn.taskType) env['BOT_TASK_TYPE'] = fn.taskType;
         if (fn.execMode) env['BOT_EXEC_MODE'] = fn.execMode;
 
+        // Resolve script path — try engine dir first, then cwd
+        const ENGINE_DIR = path.resolve(process.cwd(), '..', 'harvests-engine');
+        const CWD_SCRIPT = path.resolve(process.cwd(), 'scripts', fn.script);
+        const ENGINE_SCRIPT = path.resolve(ENGINE_DIR, 'scripts', fn.script);
+        const scriptPath = fs.existsSync(ENGINE_SCRIPT) ? ENGINE_SCRIPT
+          : fs.existsSync(CWD_SCRIPT) ? CWD_SCRIPT
+          : `scripts/${fn.script}`;
+        const scriptDir = fs.existsSync(ENGINE_SCRIPT) ? ENGINE_DIR
+          : process.cwd();
+
         const child = spawn(
           isWin ? 'cmd' : 'npx',
-          isWin ? ['/c', 'npx', 'tsx', `scripts/${fn.script}`] : ['tsx', `scripts/${fn.script}`],
-          { cwd: process.cwd(), stdio: 'pipe', env }
+          isWin ? ['/c', 'npx', 'tsx', scriptPath] : ['tsx', scriptPath],
+          { cwd: scriptDir, stdio: 'pipe', env }
         );
 
         const pid = child.pid as number;
