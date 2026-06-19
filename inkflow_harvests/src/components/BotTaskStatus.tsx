@@ -30,8 +30,8 @@ type DayStat = {
 
 type Dashboard = {
   total: number;
+  counts: Record<string, number>;
   days: DayStat[];
-  bots: BotStat[];
   accounts: BotAccount[];
 };
 
@@ -57,26 +57,21 @@ export default function BotTaskStatus() {
 
   const fetchData = async () => {
     setLoading(true);
-    // Try Cloudflare Worker first, fallback to VPS server
-    const tryFetch = async (url: string) => {
-      if (url.includes('workers.dev')) {
-        return apiFetch(url.replace('https://harvests-cloud-api.inkflowapp.workers.dev', ''));
-      }
-      const res = await fetch(url);
-      return res;
+    // Try Cloudflare Worker (D1-based, no Neon needed)
+    const tryPath = async (path: string) => {
+      try {
+        const r = await apiFetch(path);
+        if (r.ok) { const d = await r.json(); if (d.ok) return d; }
+      } catch {}
+      try {
+        const r = await fetch(path);
+        if (r.ok) { const d = await r.json(); if (d.ok) return d; }
+      } catch {}
+      return null;
     };
 
-    try {
-      // Try Worker
-      const res1 = await tryFetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/automation/stats/dashboard?days=14');
-      if (res1.ok) { const d = await res1.json(); if (d.ok) { setDashboard(d); setLoading(false); return; } }
-    } catch {}
-
-    try {
-      // Fallback VPS
-      const res2 = await fetch('/api/automation/stats/dashboard?days=14');
-      if (res2.ok) { const d = await res2.json(); if (d.ok) { setDashboard(d); } }
-    } catch {}
+    const data = await tryPath('/api/automation/dashboard');
+    if (data) { setDashboard(data); setLoading(false); return; }
 
     setLoading(false);
   };
@@ -132,9 +127,9 @@ export default function BotTaskStatus() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: '累计任务', value: dashboard.total, color: 'text-blue-500', icon: BarChart3 },
-          { label: '待处理', value: dashboard.bots.reduce((s: number, b: BotStat) => s + b.pending, 0), color: 'text-amber-500', icon: ListTodo },
-          { label: '执行中', value: dashboard.bots.reduce((s: number, b: BotStat) => s + b.leased, 0), color: 'text-cyan-500', icon: Loader2 },
-          { label: '已完成', value: dashboard.bots.reduce((s: number, b: BotStat) => s + b.done, 0), color: 'text-green-500', icon: RefreshCw },
+          { label: '待处理', value: dashboard.counts?.pending || 0, color: 'text-amber-500', icon: ListTodo },
+          { label: '执行中', value: dashboard.counts?.leased || 0, color: 'text-cyan-500', icon: Loader2 },
+          { label: '已完成', value: dashboard.counts?.done || 0, color: 'text-green-500', icon: RefreshCw },
         ].map((stat, i) => (
           <div key={i} className="p-4 bg-[#111] border border-zinc-800/50 rounded-2xl">
             <div className="flex items-center gap-2 mb-1">
@@ -146,33 +141,25 @@ export default function BotTaskStatus() {
         ))}
       </div>
 
-      {/* 各 Bot 统计 */}
-      {dashboard.bots.length > 0 && (
+      {/* 任务分布条 */}
+      {dashboard.counts && (
         <div className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6">
           <div className="flex items-center gap-2 mb-4">
             <BarChart3 className="w-5 h-5 text-cyan-500" />
-            <h4 className="text-sm font-bold text-white">Bot 任务分布</h4>
+            <h4 className="text-sm font-bold text-white">任务分布</h4>
           </div>
-          {dashboard.bots.map(b => (
-            <div key={b.bot} className="mb-3 last:mb-0">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-bold text-white">{b.bot}</span>
-                <span className="text-[10px] text-zinc-500">{b.total} 任务</span>
-              </div>
-              <div className="flex h-2 rounded-full bg-zinc-800 overflow-hidden">
-                {b.done > 0 && <div className="bg-green-600 h-full" style={{ width: `${(b.done/b.total)*100}%` }} title={`完成 ${b.done}`} />}
-                {b.leased > 0 && <div className="bg-cyan-600 h-full" style={{ width: `${(b.leased/b.total)*100}%` }} title={`进行中 ${b.leased}`} />}
-                {b.pending > 0 && <div className="bg-amber-600 h-full" style={{ width: `${(b.pending/b.total)*100}%` }} title={`等待 ${b.pending}`} />}
-                {b.failed > 0 && <div className="bg-red-600 h-full" style={{ width: `${(b.failed/b.total)*100}%` }} title={`失败 ${b.failed}`} />}
-              </div>
-              <div className="flex gap-3 mt-1 text-[9px] text-zinc-500">
-                <span className="text-green-500">✓ {b.done}</span>
-                <span className="text-cyan-500">▶ {b.leased}</span>
-                <span className="text-amber-500">○ {b.pending}</span>
-                {b.failed > 0 && <span className="text-red-500">✗ {b.failed}</span>}
-              </div>
-            </div>
-          ))}
+          <div className="flex h-3 rounded-full bg-zinc-800 overflow-hidden">
+            {dashboard.counts.done > 0 && <div className="bg-green-600 h-full" style={{ width: `${(dashboard.counts.done/dashboard.total)*100}%` }} />}
+            {dashboard.counts.leased > 0 && <div className="bg-cyan-600 h-full" style={{ width: `${(dashboard.counts.leased/dashboard.total)*100}%` }} />}
+            {dashboard.counts.pending > 0 && <div className="bg-amber-600 h-full" style={{ width: `${(dashboard.counts.pending/dashboard.total)*100}%` }} />}
+            {dashboard.counts.failed > 0 && <div className="bg-red-600 h-full" style={{ width: `${(dashboard.counts.failed/dashboard.total)*100}%` }} />}
+          </div>
+          <div className="flex gap-4 mt-2 text-[10px] text-zinc-500">
+            <span className="text-green-500">✓ {dashboard.counts.done}</span>
+            <span className="text-cyan-500">▶ {dashboard.counts.leased}</span>
+            <span className="text-amber-500">○ {dashboard.counts.pending}</span>
+            {dashboard.counts.failed > 0 && <span className="text-red-500">✗ {dashboard.counts.failed}</span>}
+          </div>
         </div>
       )}
 
