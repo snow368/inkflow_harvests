@@ -24,6 +24,10 @@ export default defineConfig(({mode}) => {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify — file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
+      // Exclude Chrome profile dirs from file watcher to avoid EBUSY errors
+      watch: {
+        ignored: ['**/profiles/**', '**/node_modules/**', '**/data/**'],
+      },
     },
   };
 });
