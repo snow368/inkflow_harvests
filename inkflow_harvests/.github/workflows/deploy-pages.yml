@@ -18,7 +18,7 @@ jobs:
         working-directory: inkflow_harvests
       - run: npm run build
         working-directory: inkflow_harvests
-      - run: npx wrangler pages deploy inkflow_harvests/dist --project-name=harvests
+      - run: npx wrangler pages deploy dist/ --project-name=harvests
         working-directory: inkflow_harvests
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
