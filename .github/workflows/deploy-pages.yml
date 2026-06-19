@@ -1,14 +1,12 @@
-name: Deploy to GitHub Pages
+name: Deploy to Cloudflare Pages
 "on":
   push:
     branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
-  pages: write
-  id-token: write
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,16 +15,7 @@ jobs:
           node-version: 20
       - run: cd inkflow_harvests && npm install
       - run: cd inkflow_harvests && npm run build
-      - run: find inkflow_harvests/dist -type f
-      - uses: actions/upload-pages-artifact@v3
+      - uses: cloudflare/wrangler-action@v3
         with:
-          path: inkflow_harvests/dist
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          command: pages deploy inkflow_harvests/dist --project-name=harvests
