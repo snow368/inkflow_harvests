@@ -138,7 +138,7 @@ function AccountSetupSection() {
       if (vpsName) body.vpsName = vpsName;
       if (proxyIp) body.proxyIp = proxyIp;
       const res = await fetch('/api/automation/bot-account', {
-        method: 'PUT',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });

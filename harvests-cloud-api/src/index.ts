@@ -771,7 +771,7 @@ app.get('/api/admin/stats', async (c) => {
 
 // ============ BOT ACCOUNT CONFIG (write to Neon, read D1 dashboard) ============
 
-app.put('/api/automation/bot-account', async (c) => {
+app.post('/api/automation/bot-account', async (c) => {
   const { botId, igHandle, firstUsedAt, dailyTaskLimit, vpsName, proxyIp } = await c.req.json();
   if (!botId) return c.json({ error: 'botId required' }, 400);
   try {
@@ -793,10 +793,11 @@ app.put('/api/automation/bot-account', async (c) => {
     // Also write to D1 for immediate dashboard visibility
     try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN vps_name TEXT').run(); } catch {}
     try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN proxy TEXT').run(); } catch {}
-    await c.env.DB.prepare(`INSERT INTO bot_accounts (account_id, ig_handle, first_used_at, vps_name, proxy)
-      VALUES (?, ?, ?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET ig_handle=COALESCE(?,ig_handle), first_used_at=COALESCE(?,first_used_at), vps_name=COALESCE(?,vps_name), proxy=COALESCE(?,proxy)`)
-      .bind(botId, igHandle || null, firstUsedAt || null, vpsName || null, proxyIp || null,
-            igHandle || null, firstUsedAt || null, vpsName || null, proxyIp || null).run();
+    try {
+      await c.env.DB.prepare(`DELETE FROM bot_accounts WHERE account_id=?`).bind(botId).run();
+      await c.env.DB.prepare(`INSERT INTO bot_accounts (account_id, ig_handle, first_used_at, vps_name, proxy)
+        VALUES (?, ?, ?, ?, ?)`).bind(botId, igHandle || null, firstUsedAt || null, vpsName || null, proxyIp || null).run();
+    } catch {}
     return c.json({ ok: true });
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e) }, 500);
