@@ -110,6 +110,8 @@ function AccountSetupSection() {
   const [botId, setBotId] = useState('bot_ig_01');
   const [igHandle, setIgHandle] = useState('');
   const [firstDate, setFirstDate] = useState('');
+  const [vpsName, setVpsName] = useState('');
+  const [proxyIp, setProxyIp] = useState('');
   const [saving, setSaving] = useState(false);
 
   const fetchAccounts = useCallback(async () => {
@@ -133,6 +135,8 @@ function AccountSetupSection() {
     try {
       const body: Record<string, any> = { botId, firstUsedAt: firstDate };
       if (igHandle) body.igHandle = igHandle;
+      if (vpsName) body.vpsName = vpsName;
+      if (proxyIp) body.proxyIp = proxyIp;
       const res = await fetch('/api/automation/bot-account', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -141,7 +145,7 @@ function AccountSetupSection() {
       const data = await res.json();
       if (data.ok) {
         toast.success(`${botId} 已设置`);
-        setIgHandle('');
+        setIgHandle(''); setVpsName(''); setProxyIp('');
         fetchAccounts();
       } else {
         toast.error('保存失败', { description: data.error });
@@ -163,19 +167,29 @@ function AccountSetupSection() {
 
       {/* Edit form */}
       <div className="flex items-end gap-3 mb-5 flex-wrap">
-        <div className="flex-1 min-w-[120px]">
+        <div className="flex-1 min-w-[100px]">
           <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 block">Bot ID</label>
           <input type="text" value={botId} onChange={e => setBotId(e.target.value)}
             className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs text-white font-medium focus:outline-none focus:border-zinc-500" />
         </div>
-        <div className="flex-1 min-w-[120px]">
+        <div className="flex-1 min-w-[100px]">
           <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 block">IG 号</label>
-          <input type="text" value={igHandle} onChange={e => setIgHandle(e.target.value)} placeholder="例: rhyssnkoi"
+          <input type="text" value={igHandle} onChange={e => setIgHandle(e.target.value)} placeholder="rhyssnkoi"
+            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs text-white font-medium focus:outline-none focus:border-zinc-500" />
+        </div>
+        <div className="flex-1 min-w-[100px]">
+          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 block">启用日期</label>
+          <input type="date" value={firstDate} onChange={e => setFirstDate(e.target.value)}
+            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs text-white font-medium focus:outline-none focus:border-zinc-500" />
+        </div>
+        <div className="flex-1 min-w-[100px]">
+          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 block">VPS 名称</label>
+          <input type="text" value={vpsName} onChange={e => setVpsName(e.target.value)} placeholder="VPS-NY"
             className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs text-white font-medium focus:outline-none focus:border-zinc-500" />
         </div>
         <div className="flex-1 min-w-[120px]">
-          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 block">首次启用日期</label>
-          <input type="date" value={firstDate} onChange={e => setFirstDate(e.target.value)}
+          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 block">IP / 代理</label>
+          <input type="text" value={proxyIp} onChange={e => setProxyIp(e.target.value)} placeholder="163.245.212.169"
             className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs text-white font-medium focus:outline-none focus:border-zinc-500" />
         </div>
         <button onClick={handleSave} disabled={saving}
@@ -191,6 +205,8 @@ function AccountSetupSection() {
             <tr className="text-zinc-600 font-bold text-[10px] uppercase tracking-wider">
               <td className="pb-2 pr-3">Bot ID</td>
               <td className="pb-2 pr-3">IG Handle</td>
+              <td className="pb-2 pr-3">VPS</td>
+              <td className="pb-2 pr-3">IP</td>
               <td className="pb-2 pr-3">启用日期</td>
               <td className="pb-2 pr-3">天数</td>
               <td className="pb-2 pr-3">阶段</td>
@@ -206,6 +222,8 @@ function AccountSetupSection() {
                 <tr key={a.accountId} className="border-t border-zinc-800/50 text-zinc-300 font-medium">
                   <td className="py-2 pr-3">{a.accountId}</td>
                   <td className="py-2 pr-3">{a.igHandle || '-'}</td>
+                  <td className="py-2 pr-3 text-zinc-500">{a.vpsName || '-'}</td>
+                  <td className="py-2 pr-3 text-zinc-500 font-mono text-[10px]">{a.proxy || '-'}</td>
                   <td className="py-2 pr-3">{a.firstUsedAt ? new Date(a.firstUsedAt).toLocaleDateString() : '-'}</td>
                   <td className="py-2 pr-3">{days}d</td>
                   <td className="py-2 pr-3">

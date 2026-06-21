@@ -772,18 +772,31 @@ app.get('/api/admin/stats', async (c) => {
 // ============ BOT ACCOUNT CONFIG (write to Neon, read D1 dashboard) ============
 
 app.put('/api/automation/bot-account', async (c) => {
-  const { botId, igHandle, firstUsedAt, dailyTaskLimit } = await c.req.json();
+  const { botId, igHandle, firstUsedAt, dailyTaskLimit, vpsName, proxyIp } = await c.req.json();
   if (!botId) return c.json({ error: 'botId required' }, 400);
   try {
     const sets: string[] = [];
     if (igHandle !== undefined) sets.push(`ig_handle='${igHandle.replace(/'/g, "''")}'`);
     if (firstUsedAt !== undefined) sets.push(`first_used_at='${firstUsedAt}'`);
     if (dailyTaskLimit !== undefined) sets.push(`daily_task_limit=${Number(dailyTaskLimit)}`);
+    if (vpsName !== undefined) sets.push(`vps_name='${vpsName.replace(/'/g, "''")}'`);
+    if (proxyIp !== undefined) sets.push(`proxy='${proxyIp.replace(/'/g, "''")}'`);
     if (!sets.length) return c.json({ error: 'no fields to update' }, 400);
-    // Upsert: create bot_account row if not exists
+    // Upsert: create bot_account row if not exists → writes to Neon
     await neonQuery(c.env.NEON_DATABASE_URL,
-      `INSERT INTO bot_accounts (bot_id, ig_handle, first_used_at) VALUES ('${botId}', ${igHandle ? `'${igHandle.replace(/'/g, "''")}'` : 'NULL'}, ${firstUsedAt ? `'${firstUsedAt}'` : 'NULL'})
+      `INSERT INTO bot_accounts (bot_id, ig_handle, first_used_at, vps_name, proxy)
+       VALUES ('${botId}', ${igHandle ? `'${igHandle.replace(/'/g, "''")}'` : 'NULL'},
+               ${firstUsedAt ? `'${firstUsedAt}'` : 'NULL'},
+               ${vpsName ? `'${vpsName.replace(/'/g, "''")}'` : 'NULL'},
+               ${proxyIp ? `'${proxyIp.replace(/'/g, "''")}'` : 'NULL'})
        ON CONFLICT (bot_id) DO UPDATE SET ${sets.join(', ')}`);
+    // Also write to D1 for immediate dashboard visibility
+    try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN vps_name TEXT').run(); } catch {}
+    try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN proxy TEXT').run(); } catch {}
+    await c.env.DB.prepare(`INSERT INTO bot_accounts (account_id, ig_handle, first_used_at, vps_name, proxy)
+      VALUES (?, ?, ?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET ig_handle=COALESCE(?,ig_handle), first_used_at=COALESCE(?,first_used_at), vps_name=COALESCE(?,vps_name), proxy=COALESCE(?,proxy)`)
+      .bind(botId, igHandle || null, firstUsedAt || null, vpsName || null, proxyIp || null,
+            igHandle || null, firstUsedAt || null, vpsName || null, proxyIp || null).run();
     return c.json({ ok: true });
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e) }, 500);
@@ -799,6 +812,8 @@ app.post('/api/automation/sync', async (c) => {
 
   // Migrate D1 schema if needed
   try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN first_used_at TEXT').run(); } catch {}
+  try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN vps_name TEXT').run(); } catch {}
+  try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN proxy TEXT').run(); } catch {}
 
   // Insert/update sync data
   if (body.counts) {
@@ -829,8 +844,8 @@ app.post('/api/automation/sync', async (c) => {
     try {
       await c.env.DB.prepare('DELETE FROM bot_accounts').run();
       for (const a of body.accounts) {
-        await c.env.DB.prepare('INSERT INTO bot_accounts (account_id, ig_handle, stage, daily_task_limit, speed_factor, first_used_at) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(a.account_id, a.ig_handle, a.stage, a.daily_task_limit, a.speed_factor, a.first_used_at || null).run();
+        await c.env.DB.prepare('INSERT INTO bot_accounts (account_id, ig_handle, stage, daily_task_limit, speed_factor, first_used_at, vps_name, proxy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(a.account_id, a.ig_handle, a.stage, a.daily_task_limit, a.speed_factor, a.first_used_at || null, a.vps_name || null, a.proxy || null).run();
       }
     } catch {}
   }
@@ -857,7 +872,7 @@ app.get('/api/automation/dashboard', async (c) => {
     }
 
     // Accounts
-    const accounts = await c.env.DB.prepare('SELECT account_id, ig_handle, stage, daily_task_limit, speed_factor, first_used_at FROM bot_accounts').all();
+    const accounts = await c.env.DB.prepare('SELECT account_id, ig_handle, stage, daily_task_limit, speed_factor, first_used_at, vps_name, proxy FROM bot_accounts').all();
 
     return c.json({
       ok: true,
@@ -868,6 +883,7 @@ app.get('/api/automation/dashboard', async (c) => {
         accountId: a.account_id, igHandle: a.ig_handle, stage: a.stage,
         dailyLimit: a.daily_task_limit, speed: a.speed_factor,
         firstUsedAt: a.first_used_at || null,
+        vpsName: a.vps_name || null, proxy: a.proxy || null,
       })),
     });
   } catch (e: any) {
