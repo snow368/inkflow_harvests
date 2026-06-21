@@ -771,33 +771,18 @@ app.get('/api/admin/stats', async (c) => {
 
 // ============ BOT ACCOUNT CONFIG (write to Neon, read D1 dashboard) ============
 
-app.post('/api/automation/bot-account', async (c) => {
-  const { botId, igHandle, firstUsedAt, dailyTaskLimit, vpsName, proxyIp } = await c.req.json();
+app.get('/api/automation/bot-account/set', async (c) => {
+  const botId = c.req.query('botId');
   if (!botId) return c.json({ error: 'botId required' }, 400);
   try {
-    const sets: string[] = [];
-    if (igHandle !== undefined) sets.push(`ig_handle='${igHandle.replace(/'/g, "''")}'`);
-    if (firstUsedAt !== undefined) sets.push(`first_used_at='${firstUsedAt}'`);
-    if (dailyTaskLimit !== undefined) sets.push(`daily_task_limit=${Number(dailyTaskLimit)}`);
-    if (vpsName !== undefined) sets.push(`vps_name='${vpsName.replace(/'/g, "''")}'`);
-    if (proxyIp !== undefined) sets.push(`proxy='${proxyIp.replace(/'/g, "''")}'`);
-    if (!sets.length) return c.json({ error: 'no fields to update' }, 400);
-    // Upsert: create bot_account row if not exists → writes to Neon
-    await neonQuery(c.env.NEON_DATABASE_URL,
-      `INSERT INTO bot_accounts (bot_id, ig_handle, first_used_at, vps_name, proxy)
-       VALUES ('${botId}', ${igHandle ? `'${igHandle.replace(/'/g, "''")}'` : 'NULL'},
-               ${firstUsedAt ? `'${firstUsedAt}'` : 'NULL'},
-               ${vpsName ? `'${vpsName.replace(/'/g, "''")}'` : 'NULL'},
-               ${proxyIp ? `'${proxyIp.replace(/'/g, "''")}'` : 'NULL'})
-       ON CONFLICT (bot_id) DO UPDATE SET ${sets.join(', ')}`);
-    // Also write to D1 for immediate dashboard visibility
+    // Write to D1 (fast, no Neon dependency)
     try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN vps_name TEXT').run(); } catch {}
     try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN proxy TEXT').run(); } catch {}
-    try {
-      await c.env.DB.prepare(`DELETE FROM bot_accounts WHERE account_id=?`).bind(botId).run();
-      await c.env.DB.prepare(`INSERT INTO bot_accounts (account_id, ig_handle, first_used_at, vps_name, proxy)
-        VALUES (?, ?, ?, ?, ?)`).bind(botId, igHandle || null, firstUsedAt || null, vpsName || null, proxyIp || null).run();
-    } catch {}
+    try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN first_used_at TEXT').run(); } catch {}
+    await c.env.DB.prepare('DELETE FROM bot_accounts WHERE account_id=?').bind(botId).run();
+    await c.env.DB.prepare(`INSERT INTO bot_accounts (account_id, ig_handle, first_used_at, vps_name, proxy) VALUES (?, ?, ?, ?, ?)`)
+      .bind(botId, c.req.query('igHandle') || null, c.req.query('firstUsedAt') || null,
+            c.req.query('vpsName') || null, c.req.query('proxyIp') || null).run();
     return c.json({ ok: true });
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e) }, 500);

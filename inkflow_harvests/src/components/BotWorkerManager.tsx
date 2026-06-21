@@ -133,13 +133,12 @@ function AccountSetupSection() {
     if (!botId || !firstDate) return;
     setSaving(true);
     try {
-      const body: Record<string, any> = { botId, firstUsedAt: firstDate };
-      if (igHandle) body.igHandle = igHandle;
-      if (vpsName) body.vpsName = vpsName;
-      if (proxyIp) body.proxyIp = proxyIp;
-      const res = await fetch('/api/automation/bot-account', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const params = new URLSearchParams({ botId });
+      if (igHandle) params.set('igHandle', igHandle);
+      if (firstDate) params.set('firstUsedAt', firstDate);
+      if (vpsName) params.set('vpsName', vpsName);
+      if (proxyIp) params.set('proxyIp', proxyIp);
+      const res = await fetch('/api/automation/bot-account/set?' + params.toString());
         body: JSON.stringify(body),
       });
       const data = await res.json();
