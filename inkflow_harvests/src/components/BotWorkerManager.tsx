@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
+import { apiFetch } from '../lib/api-auth';
 import {
   Bot, Play, Square, Loader2, Instagram, ShoppingCart, Search,
   MessageSquare, Zap, Activity, Clock, Settings, Globe, Monitor,
@@ -138,7 +139,7 @@ function AccountSetupSection() {
       if (firstDate) params.set('firstUsedAt', firstDate);
       if (vpsName) params.set('vpsName', vpsName);
       if (proxyIp) params.set('proxyIp', proxyIp);
-      const res = await fetch('/api/automation/bot-account/set?' + params.toString());
+      const res = await apiFetch('/api/automation/bot-account?' + params.toString());
       const data = await res.json();
       if (data.ok) {
         toast.success(`${botId} 已设置`);

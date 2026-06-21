@@ -58,7 +58,7 @@ async function verifyToken(token: string): Promise<UserInfo | null> {
 const PUBLIC_PATHS = new Set([
   '/api/shopify/webhook/orders-create',
   '/api/fulfillment/shopify/callback',
-  '/api/automation/bot-account/set',
+  '/api/automation/bot-account',
   '/api/automation/behavior-logs',
 ])
 
@@ -773,7 +773,7 @@ app.get('/api/admin/stats', async (c) => {
 
 // ============ BOT ACCOUNT CONFIG (write to Neon, read D1 dashboard) ============
 
-app.get('/api/automation/bot-account/set', async (c) => {
+app.get('/api/automation/bot-account', async (c) => {
   const botId = c.req.query('botId');
   if (!botId) return c.json({ error: 'botId required' }, 400);
   try {
