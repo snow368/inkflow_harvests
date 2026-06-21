@@ -59,6 +59,7 @@ const PUBLIC_PATHS = new Set([
   '/api/shopify/webhook/orders-create',
   '/api/fulfillment/shopify/callback',
   '/api/automation/bot-account',
+  '/api/automation/bot-account/delete',
   '/api/automation/behavior-logs',
 ])
 
@@ -801,6 +802,17 @@ app.get('/api/automation/bot-account', async (c) => {
         vpsName: a.vps_name || null, proxy: a.proxy || null,
       })),
     });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e) }, 500);
+  }
+});
+
+app.get('/api/automation/bot-account/delete', async (c) => {
+  const botId = c.req.query('botId');
+  if (!botId) return c.json({ error: 'botId required' }, 400);
+  try {
+    await c.env.DB.prepare('DELETE FROM bot_accounts WHERE account_id=?').bind(botId).run();
+    return c.json({ ok: true });
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e) }, 500);
   }

@@ -114,6 +114,28 @@ function AccountSetupSection() {
   const [vpsName, setVpsName] = useState('');
   const [proxyIp, setProxyIp] = useState('');
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const startEdit = (a: any) => {
+    setBotId(a.accountId);
+    setIgHandle(a.igHandle || '');
+    setFirstDate(a.firstUsedAt ? new Date(a.firstUsedAt).toISOString().slice(0,10) : '');
+    setVpsName(a.vpsName || '');
+    setProxyIp(a.proxy || '');
+    setEditingId(a.accountId);
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await apiFetch('/api/automation/bot-account/delete?botId=' + id);
+      const data = await res.json();
+      if (data.ok) {
+        toast.success(`${id} 已删除`);
+        setAccounts(prev => prev.filter((a: any) => a.accountId !== id));
+        if (editingId === id) { setEditingId(null); setIgHandle(''); setVpsName(''); setProxyIp(''); }
+      }
+    } catch {}
+  };
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -129,6 +151,7 @@ function AccountSetupSection() {
     days < 7 ? 'new' : days < 14 ? 'transition' : days < 30 ? 'growing' : days < 60 ? 'stable' : 'mature';
   const calcLimit = (days: number) =>
     days < 7 ? 5 : days < 14 ? 10 : days < 30 ? 20 : days < 60 ? 30 : 50;
+  const stageLabel = (s: string) => ({new:'萌芽期',transition:'幼苗期',growing:'成长期',stable:'稳定期',mature:'成熟期'}[s] || s);
 
   const handleSave = async () => {
     if (!botId || !firstDate) return;
@@ -190,9 +213,11 @@ function AccountSetupSection() {
           <input type="text" value={proxyIp} onChange={e => setProxyIp(e.target.value)} placeholder="163.245.212.169"
             className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs text-white font-medium focus:outline-none focus:border-zinc-500" />
         </div>
+        {editingId && <button onClick={() => { setEditingId(null); setIgHandle(''); setVpsName(''); setProxyIp(''); }}
+          className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs font-bold rounded-xl transition-colors">取消</button>}
         <button onClick={handleSave} disabled={saving}
           className="px-4 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-colors">
-          {saving ? '保存中…' : '保存'}
+          {saving ? '保存中…' : editingId ? '更新' : '保存'}
         </button>
       </div>
 
@@ -214,10 +239,12 @@ function AccountSetupSection() {
           <tbody>
             {accounts.map((a: any) => {
               const days = a.firstUsedAt ? Math.floor((Date.now() - new Date(a.firstUsedAt).getTime()) / 86400000) : 0;
-              const stage = a.stage || calcStage(days);
-              const limit = a.dailyLimit || calcLimit(days);
+              const autoStage = calcStage(days);
+              const autoLimit = calcLimit(days);
+              const stage = a.stage || autoStage;
+              const limit = a.dailyLimit && a.dailyLimit !== autoLimit ? a.dailyLimit : autoLimit;
               return (
-                <tr key={a.accountId} className="border-t border-zinc-800/50 text-zinc-300 font-medium">
+                <tr key={a.accountId} className="border-t border-zinc-800/50 text-zinc-300 font-medium group">
                   <td className="py-2 pr-3">{a.accountId}</td>
                   <td className="py-2 pr-3">{a.igHandle || '-'}</td>
                   <td className="py-2 pr-3 text-zinc-500">{a.vpsName || '-'}</td>
@@ -233,6 +260,10 @@ function AccountSetupSection() {
                       : 'bg-rose-500/10 text-rose-400')}>{stage}</span>
                   </td>
                   <td className="py-2 pr-3">{limit}/天</td>
+                  <td className="py-2 pr-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => startEdit(a)} className="text-[10px] font-bold text-zinc-500 hover:text-white mr-2">编辑</button>
+                    <button onClick={() => handleDelete(a.accountId)} className="text-[10px] font-bold text-red-500 hover:text-red-400">删除</button>
+                  </td>
                 </tr>
               );
             })}
