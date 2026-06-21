@@ -881,4 +881,53 @@ app.get('/api/automation/stats/dashboard', async (c) => {
   return (await c.env.ASSETS?.fetch?.(new URL('/api/automation/dashboard', c.req.url))) || c.redirect('/api/automation/dashboard');
 });
 
+// ============ BEHAVIOR LOGS (receive from bot worker, serve to frontend) ============
+
+app.post('/api/automation/behavior-logs', async (c) => {
+  const { logs } = await c.req.json();
+  if (!Array.isArray(logs) || logs.length === 0) return c.json({ ok: true });
+  try {
+    // Ensure table exists
+    await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_behavior_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts TEXT NOT NULL,
+      bot_id TEXT NOT NULL,
+      event TEXT NOT NULL,
+      data TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`).run();
+    const stmt = c.env.DB.prepare('INSERT INTO bot_behavior_logs (ts, bot_id, event, data) VALUES (?, ?, ?, ?)');
+    for (const row of logs) {
+      await stmt.bind(row.ts, row.botId || 'unknown', row.event, JSON.stringify(row)).run();
+    }
+    return c.json({ ok: true, count: logs.length });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e) }, 500);
+  }
+});
+
+app.get('/api/automation/behavior-logs', async (c) => {
+  const botId = c.req.query('botId') || '';
+  const limit = Math.min(200, Math.max(1, Number(c.req.query('limit')) || 100));
+  const event = c.req.query('event') || '';
+  try {
+    let query = 'SELECT * FROM bot_behavior_logs';
+    const wheres: string[] = [];
+    const params: any[] = [];
+    if (botId) { wheres.push('bot_id=?'); params.push(botId); }
+    if (event) { wheres.push('event=?'); params.push(event); }
+    if (wheres.length) query += ' WHERE ' + wheres.join(' AND ');
+    query += ' ORDER BY id DESC LIMIT ?';
+    params.push(limit);
+    const stmt = c.env.DB.prepare(query).bind(...params);
+    const result = await stmt.all();
+    return c.json({ ok: true, logs: (result.results || []).map((r: any) => {
+      try { return { ...JSON.parse(r.data || '{}'), id: r.id, ts: r.ts, botId: r.bot_id, event: r.event }; }
+      catch { return { id: r.id, ts: r.ts, botId: r.bot_id, event: r.event }; }
+    }) });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e) }, 500);
+  }
+});
+
 export default app

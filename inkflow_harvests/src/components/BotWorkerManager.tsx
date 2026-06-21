@@ -230,6 +230,91 @@ function AccountSetupSection() {
   );
 }
 
+// ── Behavior Log Viewer ──
+const EVENT_COLORS: Record<string, string> = {
+  open_profile: 'text-blue-400', open_post: 'text-cyan-400', browse_selection: 'text-violet-400',
+  media_opened_total: 'text-green-400', human_break_start: 'text-amber-400',
+  fresh_profile: 'text-rose-400', task_done: 'text-emerald-400', task_failed: 'text-red-400',
+  action_blocked: 'text-red-500 font-bold', rate_limited: 'text-orange-500 font-bold',
+};
+const LOG_EVENTS = ['', 'open_profile', 'open_post', 'browse_selection', 'human_break_start', 'task_done', 'task_failed', 'action_blocked', 'rate_limited', 'fresh_profile', 'media_opened_total'];
+function BehaviorLogSection() {
+  const [logs, setLogs] = useState<any[]>([]);
+  const [filterBot, setFilterBot] = useState('bot_ig_01');
+  const [filterEvent, setFilterEvent] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const fetchLogs = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ botId: filterBot, limit: '100' });
+      if (filterEvent) params.set('event', filterEvent);
+      const res = await fetch(`/api/automation/behavior-logs?${params}`);
+      const data = await res.json();
+      if (data?.logs) setLogs(data.logs);
+    } catch {}
+    setLoading(false);
+  }, [filterBot, filterEvent]);
+
+  useEffect(() => { fetchLogs(); }, [fetchLogs]);
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+      className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6">
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <ListTodo className="w-5 h-5 text-cyan-500" />
+          <h4 className="font-black text-sm text-white">行为日志</h4>
+          <span className="text-[10px] font-bold text-zinc-500">{logs.length} 条</span>
+        </div>
+        <button onClick={fetchLogs} disabled={loading} className="text-[10px] font-bold text-zinc-500 hover:text-zinc-300 transition-colors">
+          {loading ? '加载中…' : '刷新'}
+        </button>
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-3 mb-4 flex-wrap">
+        <div className="w-28">
+          <select value={filterBot} onChange={e => setFilterBot(e.target.value)}
+            className="w-full px-2.5 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-[11px] text-zinc-300 font-medium focus:outline-none">
+            <option value="bot_ig_01">bot_ig_01</option>
+          </select>
+        </div>
+        <div className="w-36">
+          <select value={filterEvent} onChange={e => setFilterEvent(e.target.value)}
+            className="w-full px-2.5 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-[11px] text-zinc-300 font-medium focus:outline-none">
+            {LOG_EVENTS.map(e => <option key={e} value={e}>{e || '全部事件'}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Log list */}
+      <div className="max-h-[400px] overflow-y-auto space-y-1">
+        {logs.map((log: any, i: number) => (
+          <div key={log.id || i} className="flex items-start gap-2 p-2 rounded-xl hover:bg-zinc-900/50 transition-colors">
+            <span className="text-[10px] text-zinc-600 font-mono whitespace-nowrap w-14 flex-shrink-0">
+              {log.ts ? new Date(log.ts).toLocaleTimeString() : ''}
+            </span>
+            <span className={cn("text-[10px] font-mono font-bold whitespace-nowrap flex-shrink-0", EVENT_COLORS[log.event] || 'text-zinc-400')}>
+              {log.event}
+            </span>
+            <span className="text-[10px] text-zinc-500 font-medium truncate min-w-0">
+              {log.handle ? `@${log.handle}` : ''}
+              {log.mode ? ` [${log.mode}]` : ''}
+              {log.reason ? ` ${log.reason}` : ''}
+              {log.watchMs ? ` ${Math.round(log.watchMs/1000)}s` : ''}
+              {log.breakMs ? ` 休息${Math.round(log.breakMs/1000/60)}m` : ''}
+            </span>
+          </div>
+        ))}
+        {logs.length === 0 && (
+          <div className="py-6 text-center text-xs text-zinc-600 font-medium">暂无日志</div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
 export default function BotWorkerManager() {
   const [functions, setFunctions] = useState<BotFunction[]>([]);
   const [workers, setWorkers] = useState<BotWorker[]>([]);
@@ -470,6 +555,9 @@ export default function BotWorkerManager() {
 
       {/* Bot Accounts */}
       <AccountSetupSection />
+
+      {/* Behavior Logs */}
+      <BehaviorLogSection />
 
       {/* Bot Intelligence: Learning Status & DM Pipeline */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
