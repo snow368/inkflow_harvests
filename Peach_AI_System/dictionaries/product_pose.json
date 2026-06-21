@@ -1,0 +1,111 @@
+{
+  "_meta": {
+    "domain": "product_pose",
+    "description": "How the cartridge is oriented and positioned in space — strictly pose/angle only, NOT product modification",
+    "rule": "Pose describes spatial orientation, not product design"
+  },
+  "orientation": {
+    "description": "Spatial orientation of the cartridge",
+    "terms": [
+      {"term": "vertical upright", "prompt_fragment": "vertical orientation, needle tip pointing up"},
+      {"term": "vertical inverted", "prompt_fragment": "vertical inverted, needle tip pointing down"},
+      {"term": "horizontal", "prompt_fragment": "horizontal orientation, lying flat"},
+      {"term": "45-degree angled", "prompt_fragment": "45° angle, diagonal across frame"},
+      {"term": "tilted forward", "prompt_fragment": "tilted forward toward camera, dynamic perspective"},
+      {"term": "tilted backward", "prompt_fragment": "tilted back slightly, angled away"}
+    ]
+  },
+  "arrangement": {
+    "description": "How products relate to each other in frame",
+    "terms": [
+      {"term": "single hero", "prompt_fragment": "single product centered, sole focus"},
+      {"term": "paired side-by-side", "prompt_fragment": "two cartridges paired side by side, parallel alignment"},
+      {"term": "row linear", "prompt_fragment": "linear row, evenly spaced progression"},
+      {"term": "cluster group", "prompt_fragment": "clustered arrangement, natural grouping"},
+      {"term": "grid matrix", "prompt_fragment": "grid matrix, organized rows and columns"},
+      {"term": "staggered offset", "prompt_fragment": "staggered arrangement, offset rows"},
+      {"term": "fan spread", "prompt_fragment": "fanned out, radial spread from center point"},
+      {"term": "stacked tier", "prompt_fragment": "stacked tier, layered vertically"}
+    ]
+  },
+  "angle_to_camera": {
+    "description": "Product rotation relative to camera axis",
+    "terms": [
+      {"term": "face-on", "prompt_fragment": "face-on to camera, full front view"},
+      {"term": "three-quarter", "prompt_fragment": "three-quarter rotation, showing front and side"},
+      {"term": "side profile", "prompt_fragment": "side profile, full length silhouette"},
+      {"term": "rear view", "prompt_fragment": "rear view, membrane base facing camera"},
+      {"term": "tip forward", "prompt_fragment": "tip angled toward camera, forced perspective"}
+    ]
+  },
+  "mount_context": {
+    "description": "Shown with or without mounting context",
+    "terms": [
+      {"term": "standalone", "prompt_fragment": "standalone, no mounting context"},
+      {"term": "on machine grip", "prompt_fragment": "mounted on machine grip, mechanical connection visible"},
+      {"term": "next to machine", "prompt_fragment": "alongside tattoo machine grip, about to be mounted"},
+      {"term": "in packaging tray", "prompt_fragment": "in sterile packaging tray, foam cutout visible"}
+    ]
+  },
+  "cartridge_pose": {
+    "description": "Specific cartridge poses for photography scenarios — concrete configurations combining orientation, grip, and context",
+    "poses": [
+      {
+        "id": "cp_01",
+        "label": "vertical standing on needle tip",
+        "tags": ["balanced", "upright"],
+        "usage": "product hero shot stability pose",
+        "prompt_fragment": "standing vertically balancing on needle tip point"
+      },
+      {
+        "id": "cp_02",
+        "label": "45 degree glove grip",
+        "tags": ["dynamic", "handheld"],
+        "usage": "tattoo artist holding cartridge naturally",
+        "prompt_fragment": "held at 45° angle in black nitrile gloved hand"
+      },
+      {
+        "id": "cp_03",
+        "label": "horizontal resting on workstation",
+        "tags": ["static", "laydown"],
+        "usage": "product laid on table for catalog shot",
+        "prompt_fragment": "lying horizontally on black matte workstation surface"
+      },
+      {
+        "id": "cp_04",
+        "label": "partially inserted into machine",
+        "tags": ["assembly", "workflow"],
+        "usage": "real usage context inside tattoo machine",
+        "prompt_fragment": "partially inserted into tattoo machine grip, locking mechanism visible"
+      },
+      {
+        "id": "cp_05",
+        "label": "floating vertical at eye level",
+        "tags": ["floating", "centered"],
+        "usage": "clean product showcase suspended in frame",
+        "prompt_fragment": "floating vertically at eye level, centered against pure background"
+      },
+      {
+        "id": "cp_06",
+        "label": "pinched between fingers macro",
+        "tags": ["macro", "precision"],
+        "usage": "extreme close-up highlighting needle detail",
+        "prompt_fragment": "pinched precisely between thumb and forefinger, extreme macro view"
+      },
+      {
+        "id": "cp_07",
+        "label": "fanned cluster on surface",
+        "tags": ["multiple", "arrangement"],
+        "usage": "multiple cartridges displayed together",
+        "prompt_fragment": "fanned cluster of cartridges arranged radially on work surface"
+      },
+      {
+        "id": "cp_08",
+        "label": "tipped forward toward lens",
+        "tags": ["dynamic", "perspective"],
+        "usage": "forced perspective hero shot",
+        "prompt_fragment": "tipped forward toward camera lens, needle tip appearing larger"
+      }
+    ]
+  }
+}

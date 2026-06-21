@@ -1,0 +1,353 @@
+{
+  "_meta": {
+    "domain": "needle_knowledge_gaps",
+    "description": "Needle knowledge gaps research — identifies which gaps are now resolved, which remain unresolvable from vision alone, and actionable detection rules",
+    "version": "1.0",
+    "created": "2026-05-28",
+    "extends": "needle_granularity.json"
+  },
+
+  "gap_1_needle_machine_compatibility": {
+    "title": "Needle ↔ Machine 兼容性矩阵",
+    "status": "resolved_from_web_research",
+    "summary": "Tattoo cartridge compatibility is primarily divided into universal (twist-to-fit) and proprietary systems. Most brands use universal, detectable by visual inspection of cartridge base.",
+    "visual_detection_applicability": {
+      "applicable": true,
+      "method": "从 cartridge 底部连接方式可判断兼容范围",
+      "fields_to_check": ["connectionType", "cartridgeColor", "brandPrediction"]
+    },
+    "compatibility_tiers": {
+      "universal_twist_fit": {
+        "description": "标准旋转卡口，占 market 90%+",
+        "connectionType": "screw_long / screw_short",
+        "compatible_brands": [
+          "Cheyenne", "FK Irons Spektra", "Bishop Rotary",
+          "Equaliser", "Mast (Dragonhawk)", "Stigma (Force/Spear/Thorn)",
+          "Inkjecta", "Axis (Valhalla/Valkyre)", "Scalpa",
+          "Rook Quill", "Omnia", "Artyst", "Hawk"
+        ],
+        "detection_note": "看到 screw 螺纹 = 通用兼容，无需区分品牌"
+      },
+      "proprietary_magnetic": {
+        "description": "磁吸连接，仅限特定机器",
+        "connectionType": "magnetic",
+        "compatible_brands": ["Ink Machines Scorpion", "Ink Machines Cobra"],
+        "detection_note": "看到底部无螺纹有磁环 = Neo Magnetic / Scorpion/Cobra only"
+      },
+      "proprietary_push_fit": {
+        "description": "直插式，PMU 领域常见",
+        "connectionType": "push_fit",
+        "compatible_brands": ["PhiBrows", "Nouveau Contour", "Meicha",
+          "Amiea", "Biotek", "Artmex", "Biomaser/Infinity"],
+        "detection_note": "看到直插无螺纹 = PMU 专用，不兼容纹身机器"
+      },
+      "bayonet_screw": {
+        "description": "卡销+螺丝复合系统",
+        "connectionType": "bayonet",
+        "compatible_brands": ["Ultima A6/A1", "MYM M5/M7"],
+        "detection_note": "看到侧面有卡槽 = Ultima/MYM 专用"
+      }
+    },
+    "vision_pipeline_integration": {
+      "rule": "connectionType 检测后直接映射兼容性矩阵",
+      "example_screw": "connectionType=screw_long → universal compatible with 90%+ machines",
+      "example_magnetic": "connectionType=magnetic → Ink Machines Scorpion/Cobra only",
+      "example_bayonet": "connectionType=bayonet → Ultima/MYM only",
+      "example_push_fit": "connectionType=push_fit → PMU machines only",
+      "unknown_fallback": "connectionType=unknown → 无法判断兼容性"
+    }
+  },
+
+  "gap_2_sterilization_packaging": {
+    "title": "灭菌方式对视觉识别的影响",
+    "status": "resolved_from_web_research",
+    "summary": "Gamma vs EO Gas 灭菌在包装上有明显视觉差异，可通过 indicator dot 和包装材料判断",
+    "visual_cues": {
+      "gamma": {
+        "indicator": "包装纸面有显眼的变色指示圆点（最常见：黄色→红色）",
+        "packaging_material": "可用全塑料/全纸/铝箔包装，不需要透气材料",
+        "color_effect": "白色塑料可能轻微发黄（Gamma 射线 'cooking' 效应）",
+        "common_in_tattoo": "现代纹身针主流灭菌方式，因为快速（几小时 vs 几天）且无有毒残留"
+      },
+      "eo_gas": {
+        "indicator": "化学指示条（非圆点），颜色变化更不明显",
+        "packaging_material": "必须有一面透气材料（Tyvek 无纺布或医用纸）让气体渗透",
+        "color_effect": "无明显变色",
+        "common_in_tattoo": "仍在使用，但需要充分通风排残（aeration），时间更长"
+      }
+    },
+    "detection_rules": {
+      "packaging_material_visible": {
+        "condition": "包装材料在画面中可见",
+        "rules": [
+          "看到 Tyvek 透气纸面（白色纤维质感）+ 无指示圆点 → EO Gas",
+          "看到 color-changing dot + 任意包装材料 → Gamma",
+          "全塑料密封泡壳 → Gamma",
+          "白纸面 + 塑料底的标准医用灭菌袋 → 可能是 EO Gas（需要看是否有指示剂）"
+        ]
+      },
+      "brand_specific_known": {
+        "kwadron": "Individual blister, Gamma sterilized — 独立泡壳, 纸面有圆点指示",
+        "cheyenne_safety": "Individual blister, Gamma sterilized — 透明蓝壳, 独立无菌包装",
+        "bigwasp": "Individual blister, Gamma sterilized — Gen 3 包装有圆点",
+        "blackclaw": "Premium box + individual blister, Gamma"
+      }
+    },
+    "vision_integration_note": "Needle_vision_addendum 需要补充灭菌包装识别规则。包装材料 + 指示圆点是高置信度线索。",
+    "actionable": "可以加入 Hook Vision prompt，作为 packaging 字段的补充推理规则"
+  },
+
+  "gap_3_taper_length_brand_differences": {
+    "title": "不同品牌 taper 长度的细微差异",
+    "status": "resolved_from_web_research",
+    "summary": "不存在跨品牌统一标准。每个品牌对 ST/MT/LT/XLT 的 mm 定义不同。视觉识别层面，从照片精确测量 taper mm 几乎不可能，但品牌+型号组合可推断 approximate taper category。",
+    "taper_classification_systems": {
+      "common_standard_tatt_lab": {
+        "description": "澳洲 Tatt Lab / Elite EVO 使用的标准",
+        "ST": "1.5mm",
+        "SMT": "2.5mm (semi-medium)",
+        "MT": "3.5mm",
+        "LT": "5.5mm",
+        "XLT": "6.5mm"
+      },
+      "10masters_european": {
+        "description": "欧洲 10 Masters 标准",
+        "ST": "rarely used",
+        "MT": "2.5mm",
+        "LT": "3.5mm",
+        "XLT": "5.5mm"
+      },
+      "tattooing101_alt": {
+        "description": "Tattooing101 另类分级",
+        "ST": "1.5mm",
+        "LT": "2.0mm",
+        "DLT (Double Long)": "2.5mm",
+        "ELT (Extra Long)": "3.5mm",
+        "SLT (Super Long)": "5.5mm",
+        "ESLT (Extra Super Long)": "8.0mm"
+      }
+    },
+    "brand_taper_mapping": {
+      "kwadron": {
+        "known_configs": ["ST", "MT", "LT", "XLT"],
+        "lt_note": "Kwadron LT ≈ 5mm (接近 common standard 的 LT)",
+        "signature": "多段内锥复合 taper — 前端 steep + 后端 shallow 过渡"
+      },
+      "cheyenne": {
+        "known_configs": ["MT", "L", "Power"],
+        "lt_note": "Cheyenne L (Long) ≈ 3.5mm (相当于 common standard 的 MT 到 LT 之间)",
+        "naming_note": "Cheyenne 用 L 表示 Long Taper，不用 LT 缩写",
+        "power_note": "Cheyenne Power = 0.40mm 粗针 + long taper 组合"
+      },
+      "bigwasp": {
+        "known_configs": ["ST", "MT", "LT"],
+        "lt_note": "BigWasp 使用标准命名，LT ≈ 3.5-5.5mm"
+      },
+      "blackclaw": {
+        "known_configs": ["custom"],
+        "note": "BlackClaw 以 custom grind 闻名，taper 长度非标，非量产模式"
+      },
+      "ez_revolution": {
+        "known_configs": ["Standard", "LT", "XLT"],
+        "note": "EZ 用 V-Select 膜系统区分 taper 类型"
+      }
+    },
+    "vision_detection_limitation": {
+      "can_detect": "可以从标签文字提取 taper 缩写（如 1003RL_LT）",
+      "cannot_detect": "无法从照片测量精确 mm 长度。不同品牌同名 taper 的实际 mm 不同",
+      "compromise": "输出 taper 缩写（ST/MT/LT/XLT）即可，不追求跨品牌 mm 精度"
+    },
+    "actionable": "维持现状 — 已有 productDetail 格式 {gauge}{count}{type}_{taper} 足够。不增加 brand-specific taper mm 映射。"
+  },
+
+  "gap_4_housing_material_tactile": {
+    "title": "Cartridge 外壳材料差异",
+    "status": "unresolvable_from_vision",
+    "summary": "医疗级塑料 vs 普通塑料的触感差异无法从照片判断。不投入资源。",
+    "why_unresolvable": [
+      "医疗级塑料和普通塑料在外观上可以完全相同（同为透明/白色/黑色）",
+      "触感差异（光滑度、硬度、壁厚）需要手持才能感知",
+      "壁厚差异在微距下可能可见，但无法确定材料等级"
+    ],
+    "exception": {
+      "condition": "金属壳 vs 塑料壳 — 可从反光质感和颜色区分",
+      "metal_appearance": "金属 = 高光反射、冷色调、无注塑痕迹、可能有拉丝/阳极氧化纹理",
+      "plastic_appearance": "塑料 = 漫反射为主、可能有注塑点/分模线"
+    },
+    "actionable": "跳过。视觉无法判断。"
+  },
+
+  "gap_5_colored_needle_tips": {
+    "title": "染色/标记针尖识别",
+    "status": "resolved_from_web_research",
+    "summary": "品牌使用颜色标记系统，但无统一标准。可以从 label ring/backstem/盒标颜色推断 needle 参数。注意：这不等于针尖本身染色（needle tip dye），而是 cartridge 外壳的颜色标记系统。",
+    "brand_color_coding_systems": {
+      "eikon_device": {
+        "system": "按针径/号数编码",
+        "purple": "#8 (0.25mm) Bugpin/Tight",
+        "blue": "#10 (0.30mm) Standard",
+        "red": "#12 (0.35mm) Bold/Color packing",
+        "source": "eikondevice.com"
+      },
+      "precision_needles": {
+        "system": "按针型编码",
+        "blue_backing": "Round Liner (RL) & Tight RL (RLXT)",
+        "red_backing": "Round Shader (RS)",
+        "black_backing": "Magnum (M1)",
+        "white_backing": "Curved Magnum (M1C)",
+        "source": "painfulpleasures.com"
+      },
+      "cheyenne": {
+        "system": "外壳颜色（产品线）+ 标签色",
+        "blue_shell": "Safety 系列 (ISO 13485)",
+        "pink_shell": "Craft 系列（经济线）",
+        "purple_shell": "Capillary 系列（10x 墨流）",
+        "additional_marking": "cap color 区分 taper (L/MT/Power)"
+      },
+      "generic_4color": {
+        "description": "白牌/alibaba 通用四色系统",
+        "variability": "颜色含义因批次/厂家而异，无法建立固定映射"
+      }
+    },
+    "vision_detection_strategy": {
+      "detectable": "cartridgeColor/needleBrandPrediction 已经覆盖品牌颜色特征",
+      "not_detectable": "针尖本人的染色（needle tip coating）在照片中几乎不可见，除非微距极特写",
+      "recommendation": "维持现有品牌识别逻辑（外壳颜色→品牌），不增加针尖染色检测"
+    },
+    "actionable": "现有 cartridgeColor 字段已覆盖。不新增 colored_tip 字段。"
+  },
+
+  "gap_6_price_packaging_relationship": {
+    "title": "Needle 价格区间与包装视觉关系",
+    "status": "resolved_from_web_research",
+    "summary": "包装形式与价格有强关联，可以从包装视觉推断品牌档次。",
+    "price_tiers_and_packaging": {
+      "budget": {
+        "price_per_cartridge": "$0.75-$1.10",
+        "typical_brands": ["Mast Pro", "CNC Police", "BigWasp", "EZ Revolution"],
+        "packaging_visual": [
+          "简单泡壳或简装盒",
+          "单色印刷，无 fancy 设计",
+          "膜质量参差 — 壳底膜可能是普通白色标准膜",
+          "盒装混装（50支混装）常见"
+        ],
+        "detection_cues": ["混装盒", "简单印刷", "多品牌通用壳型"]
+      },
+      "mid_tier": {
+        "price_per_cartridge": "$1.15-$1.75",
+        "typical_brands": ["Kwadron", "TATSoul Envy Gen 2", "Stigma", "Peak Quartz"],
+        "packaging_visual": [
+          "独立泡壳（individual blister）",
+          "品牌色统一设计",
+          "标签信息完整（gauge/count/type/taper 全部印刷）",
+          "可能有 color-coded 标签带"
+        ],
+        "detection_cues": ["独立泡壳", "品牌色设计", "标签信息完整"]
+      },
+      "premium": {
+        "price_per_cartridge": "$1.50-$3.00+",
+        "typical_brands": ["Cheyenne Safety", "BlackClaw", "Peak Stellar", "Bishop Da Vinci", "Vertix Nano"],
+        "packaging_visual": [
+          "高级盒装+独立泡壳",
+          "全彩印刷，品牌设计感强",
+          "泡壳透明度高，医疗级包装感",
+          "20/20 质量保证标识（Peak Stellar 特色）",
+          "color-coded backstems + 盒标",
+          "Cheyenne: 半透明彩色壳（蓝/粉/紫）本身就是 premium 信号"
+        ],
+        "detection_cues": ["高级包装", "color-coded system", "品牌壳色（半透明蓝=Cheyenne 几乎=premium）"]
+      }
+    },
+    "cross_reference_brand_to_tier": {
+      "kwadron": "mid_tier — 但 black+gold 壳给人的视觉感受接近 premium",
+      "cheyenne": "premium — translucent blue 壳本身就是 premium 视觉信号",
+      "blackclaw": "premium — 金属壳独一无二",
+      "bigwasp": "budget_to_mid — 透明壳 Gen 3",
+      "dragonhawk": "budget — Mast Pro 系列",
+      "cnc": "budget — 纯黑壳",
+      "magicmoon": "budget_to_mid — 磨砂壳",
+      "tatsoul": "mid_tier — 透明+彩环"
+    },
+    "actionable": "可以加入 cartridge_visual_rules.json 的 brand_visual_signature 中，补充价格定位标注。"
+  },
+
+  "gap_7_brand_model_number_mapping": {
+    "title": "品牌型号映射 (1003RL → 品牌型号名称对照)",
+    "status": "partially_resolved",
+    "summary": "行业通用编号（1003RL=10gauge 3RL）是跨品牌标准，但各品牌有自己的 SKU/型号名。视觉检测层面，通用编号已经足够。",
+    "universal_naming_system": {
+      "description": "行业通用 XXYYZZ 格式已经跨品牌使用",
+      "format": "{gauge}{count}{type}_{taper}",
+      "example": "1003RL = 10 gauge (#10=0.30mm) / 03 count / Round Liner",
+      "coverage": "几乎所有品牌（Cheyenne/Kwadron/BigWasp/BlackClaw/Dragonhawk/Stigma）都使用此系统"
+    },
+    "brand_specific_sku_examples": {
+      "kwadron": {
+        "naming": "直接使用行业标准: 1003RL, 1207M1, 1005RS",
+        "product_line": "Hybrid System — 1003RL_HYBRID（有些渠道加 HYBRID 后缀）"
+      },
+      "cheyenne": {
+        "naming": "使用行业标准 + 产品线前缀",
+        "safety_series_example": "Cheyenne Safety 1003RL",
+        "taper_naming": "Cheyenne 用 L 代替 LT",
+        "power_series": "如 1207RL Power（Power=0.40mm 粗针 long taper 版）",
+        "softedge": "如 1209M1 Softedge（Softedge=CM curved magnum）"
+      },
+      "blackclaw": {
+        "naming": "使用行业标准 + 系列名",
+        "example": "BlackClaw 1003RL — 但通常以自定义 grind 为主",
+        "series": "Wraith / Saber / Urban Custom"
+      },
+      "bigwasp": {
+        "naming": "直接使用行业标准",
+        "gen_marker": "有时标注 Gen 3 在包装上但产品编号不变"
+      },
+      "dragonhawk_mast": {
+        "naming": "直接使用行业标准",
+        "series": "Mast Pro / Mast Tour / Mast Magi"
+      }
+    },
+    "mapping_usefulness": {
+      "for_vision": "不需要品牌型号映射。行业通用编号已足够识别产品。",
+      "for_ecommerce": "品牌型号映射对自动上架/比价有用，但对视觉分析场景无价值。"
+    },
+    "actionable": "跳过。行业通用编号 1003RL 已跨品牌够用。"
+  },
+
+  "summary_recommendations": {
+    "implement_now": [
+      {
+        "gap": "gap_1 — Needle↔Machine 兼容矩阵",
+        "action": "更新 cartridge_visual_rules.json 的 needle_detection_pipeline，在 step 8 后增加 compatibility 推理。connectionType 映射兼容品牌列表。"
+      },
+      {
+        "gap": "gap_2 — 灭菌包装视觉识别",
+        "action": "更新 needle_vision_addendum.txt 和 VISION_PROMPT，增加 sterilization 识别规则：indicator dot = Gamma, Tyvek + 无 dot = EO"
+      },
+      {
+        "gap": "gap_6 — 价格区间与包装",
+        "action": "更新 cartridge_visual_rules.json 的 brand_visual_signature，补充 price_tier 字段"
+      }
+    ],
+    "skip_from_vision": [
+      {
+        "gap": "gap_4 — 材料触感差异",
+        "reason": "无法从照片判断。跳过。"
+      },
+      {
+        "gap": "gap_7 — 品牌型号映射",
+        "reason": "行业通用编号已够用。品牌特定 SKU 对视觉分析无价值。"
+      }
+    ],
+    "already_covered": [
+      {
+        "gap": "gap_3 — 品牌 taper 差异",
+        "reason": "现有 productDetail 格式 {gauge}{count}{type}_{taper} 已经覆盖。跨品牌 mm 差异在照片中不可测量。"
+      },
+      {
+        "gap": "gap_5 — 标记针尖颜色识别",
+        "reason": "现有 cartridgeColor + brandPrediction 已经覆盖品牌颜色系统。针尖本身染色在照片中不可见。"
+      }
+    ]
+  }
+}

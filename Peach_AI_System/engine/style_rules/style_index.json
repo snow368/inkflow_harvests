@@ -1,0 +1,50 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-06-07",
+  "brands": {
+    "kwadron": {
+      "style_file": "kwadron_product_style.json",
+      "color_scheme": "cool_cold_gold_accent",
+      "mood": "precise_industrial",
+      "best_for": "premium_tech_feel, metallic_products, needles_cartridges"
+    },
+    "tatsoul": {
+      "style_file": "tatsoul_product_style.json",
+      "color_scheme": "dark_muted_green_accent",
+      "mood": "rugged_industrial",
+      "best_for": "organic_products, leather_wood_contexts, natural_ingredients"
+    },
+    "world_famous_ink": {
+      "style_file": "world_famous_ink_style.json",
+      "color_scheme": "bold_gold_warm",
+      "mood": "luxury_commercial",
+      "best_for": "ink_bottles, premium_packaging, promotional_products"
+    }
+  },
+
+  "peach_brand_lines": {
+    "main": {
+      "theme": "pink_green_fresh",
+      "target": "female_tattoo_artists",
+      "style_suggestion": "kwadron_lighter - same composition but softer pink_green palette"
+    },
+    "men": {
+      "theme": "gray_white_masculine",
+      "target": "male_tattoo_artists",
+      "style_suggestion": "tatsoul_darkened - same texture but cooler grays, less color"
+    },
+    "pmu": {
+      "theme": "pink_translucent_professional",
+      "target": "pmu_specialists",
+      "style_suggestion": "kwadron_purer - same precision but softer lighting, translucent feel"
+    }
+  },
+
+  "usage_instructions": {
+    "step1": "Select target brand style from brands dict",
+    "step2": "Load the corresponding style file",
+    "step3": "Extract lighting, composition, color, material rules",
+    "step4": "Apply product image with those rules",
+    "step5": "For Peach brand lines, modify color palette but keep composition/lighting logic"
+  }
+}

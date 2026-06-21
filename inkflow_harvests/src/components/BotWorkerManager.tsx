@@ -103,6 +103,124 @@ const saveAccounts = (accounts: AccountEntry[]) => {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts)); } catch {}
 };
 
+// ── Bot Account Setup (IG handle + first_used_at) ──
+const STAGES = ['new', 'transition', 'growing', 'stable', 'mature'];
+function AccountSetupSection() {
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [botId, setBotId] = useState('bot_ig_01');
+  const [firstDate, setFirstDate] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const fetchAccounts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/automation/dashboard');
+      const data = await res.json();
+      if (data?.accounts) setAccounts(data.accounts);
+    } catch {}
+  }, []);
+
+  useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+
+  const calcStage = (days: number) =>
+    days < 7 ? 'new' : days < 14 ? 'transition' : days < 30 ? 'growing' : days < 60 ? 'stable' : 'mature';
+  const calcLimit = (days: number) =>
+    days < 7 ? 5 : days < 14 ? 10 : days < 30 ? 20 : days < 60 ? 30 : 50;
+
+  const handleSave = async () => {
+    if (!botId || !firstDate) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/automation/bot-account', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botId, firstUsedAt: firstDate }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        toast.success(`${botId} 已设置`);
+        fetchAccounts();
+      } else {
+        toast.error('保存失败', { description: data.error });
+      }
+    } catch (e: any) {
+      toast.error('保存失败', { description: e.message });
+    }
+    setSaving(false);
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+      className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6">
+      <div className="flex items-center gap-3 mb-5">
+        <User className="w-5 h-5 text-rose-500" />
+        <h4 className="font-black text-sm text-white">Bot 账号管理</h4>
+        <span className="text-[10px] font-bold text-zinc-500">{accounts.length} 个账号</span>
+      </div>
+
+      {/* Edit form */}
+      <div className="flex items-end gap-3 mb-5 flex-wrap">
+        <div className="flex-1 min-w-[140px]">
+          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 block">Bot ID</label>
+          <input type="text" value={botId} onChange={e => setBotId(e.target.value)}
+            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs text-white font-medium focus:outline-none focus:border-zinc-500" />
+        </div>
+        <div className="flex-1 min-w-[140px]">
+          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 block">首次启用日期</label>
+          <input type="date" value={firstDate} onChange={e => setFirstDate(e.target.value)}
+            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs text-white font-medium focus:outline-none focus:border-zinc-500" />
+        </div>
+        <button onClick={handleSave} disabled={saving}
+          className="px-4 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-colors">
+          {saving ? '保存中…' : '保存'}
+        </button>
+      </div>
+
+      {/* Account list */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-zinc-600 font-bold text-[10px] uppercase tracking-wider">
+              <td className="pb-2 pr-3">Bot ID</td>
+              <td className="pb-2 pr-3">IG Handle</td>
+              <td className="pb-2 pr-3">启用日期</td>
+              <td className="pb-2 pr-3">天数</td>
+              <td className="pb-2 pr-3">阶段</td>
+              <td className="pb-2 pr-3">日限额</td>
+            </tr>
+          </thead>
+          <tbody>
+            {accounts.map((a: any) => {
+              const days = a.firstUsedAt ? Math.floor((Date.now() - new Date(a.firstUsedAt).getTime()) / 86400000) : 0;
+              const stage = a.stage || calcStage(days);
+              const limit = a.dailyLimit || calcLimit(days);
+              return (
+                <tr key={a.accountId} className="border-t border-zinc-800/50 text-zinc-300 font-medium">
+                  <td className="py-2 pr-3">{a.accountId}</td>
+                  <td className="py-2 pr-3">{a.igHandle || '-'}</td>
+                  <td className="py-2 pr-3">{a.firstUsedAt ? new Date(a.firstUsedAt).toLocaleDateString() : '-'}</td>
+                  <td className="py-2 pr-3">{days}d</td>
+                  <td className="py-2 pr-3">
+                    <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full",
+                      stage === 'new' ? 'bg-blue-500/10 text-blue-400'
+                      : stage === 'transition' ? 'bg-amber-500/10 text-amber-400'
+                      : stage === 'growing' ? 'bg-green-500/10 text-green-400'
+                      : stage === 'stable' ? 'bg-violet-500/10 text-violet-400'
+                      : 'bg-rose-500/10 text-rose-400')}>{stage}</span>
+                  </td>
+                  <td className="py-2 pr-3">{limit}/天</td>
+                </tr>
+              );
+            })}
+            {accounts.length === 0 && (
+              <tr><td colSpan={6} className="py-4 text-center text-zinc-600">暂无账号，填写表单添加</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </motion.div>
+  );
+}
+
 export default function BotWorkerManager() {
   const [functions, setFunctions] = useState<BotFunction[]>([]);
   const [workers, setWorkers] = useState<BotWorker[]>([]);
@@ -340,6 +458,9 @@ export default function BotWorkerManager() {
           </div>
         ))}
       </div>
+
+      {/* Bot Accounts */}
+      <AccountSetupSection />
 
       {/* Bot Intelligence: Learning Status & DM Pipeline */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

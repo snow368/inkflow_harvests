@@ -1,0 +1,205 @@
+{
+  "needles_cartridges": {
+    "category": "Tattoo Needles & Cartridges",
+    "hookTemplates": [
+      "🚨 [PRODUCT NAME] ALERT 🚨",
+      "Why [common problem] when you can [solution]?"
+    ],
+    "sellingPoints": [
+      "Redesigned tip for stable ink flow",
+      "High-quality materials (e.g., smoked clear lexan, medical-grade)",
+      "Precision comfort grip",
+      "Long taper variants available",
+      "Best price for highest quality"
+    ],
+    "captionStructure": "Hook + Emoji + Key Feature/Benefit + Bullet Points (if applicable) + CTA + Location (if physical) + Hashtags",
+    "ctaTemplates": [
+      "Shop now at [link]",
+      "Share this post for [discount] off your first order"
+    ],
+    "recommendedEmojis": [
+      "🚨",
+      "🔥",
+      "✔️",
+      "🙃",
+      "💉",
+      "🎯",
+      "💥",
+      "🆕",
+      "💰",
+      "🎁"
+    ],
+    "hashtagStrategy": {
+      "branded": [
+        "#tatsoul",
+        "#lotusneedles",
+        "#disruptivetattoosupply"
+      ],
+      "category": [
+        "#tattoosupply",
+        "#tattooneedles",
+        "#cartridges",
+        "#tattooink"
+      ],
+      "trending": [
+        "#denvertattooartists",
+        "#coloradotattoosupply",
+        "#tattoocommunity"
+      ]
+    },
+    "exampleCaption": "🚨 REDESIGNED TIP ALERT 🚨\n\nWe have completely reimagined our USL and BPL ranges with a brand new mould, redesigned tip, and adjusted solder points for stable, consistent ink flow. 🔥\n\n✔️ USL - LONG TAPER\n✔️ BPL - LONG TAPER\n✔️ STL - LONG TAPER\n\nShop now at www.lotusneedles.com 💉\n\n#lotusneedles #tattoosupply #tattooneedles #cartridges #tattoocommunity #denvertattooartists #coloradotattoosupply"
+  },
+  "machines_pens": {
+    "category": "Tattoo Machines & Pens",
+    "hookTemplates": [
+      "We warned you. 😅🤷 The [Product Name] was never built for restocks!",
+      "You should feel in control of every session. 🤝 [Brand Name] machines are built with artist-first tech."
+    ],
+    "sellingPoints": [
+      "Limited-edition drops with no restocks",
+      "Artist-first technology for clean, efficient workflow",
+      "Exclusive finishes and studio exclusives",
+      "High performance from stencil to final pass",
+      "Custom collaborations with top artists"
+    ],
+    "captionStructure": "Hook (urgency or benefit) + Selling Points (bullet or emoji list) + Scarcity/Exclusivity Reminder + CTA (link or comment prompt) + Hashtags",
+    "ctaTemplates": [
+      "Need it? Grab it. 👉 [link]",
+      "What’s one thing that instantly upgrades your workflow? ⬇️ Drop it in the comments!"
+    ],
+    "recommendedEmojis": [
+      "😅",
+      "🤷",
+      "💪",
+      "🌊",
+      "👀",
+      "👻",
+      "⚠️",
+      "💥",
+      "👉",
+      "⬇️"
+    ],
+    "hashtagStrategy": {
+      "branded": [
+        "#fkirons",
+        "#fkironsremixcollection",
+        "#fkironstattoomachine",
+        "#bishoprotary"
+      ],
+      "category": [
+        "#tattoomachines",
+        "#tattoopens",
+        "#tattooequipment",
+        "#tattoosupplies"
+      ],
+      "trending": [
+        "#limitededition",
+        "#artistfirst",
+        "#tattooartist",
+        "#tattoocommunity",
+        "#newdrop"
+      ]
+    },
+    "exampleCaption": "We warned you. 😅🤷 The Remix Collection was never built for restocks! 💪 Every machine in this drop is limited-edition, and once a finish sells out, it’s officially retired. No reruns. No second wave. 🌊 \n\n💥 12 custom machine drops\n💥 Studio exclusives\n💥 Limited inventory across the board\n\n⚠️ No restocks planned. Once sold out, they’re retired for good. 👻\n\nNeed it? Grab it. 👉 https://bit.ly/49pNqDJ\n\n#fkirons #fkironsremixcollection #fkironstattoomachine #limitededition #tattoocommunity #newdrop"
+  },
+  "ink": {
+    "category": "Tattoo Ink",
+    "hookTemplates": [
+      "This is your sign to [action]! 👀",
+      "☀️ [Season/Theme] DEALS ARE HERE ☀️"
+    ],
+    "sellingPoints": [
+      "Vibrant, long-lasting color",
+      "Trusted by top artists worldwide",
+      "Bold saturation for standout pieces",
+      "Versatile for various styles (realism, traditional, anime)",
+      "Limited-time discounts and promotions"
+    ],
+    "captionStructure": "Hook (with emoji) + Selling point/feature + Artist/studio tag + CTA + Hashtag cluster",
+    "ctaTemplates": [
+      "Stock up now!",
+      "Shop the sale before it ends."
+    ],
+    "recommendedEmojis": [
+      "👀",
+      "🖤",
+      "✨",
+      "☀️",
+      "🎨",
+      "🔥",
+      "💉",
+      "🌟",
+      "🎉",
+      "💥"
+    ],
+    "hashtagStrategy": {
+      "branded": [
+        "#kwadron",
+        "#worldfamousink",
+        "#radiantcolorscrew"
+      ],
+      "category": [
+        "#tattooink",
+        "#tattooartists",
+        "#tattoo"
+      ],
+      "trending": [
+        "#boldcolor",
+        "#summerdeals",
+        "#inkinspo"
+      ]
+    },
+    "exampleCaption": "This is your sign to stock up! 👀\nAll Kwadron INX inks are now 25% off. Promo lasts until May 31. 🖤\n\n#kwadron #kwadroninx #tattoo"
+  },
+  "aftercare": {
+    "category": "Tattoo Aftercare",
+    "hookTemplates": [
+      "Fresh ink deserves the best care. 🖤✨",
+      "Keep your ink looking fresh with the perfect duo — [Product Name] + [Product Name]."
+    ],
+    "sellingPoints": [
+      "Moisturizes and protects tattoo during healing",
+      "Vegan, organic, ethically sourced ingredients",
+      "Easy to use, mess-free application (e.g., swabs, balm)",
+      "Formulated for artists to reduce friction and improve process",
+      "Suitable for on-the-go use and all healing stages"
+    ],
+    "captionStructure": "Hook (1-2 lines) + Key selling points (2-3 lines) + CTA (1 line) + Emoji line + Hashtags (branded, category, trending)",
+    "ctaTemplates": [
+      "Come get it!",
+      "Let us know in the comments below 👇"
+    ],
+    "recommendedEmojis": [
+      "🖤",
+      "✨",
+      "🔥",
+      "💧",
+      "🇨🇦",
+      "💪",
+      "🎨",
+      "🌟",
+      "🔗",
+      "👇"
+    ],
+    "hashtagStrategy": {
+      "branded": [
+        "#TattooGoo",
+        "#TattooGooPro",
+        "#InkCare"
+      ],
+      "category": [
+        "#TattooAftercare",
+        "#FreshInk",
+        "#TattooBalm",
+        "#TattooArtist"
+      ],
+      "trending": [
+        "#TattooHealing",
+        "#InkLove",
+        "#TattooCommunity",
+        "#AftercareTips"
+      ]
+    },
+    "exampleCaption": "Fresh ink deserves the best care. 🖤✨\nTattoo Goo Tattoo Balm helps keep your tattoo moisturized, protected, and looking vibrant through every stage of healing. Smooth on, heal up, and let your ink shine. 🔥\nCome get it!\n#TattooGoo #TattooAftercare #FreshInk #TattooBalm #InkLove #TattooHealing"
+  }
+}

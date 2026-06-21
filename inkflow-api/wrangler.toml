@@ -1,0 +1,13 @@
+name = "inkflow-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Neon DB connection string (set via wrangler secret)
+# npx wrangler secret put DATABASE_URL
+# Also set: BOT_API_KEY
+
+# R2: enable in Cloudflare Dashboard first (R2 section)
+# [[r2_buckets]]
+# binding = "INKFLOW_ASSETS"
+# bucket_name = "inkflow-assets"

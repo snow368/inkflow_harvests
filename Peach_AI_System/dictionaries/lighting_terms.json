@@ -1,0 +1,67 @@
+{
+  "_meta": {
+    "domain": "lighting",
+    "description": "Lighting terms — direction, quality, color, setup",
+    "usage": "Pick primary lighting direction + quality modifier + optional color accent"
+  },
+  "light_direction": {
+    "description": "Primary light source direction",
+    "terms": [
+      {"term": "front light", "prompt_fragment": "front-lit evenly, shadow behind product"},
+      {"term": "side light", "prompt_fragment": "strong side light from the left, deep shadow on right"},
+      {"term": "back light", "prompt_fragment": "back-lit, product silhouette with edge glow"},
+      {"term": "rim light", "prompt_fragment": "side-rim light, sharp edge highlight along contour"},
+      {"term": "top light", "prompt_fragment": "overhead top light, shadow directly below"},
+      {"term": "under light", "prompt_fragment": "bottom-lit, eerie glow from below"},
+      {"term": "45-degree frontal", "prompt_fragment": "45° frontal softbox, classic studio portrait light"},
+      {"term": "cross light", "prompt_fragment": "cross lighting from both sides, dramatic symmetry"}
+    ]
+  },
+  "light_quality": {
+    "description": "Hardness/softness of the light source",
+    "terms": [
+      {"term": "hard light", "prompt_fragment": "hard direct light, razor-sharp shadow edges"},
+      {"term": "soft diffused", "prompt_fragment": "soft diffused light, gentle shadow transition"},
+      {"term": "harsh directional", "prompt_fragment": "harsh directional light, high contrast shadow"},
+      {"term": "wrap-around", "prompt_fragment": "wrap-around soft light, minimal visible shadows"},
+      {"term": "punctual", "prompt_fragment": "punctual spot light, focused pool of light"},
+      {"term": "ring light", "prompt_fragment": "ring light, even shadowless macro illumination"}
+    ]
+  },
+  "light_temperature": {
+    "description": "Color temperature of the light",
+    "terms": [
+      {"term": "warm tungsten", "prompt_fragment": "warm tungsten 3200K, golden hour glow"},
+      {"term": "cool LED", "prompt_fragment": "cool LED 5600K, clinical clean white"},
+      {"term": "daylight", "prompt_fragment": "daylight balanced 5500K, neutral natural"},
+      {"term": "mixed temperature", "prompt_fragment": "mixed temperature — warm key light with cool rim"},
+      {"term": "neon color", "prompt_fragment": "neon colored light, pink/blue ambient glow"},
+      {"term": "amber warm", "prompt_fragment": "amber warm light, cozy intimate feel"}
+    ]
+  },
+  "light_setup": {
+    "description": "Complete lighting rig configuration",
+    "terms": [
+      {"term": "single key light", "prompt_fragment": "single key light, dramatic single-source shadow"},
+      {"term": "key + fill", "prompt_fragment": "key light with subtle fill reflector"},
+      {"term": "three-point", "prompt_fragment": "three-point studio lighting: key, fill, rim"},
+      {"term": "softbox pair", "prompt_fragment": "dual softbox, even coverage both sides"},
+      {"term": "beauty dish", "prompt_fragment": "beauty dish, focused contrast with soft falloff"},
+      {"term": "strip box", "prompt_fragment": "strip box, long narrow highlight on metal surfaces"},
+      {"term": "LED panel array", "prompt_fragment": "LED panel array, programmable color matrix"},
+      {"term": "ring flash", "prompt_fragment": "ring flash macro, even shadowless with catchlight"}
+    ]
+  },
+  "light_effect": {
+    "description": "Special lighting effects and phenomena",
+    "terms": [
+      {"term": "lens flare", "prompt_fragment": "subtle lens flare from side light"},
+      {"term": "caustics", "prompt_fragment": "light caustics through translucent housing"},
+      {"term": "god rays", "prompt_fragment": "god rays through atmospheric haze"},
+      {"term": "gobo pattern", "prompt_fragment": "patterned gobo light, textured shadow"},
+      {"term": "silhouette", "prompt_fragment": "silhouette against bright background"},
+      {"term": "high key", "prompt_fragment": "high key, brightly lit with minimal shadows"},
+      {"term": "low key", "prompt_fragment": "low key, mostly dark with controlled highlights"}
+    ]
+  }
+}

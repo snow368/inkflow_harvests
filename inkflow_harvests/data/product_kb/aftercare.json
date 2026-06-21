@@ -1,0 +1,112 @@
+{
+  "_meta": {
+    "domain": "aftercare",
+    "description": "纹身护理产品知识库 — 品牌、产品类型、成分、口碑",
+    "version": "1.0",
+    "created": "2026-05-26",
+    "expandable": true
+  },
+
+  "product_types": {
+    "balm": {
+      "name": "护理膏/润肤膏",
+      "description": "厚实质地，封闭保护，适合新纹身愈合期",
+      "key_ingredients": ["乳木果油", "椰子油", "芒果脂", "蜂蜡"],
+      "avoid": ["石油衍生物", "香精", "酒精"]
+    },
+    "lotion": {
+      "name": "护理乳液",
+      "description": "轻薄质地，适合日常保湿和老纹身维护",
+      "key_ingredients": ["甘油", "神经酰胺", "泛醇"]
+    },
+    "gel": {
+      "name": "修复凝胶",
+      "description": "清爽不油腻，适合敏感肌/夏季",
+      "key_ingredients": ["芦荟", "甘油"]
+    },
+    "soap": {
+      "name": "抗菌清洁皂",
+      "description": "无酒精、无香精的抗菌清洁产品，替代传统绿皂",
+      "key_ingredients": ["抗菌成分", "pH平衡配方"],
+      "note": "Hustle Bubbles 和 Tattoo Goo 的抗菌皂是行业标准"
+    },
+    "kit": {
+      "name": "护理套装",
+      "description": "清洁皂+护理膏+乳液的完整套装，适合新手",
+      "brands": ["Tattoo Goo 3件套", "Mad Rabbit 组合"]
+    }
+  },
+
+  "brands": {
+    "hustle_butter": {
+      "name": "Hustle Butter Deluxe",
+      "position": "industry_staple",
+      "country": "USA",
+      "products": ["Hustle Butter Deluxe balm", "Hustle Bubbles foaming soap", "Daily Rejuvenating Lotion"],
+      "best_for": ["纹身前中后全周期使用", "工作室标配"],
+      "quality": "行业老牌，10年+市场沉淀，纯素无石油",
+      "ingredient_highlights": ["乳木果油", "椰子油", "芒果籽脂", "绿茶提取"],
+      "format": "balm / soap / lotion"
+    },
+    "tattoo_goo": {
+      "name": "Tattoo Goo",
+      "position": "best_value_kit",
+      "country": "USA",
+      "products": ["Antimicrobial Soap", "Healing Balm", "Aftercare Lotion"],
+      "best_for": ["完整护理流程", "性价比套装"],
+      "quality": "60%+橄榄油基底，抗菌皂行业标准",
+      "ingredient_highlights": ["橄榄油", "薰衣草油", "泛醇(B5)", "Healix Gold"],
+      "format": "3件套装 / 单品"
+    },
+    "mad_rabbit": {
+      "name": "Mad Rabbit",
+      "position": "clean_beauty",
+      "country": "USA",
+      "products": ["Tattoo Balm", "Soothing Gel", "Repair Tattoo Wash", "Replenish Lotion"],
+      "best_for": ["敏感肌", "无香精偏好"],
+      "quality": "增长最快的品牌，纯素无香精无石油",
+      "ingredient_highlights": ["甜杏仁油", "阿甘油", "乳木果脂"],
+      "format": "balm / gel / soap / lotion"
+    }
+  },
+
+  "visual_dimensions": {
+    "description": "护理产品视觉特征维度 — 可从产品照片中识别",
+    "packageType": {
+      "zh": "包装类型",
+      "en": "Package Type",
+      "values": {
+        "tube": "软管 — Hustle Butter balm（挤压式）",
+        "jar": "罐/盒 — 膏状产品（挖取式）",
+        "bottle_pump": "按压瓶 — 乳液/皂液",
+        "bottle_dropper": "滴瓶 — 精华/油类",
+        "spray": "喷瓶 — 部分清洁/护理喷雾",
+        "kit_box": "套装盒 — 多个产品组合"
+      }
+    },
+    "packageColor": {
+      "zh": "包装主色",
+      "en": "Package Color",
+      "values": {
+        "white": "白色 — Hustle Butter 经典白",
+        "black": "黑色 — 部分专业线",
+        "pastel": "柔和彩色 — 天然/有机风格",
+        "bright": "明亮色 — 年轻品牌如 Mad Rabbit 鲜红色"
+      }
+    },
+    "brandVisualCues": {
+      "Hustle Butter": "白色软管/瓶 + 绿色/紫色品牌字 + 'Hustle Butter Deluxe'",
+      "Tattoo Goo": "深色管/瓶 + 金色/红色品牌名 + 套装盒装",
+      "Mad Rabbit": "鲜红色/白色 + 现代简约设计 + 兔子logo",
+      "A&D": "黄白管 + 'A&D' 药膏风格",
+      "Bepanthen": "白管 + 蓝色标识 + 药房风格"
+    }
+  },
+
+  "dm_recommendation": {
+    "new_tattoo": "新纹身护理推荐 Hustle Butter 或 Mad Rabbit 的 balm，薄涂就行，透气又保湿。",
+    "sensitive_skin": "敏感肌建议 Mad Rabbit，无香精无酒精，最温和。",
+    "complete_kit": "想要一套搞定就选 Tattoo Goo 3件套，清洁+护理+日常全有。",
+    "studio_use": "工作室常备 Hustle Butter 加 Hustle Bubbles，客户认可度高。"
+  }
+}

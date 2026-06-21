@@ -1,0 +1,12 @@
+﻿{
+  "tiers": {
+    "A": { "visit_profile": true, "like": true, "follow": false, "comment": false },
+    "B": { "visit_profile": true, "like": true, "follow": true,  "comment": false },
+    "C": { "visit_profile": true, "like": true, "follow": true,  "comment": true  }
+  },
+  "caps": {
+    "A": { "daily": 35, "hourly": 8 },
+    "B": { "daily": 50, "hourly": 10 },
+    "C": { "daily": 60, "hourly": 12 }
+  }
+}

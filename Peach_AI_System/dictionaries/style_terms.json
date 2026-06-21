@@ -1,0 +1,60 @@
+{
+  "_meta": {
+    "domain": "style",
+    "description": "Overall visual style and aesthetic direction",
+    "usage": "Pick dominant style + optional secondary modifier"
+  },
+  "primary_style": {
+    "description": "Dominant visual direction",
+    "terms": [
+      {"term": "commercial product", "prompt_fragment": "clean commercial product photography, studio-polished"},
+      {"term": "editorial", "prompt_fragment": "editorial style, magazine-quality composition"},
+      {"term": "documentary raw", "prompt_fragment": "documentary style, unprocessed natural capture"},
+      {"term": "minimalist", "prompt_fragment": "minimalist aesthetic, maximum negative space"},
+      {"term": "industrial", "prompt_fragment": "industrial style, raw metal and hard surfaces"},
+      {"term": "cyberpunk", "prompt_fragment": "cyberpunk aesthetic, neon and chrome"},
+      {"term": "luxury premium", "prompt_fragment": "luxury premium, opulent surfaces and lighting"},
+      {"term": "sci-fi futuristic", "prompt_fragment": "sci-fi futuristic, clean geometric lines"},
+      {"term": "street culture", "prompt_fragment": "street culture vibe, raw urban aesthetic"},
+      {"term": "medical clinical", "prompt_fragment": "clinical clean, sterilized white environment"},
+      {"term": "vintage retro", "prompt_fragment": "vintage retro, warm film-like color grading"},
+      {"term": "brutalist", "prompt_fragment": "brutalist, harsh concrete and stark lighting"},
+      {"term": "biophilic", "prompt_fragment": "biophilic, natural elements mixed with product"}
+    ]
+  },
+  "rendering_quality": {
+    "description": "Visual fidelity and rendering style",
+    "terms": [
+      {"term": "photorealistic", "prompt_fragment": "photorealistic, indistinguishable from real photo"},
+      {"term": "hyper-real", "prompt_fragment": "hyper-real, beyond natural clarity and detail"},
+      {"term": "OC render quality", "prompt_fragment": "OC render quality, flawless surface simulation"},
+      {"term": "film grain", "prompt_fragment": "subtle film grain, analog texture overlay"},
+      {"term": "cinematic", "prompt_fragment": "cinematic color grading, wide dynamic range"}
+    ]
+  },
+  "color_strategy": {
+    "description": "Color palette and grading approach",
+    "terms": [
+      {"term": "monochrome", "prompt_fragment": "monochrome palette, pure black and white tones"},
+      {"term": "desaturated", "prompt_fragment": "desaturated, muted colors with low vibrance"},
+      {"term": "high contrast", "prompt_fragment": "high contrast color, saturated bold hues"},
+      {"term": "pastel soft", "prompt_fragment": "soft pastel palette, gentle muted tones"},
+      {"term": "neon pop", "prompt_fragment": "neon pop colors, fluorescent accent highlights"},
+      {"term": "warm golden", "prompt_fragment": "warm golden hour palette, amber and honey tones"},
+      {"term": "cool steel", "prompt_fragment": "cool steel blue palette, cold modern aesthetic"},
+      {"term": "brand colors", "prompt_fragment": "brand color scheme — peach orange and pearl white"}
+    ]
+  },
+  "mood": {
+    "description": "Emotional atmosphere of the image",
+    "terms": [
+      {"term": "sterile professional", "prompt_fragment": "sterile professional atmosphere, clinical precision"},
+      {"term": "warm inviting", "prompt_fragment": "warm inviting mood, comfortable and accessible"},
+      {"term": "dark mysterious", "prompt_fragment": "dark mysterious atmosphere, hidden details"},
+      {"term": "energetic dynamic", "prompt_fragment": "energetic dynamic feel, vibrant and alive"},
+      {"term": "calm serene", "prompt_fragment": "calm serene, peaceful empty space"},
+      {"term": "edgy rebellious", "prompt_fragment": "edgy rebellious, counter-culture attitude"},
+      {"term": "trustworthy reliable", "prompt_fragment": "trustworthy professional, reliability implied"}
+    ]
+  }
+}

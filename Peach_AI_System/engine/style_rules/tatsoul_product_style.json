@@ -1,0 +1,81 @@
+{
+  "brand": "tatsoul",
+  "category": "tattoo_supply_product_photography",
+  "summary": "工业粗犷美学，暗调纹理背景，皮革木纹材质，克制冷静",
+
+  "lighting": {
+    "type": "soft_diffused",
+    "direction": "upper_left_front",
+    "key_characteristics": [
+      "柔和漫射光均匀覆盖",
+      "无强烈高光或硬阴影",
+      "轻微方向性，形成微妙明暗过渡",
+      "金属表面细腻漫反射光泽"
+    ],
+    "shadow_style": "soft, subtle, gradual transition",
+    "highlight_placement": "subtle_edge_highlight, no specular blowout"
+  },
+
+  "composition": {
+    "angles": [
+      "45_degree_overhead (45度俯拍) - 40%",
+      "eye_level_midshot (中景平视) - 35%",
+      "slight_low_angle (微低角度) - 25%"
+    ],
+    "layout": [
+      "diagonal_scatter (对角线散落)",
+      "centered_balanced (居中对称)",
+      "product_group_with_props (产品+道具组合)"
+    ],
+    "depth_of_field": "medium, background context visible but blurred",
+    "background_type": "textured_dark (木纹/皮革/石纹)"
+  },
+
+  "color_palette": {
+    "primary_background": [
+      "dark_wood_grain",
+      "black_leather",
+      "charcoal_gray_textured",
+      "deep_black_matte"
+    ],
+    "accent_colors": [
+      "green_brand_accent (青绿色品牌色)",
+      "silver_text",
+      "gold_stars (金色星形)"
+    ],
+    "color_relationship": "整体暗调，品牌色作为冷色点缀",
+    "saturation": "overall_muted_low_saturation",
+    "contrast": "low_to_medium, sophisticated subtlety"
+  },
+
+  "material_rendering": {
+    "wood_surface": "粗粝木质纹理，深沉自然",
+    "leather_texture": "细腻皮革纹理，适度反光",
+    "metal_parts": "拉丝金属，哑光质感，低光泽",
+    "plastic": "均匀柔光，无镜面反射",
+    "ink_liquid": "深邃饱满，高饱和度对比"
+  },
+
+  "mood": [
+    "rugged",
+    "industrial",
+    "professional",
+    "understated_premium",
+    "tattoo_culture_authentic"
+  ],
+
+  "avoid": [
+    "bright_bold_backgrounds",
+    "gradient_backgrounds",
+    "overly_polished_glossy",
+    "tech_future_vibe",
+    "minimalist_white"
+  ],
+
+  "prompt_formula": "【45度俯拍/中景】+【柔和漫射光】+【纹理暗调背景】+【品牌色冷调点缀】+【工业粗犷质感】",
+
+  "examples": [
+    "45度俯拍，柔和漫射光，深色木质背景上对角线散落排列纹身工具，金属弹簧与透明握柄细腻质感，青绿色品牌标识点缀",
+    "中景平视，产品置于黑色皮革座椅中央，柔和顶光，深色木纹墙背景，哑光包装与皮革纹理材质对比"
+  ]
+}

@@ -1,0 +1,408 @@
+{
+  "brands": {
+    "kwadron": {
+      "avgLength": 56,
+      "emojiRate": 1,
+      "questionRate": 0.2,
+      "exclaimRate": 0.4,
+      "topWords": [
+        "kwadron(5)",
+        "tattoo(4)",
+        "before(3)",
+        "every(3)",
+        "products(3)"
+      ],
+      "postCount": 5
+    },
+    "cheyennetattoo": {
+      "avgLength": 5,
+      "emojiRate": 0,
+      "questionRate": 0,
+      "exclaimRate": 0,
+      "topWords": [
+        "love(1)",
+        "jokers(1)",
+        "carl(1)",
+        "grace(1)",
+        "thunder(1)"
+      ],
+      "postCount": 3
+    },
+    "fkirons": {
+      "avgLength": 44,
+      "emojiRate": 0.75,
+      "questionRate": 0.25,
+      "exclaimRate": 0.88,
+      "topWords": [
+        "fkirons(8)",
+        "collection(5)",
+        "whats(4)",
+        "remix(4)",
+        "once(4)"
+      ],
+      "postCount": 8
+    },
+    "bishoprotary": {
+      "avgLength": 92,
+      "emojiRate": 0.5,
+      "questionRate": 0,
+      "exclaimRate": 1,
+      "topWords": [
+        "bishop(8)",
+        "bishoprotary(8)",
+        "artist(6)",
+        "work(6)",
+        "machine(5)"
+      ],
+      "postCount": 4
+    },
+    "stigmarotary": {
+      "avgLength": 92,
+      "emojiRate": 1,
+      "questionRate": 0,
+      "exclaimRate": 0,
+      "topWords": [
+        "mais(3)",
+        "projects(2)",
+        "contra(2)",
+        "longe(2)",
+        "cada(2)"
+      ],
+      "postCount": 2
+    },
+    "workhorseirons": {
+      "avgLength": 246,
+      "emojiRate": 1,
+      "questionRate": 0.5,
+      "exclaimRate": 0,
+      "topWords": [
+        "machines(5)",
+        "sidewinders(5)",
+        "machine(4)",
+        "years(4)",
+        "still(4)"
+      ],
+      "postCount": 2
+    },
+    "masttattoo": {
+      "avgLength": 2,
+      "emojiRate": 0,
+      "questionRate": 0,
+      "exclaimRate": 0,
+      "topWords": [
+        "tattoo(1)",
+        "woman(1)",
+        "tattoohendmenartbeautyandthebeast(1)",
+        "tattooartmantatto(1)",
+        "tattoobestsketchmasterwomanartpaint(1)"
+      ],
+      "postCount": 4
+    },
+    "needlejig": {
+      "avgLength": 30,
+      "emojiRate": 0,
+      "questionRate": 0,
+      "exclaimRate": 0,
+      "topWords": [
+        "rowdyroosterink(2)",
+        "dkrotary(2)",
+        "crybabytattooproducts(2)",
+        "jetblacksupply(2)",
+        "industryinksusa(2)"
+      ],
+      "postCount": 2
+    },
+    "eikondevice": {
+      "avgLength": 87,
+      "emojiRate": 0.13,
+      "questionRate": 0.13,
+      "exclaimRate": 0.75,
+      "topWords": [
+        "years(5)",
+        "eikon(5)",
+        "long(4)",
+        "taper(4)",
+        "life(3)"
+      ],
+      "postCount": 8
+    },
+    "worldfamousink": {
+      "avgLength": 36,
+      "emojiRate": 0.14,
+      "questionRate": 0,
+      "exclaimRate": 0.43,
+      "topWords": [
+        "worldfamousink(6)",
+        "bold(3)",
+        "best(3)",
+        "nyempirestatetattooexpo(2)",
+        "youre(2)"
+      ],
+      "postCount": 7
+    },
+    "eternalink": {
+      "avgLength": 66,
+      "emojiRate": 0.5,
+      "questionRate": 0.13,
+      "exclaimRate": 0.63,
+      "topWords": [
+        "eternalink(12)",
+        "tattoo(6)",
+        "years(4)",
+        "back(3)",
+        "sponsors(3)"
+      ],
+      "postCount": 8
+    },
+    "solidinktattoo": {
+      "avgLength": 14,
+      "emojiRate": 0,
+      "questionRate": 0,
+      "exclaimRate": 0,
+      "topWords": [
+        "solidinktattoo(11)",
+        "tatueringmotala(9)",
+        "tatuering(8)",
+        "tatueraremotala(6)",
+        "motala(6)"
+      ],
+      "postCount": 11
+    },
+    "radiantcolorsink": {
+      "avgLength": 110,
+      "emojiRate": 1,
+      "questionRate": 0,
+      "exclaimRate": 0,
+      "topWords": [
+        "tattoo(10)",
+        "radiantcolorscom(7)",
+        "radiantcolorsink(6)",
+        "radiant(6)",
+        "artistas(6)"
+      ],
+      "postCount": 8
+    },
+    "wickedink": {
+      "avgLength": 4,
+      "emojiRate": 0.89,
+      "questionRate": 0,
+      "exclaimRate": 0.11,
+      "topWords": [
+        "piece(2)",
+        "team(1)",
+        "spirit(1)",
+        "book(1)",
+        "mini(1)"
+      ],
+      "postCount": 9
+    },
+    "intenzetattooink": {
+      "avgLength": 35,
+      "emojiRate": 0.63,
+      "questionRate": 0,
+      "exclaimRate": 0.13,
+      "topWords": [
+        "intenzetattooink(5)",
+        "eztattooing(3)",
+        "intenze(3)",
+        "intenzeink(3)",
+        "intenzeteam(3)"
+      ],
+      "postCount": 8
+    },
+    "wand_tattoo": {
+      "avgLength": 4,
+      "emojiRate": 0,
+      "questionRate": 0,
+      "exclaimRate": 0,
+      "topWords": [
+        "idiotinnen(1)",
+        "gedanke(1)",
+        "noch(1)",
+        "kleiner(1)",
+        "starin(1)"
+      ],
+      "postCount": 6
+    },
+    "tatsoul": {
+      "avgLength": 39,
+      "emojiRate": 0.6,
+      "questionRate": 0.2,
+      "exclaimRate": 0.4,
+      "topWords": [
+        "tatsoul(5)",
+        "grip(3)",
+        "precision(2)",
+        "indiana(2)",
+        "criticaltattoosupply(2)"
+      ],
+      "postCount": 5
+    },
+    "painfulpleasures": {
+      "avgLength": 236,
+      "emojiRate": 0,
+      "questionRate": 0,
+      "exclaimRate": 0,
+      "topWords": [
+        "tattoo(6)",
+        "artists(5)",
+        "everything(5)",
+        "free(4)",
+        "seminar(4)"
+      ],
+      "postCount": 1
+    },
+    "truetattoosupply": {
+      "avgLength": 103,
+      "emojiRate": 0.6,
+      "questionRate": 0.2,
+      "exclaimRate": 0.8,
+      "topWords": [
+        "tattoo(25)",
+        "true(15)",
+        "cartridge(12)",
+        "needles(11)",
+        "artist(8)"
+      ],
+      "postCount": 5
+    },
+    "fytsupplies": {
+      "avgLength": 51,
+      "emojiRate": 0.33,
+      "questionRate": 0,
+      "exclaimRate": 0.67,
+      "topWords": [
+        "done(8)",
+        "best(5)",
+        "always(5)",
+        "weekend(4)",
+        "fytsupplies(4)"
+      ],
+      "postCount": 6
+    },
+    "mavericktattoomercantile": {
+      "avgLength": 42,
+      "emojiRate": 0.75,
+      "questionRate": 0,
+      "exclaimRate": 0.38,
+      "topWords": [
+        "free(6)",
+        "tattooer(4)",
+        "tattoos(3)",
+        "maverick(3)",
+        "code(3)"
+      ],
+      "postCount": 8
+    },
+    "disruptivetattoosupply": {
+      "avgLength": 67,
+      "emojiRate": 0.11,
+      "questionRate": 0.11,
+      "exclaimRate": 1,
+      "topWords": [
+        "lakewood(15)",
+        "check(10)",
+        "disruptiveinktattoosupply(9)",
+        "tattoosupply(8)",
+        "denvertattoosupply(8)"
+      ],
+      "postCount": 9
+    },
+    "goodguysupply": {
+      "avgLength": 118,
+      "emojiRate": 0.43,
+      "questionRate": 0,
+      "exclaimRate": 0.71,
+      "topWords": [
+        "show(9)",
+        "goodguysupply(8)",
+        "help(5)",
+        "tattoo(4)",
+        "always(4)"
+      ],
+      "postCount": 7
+    },
+    "tattoogoo": {
+      "avgLength": 30,
+      "emojiRate": 0.8,
+      "questionRate": 0,
+      "exclaimRate": 0,
+      "topWords": [
+        "tattoo(8)",
+        "tattoogoo(4)",
+        "keep(3)",
+        "tattooaftercare(3)",
+        "freshink(3)"
+      ],
+      "postCount": 5
+    },
+    "madrabbit": {
+      "avgLength": 26,
+      "emojiRate": 1,
+      "questionRate": 0.89,
+      "exclaimRate": 0.11,
+      "topWords": [
+        "comments(9)",
+        "below(9)",
+        "know(8)",
+        "tattoo(6)",
+        "tattoos(3)"
+      ],
+      "postCount": 9
+    },
+    "recoverytattoo": {
+      "avgLength": 21,
+      "emojiRate": 0,
+      "questionRate": 0,
+      "exclaimRate": 0,
+      "topWords": [
+        "dont(1)",
+        "forget(1)",
+        "cover(1)",
+        "gladly(1)",
+        "support(1)"
+      ],
+      "postCount": 1
+    }
+  },
+  "styleDistribution": {
+    "technical": {
+      "count": 144,
+      "avgLikes": 1.6
+    },
+    "praise": {
+      "count": 7358,
+      "avgLikes": 1.5
+    },
+    "engagement": {
+      "count": 172,
+      "avgLikes": 2.3
+    },
+    "design_ref": {
+      "count": 28,
+      "avgLikes": 1.1
+    }
+  },
+  "trainingDate": "2026-05-24T08:44:37.329Z",
+  "totalBrandPosts": 151,
+  "totalArtistComments": 8033,
+  "brandsCount": 26,
+  "styleWeights": [
+    [
+      "technical",
+      0.3
+    ],
+    [
+      "praise",
+      0.3
+    ],
+    [
+      "engagement",
+      0.2
+    ],
+    [
+      "design_ref",
+      0.2
+    ]
+  ]
+}

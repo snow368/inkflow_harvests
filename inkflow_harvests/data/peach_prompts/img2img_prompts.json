@@ -1,0 +1,270 @@
+{
+  "generated_at": "2026-06-01 10:43:28",
+  "packs": [
+    {
+      "type": "RL外壳",
+      "images": [
+        "微信图片_20260528154243_438_619.png",
+        "微信图片_20260528154245_439_619.png",
+        "微信图片_20260528154247_440_619.png",
+        "微信图片_20260528154248_441_619.png",
+        "微信图片_20260528154249_442_619.png",
+        "微信图片_20260528154250_443_619.png",
+        "微信图片_20260528154251_444_619.png",
+        "微信图片_20260528154252_445_619.png",
+        "微信图片_20260528154253_446_619.png",
+        "微信图片_20260528154254_447_619.png",
+        "微信图片_20260528154350_448_619.jpg",
+        "微信图片_20260528154352_449_619.jpg",
+        "微信图片_20260528154353_450_619.jpg",
+        "微信图片_20260528154355_451_619.jpg",
+        "微信图片_20260528154356_452_619.jpg",
+        "微信图片_20260528154357_453_619.jpg",
+        "微信图片_20260528154359_454_619.jpg",
+        "微信图片_20260528154400_455_619.jpg",
+        "微信图片_20260528154402_456_619.jpg",
+        "微信图片_20260528154403_457_619.jpg"
+      ],
+      "note": "标准外壳，适合所有产品展示、微距、商业风场景",
+      "prompts": [
+        {
+          "scene": "tattoo_cartridge",
+          "label": "高冷商业风 — 纯黑背景",
+          "prompt": "Product photography of a tattoo cartridge, macro close-up, side angle shot, commercial product lighting, center composition, shallow depth of field, transparent plastic texture material, clean minimalist style",
+          "keywords": [
+            "macro close-up",
+            "side angle shot",
+            "commercial product lighting",
+            "center composition"
+          ],
+          "camera": "macro close-up",
+          "lighting": "commercial product lighting",
+          "composition": "center composition"
+        },
+        {
+          "scene": "tattoo_cartridge",
+          "label": "极致微距 — 针尖细节",
+          "prompt": "Product photography of a tattoo cartridge, extreme macro, side angle shot, rim lighting, tight framing composition, deep depth of field, brushed metal material, high end commercial style",
+          "keywords": [
+            "extreme macro",
+            "side angle shot",
+            "rim lighting",
+            "tight framing"
+          ],
+          "camera": "extreme macro",
+          "lighting": "rim lighting",
+          "composition": "tight framing"
+        },
+        {
+          "scene": "tattoo_cartridge",
+          "label": "柔光产品展示 — 白背景",
+          "prompt": "Product photography of a tattoo cartridge, detail shot, front angle shot, soft diffused lighting, symmetrical balance composition, deep depth of field, transparent plastic texture material, high end commercial style",
+          "keywords": [
+            "detail shot",
+            "front angle shot",
+            "soft diffused lighting",
+            "symmetrical balance"
+          ],
+          "camera": "detail shot",
+          "lighting": "soft diffused lighting",
+          "composition": "symmetrical balance"
+        },
+        {
+          "scene": "process_shot",
+          "label": "上肤过程 — POV 视角",
+          "prompt": "Action photography of a process shot, handheld shot, artist POV, tattoo workstation lighting, foreground focus composition, selective focus, wet ink reflection material, raw authentic style",
+          "keywords": [
+            "handheld shot",
+            "artist POV",
+            "tattoo workstation lighting",
+            "foreground focus"
+          ],
+          "camera": "handheld shot",
+          "lighting": "tattoo workstation lighting",
+          "composition": "foreground focus"
+        },
+        {
+          "scene": "workstation",
+          "label": "工作台场景 — 搭配机器",
+          "prompt": "Workspace photography of a workstation, workstation shot, artist POV, overhead studio lighting, layered depth composition, deep depth of field, paper towel texture material, documentary realism style",
+          "keywords": [
+            "workstation shot",
+            "artist POV",
+            "overhead studio lighting",
+            "layered depth"
+          ],
+          "camera": "workstation shot",
+          "lighting": "overhead studio lighting",
+          "composition": "layered depth"
+        },
+        {
+          "scene": "promotional",
+          "label": "品牌宣传 — 高级感",
+          "prompt": "Commercial photography of a promotional, medium shot, front angle shot, high key lighting, negative space composition, deep depth of field, professional studio surface material, commercial polished style",
+          "keywords": [
+            "medium shot",
+            "front angle shot",
+            "high key lighting",
+            "negative space"
+          ],
+          "camera": "medium shot",
+          "lighting": "high key lighting",
+          "composition": "negative space"
+        },
+        {
+          "scene": "artist_lifestyle",
+          "label": "纹身师生活 — 氛围感",
+          "prompt": "Lifestyle photography of a artist lifestyle, artist POV, over-the-shoulder shot, moody cinematic lighting, asymmetrical balance composition, shallow depth of field, documentary realism texture material, documentary realism style",
+          "keywords": [
+            "artist POV",
+            "over-the-shoulder shot",
+            "moody cinematic lighting",
+            "asymmetrical balance"
+          ],
+          "camera": "artist POV",
+          "lighting": "moody cinematic lighting",
+          "composition": "asymmetrical balance"
+        },
+        {
+          "scene": "tattoo_cartridge",
+          "label": "产品拆解 — 多个角度",
+          "prompt": "Product photography of a tattoo cartridge, macro close-up, front angle shot, studio lighting, dynamic composition, shallow depth of field, transparent plastic texture material, high end commercial style",
+          "keywords": [
+            "macro close-up",
+            "front angle shot",
+            "studio lighting",
+            "dynamic"
+          ],
+          "camera": "macro close-up",
+          "lighting": "studio lighting",
+          "composition": "dynamic"
+        }
+      ]
+    },
+    {
+      "type": "COG外壳",
+      "images": [
+        "Peach COG-1.jpg",
+        "Peach COG-2.jpg",
+        "Peach COG-3.jpg",
+        "Peach COG-4.jpg",
+        "Peach COG-5.png"
+      ],
+      "note": "COG特殊外壳，展示品牌多样性",
+      "prompts": [
+        {
+          "scene": "tattoo_cartridge",
+          "label": "高冷商业风 — 纯黑背景",
+          "prompt": "Product photography of a tattoo cartridge, macro close-up, side angle shot, commercial product lighting, center composition, shallow depth of field, transparent plastic texture material, clean minimalist style",
+          "keywords": [
+            "macro close-up",
+            "side angle shot",
+            "commercial product lighting",
+            "center composition"
+          ],
+          "camera": "macro close-up",
+          "lighting": "commercial product lighting",
+          "composition": "center composition"
+        },
+        {
+          "scene": "tattoo_cartridge",
+          "label": "极致微距 — 针尖细节",
+          "prompt": "Product photography of a tattoo cartridge, extreme macro, side angle shot, rim lighting, tight framing composition, deep depth of field, brushed metal material, high end commercial style",
+          "keywords": [
+            "extreme macro",
+            "side angle shot",
+            "rim lighting",
+            "tight framing"
+          ],
+          "camera": "extreme macro",
+          "lighting": "rim lighting",
+          "composition": "tight framing"
+        },
+        {
+          "scene": "tattoo_cartridge",
+          "label": "柔光产品展示 — 白背景",
+          "prompt": "Product photography of a tattoo cartridge, detail shot, front angle shot, soft diffused lighting, symmetrical balance composition, deep depth of field, transparent plastic texture material, high end commercial style",
+          "keywords": [
+            "detail shot",
+            "front angle shot",
+            "soft diffused lighting",
+            "symmetrical balance"
+          ],
+          "camera": "detail shot",
+          "lighting": "soft diffused lighting",
+          "composition": "symmetrical balance"
+        },
+        {
+          "scene": "process_shot",
+          "label": "上肤过程 — POV 视角",
+          "prompt": "Action photography of a process shot, handheld shot, artist POV, tattoo workstation lighting, foreground focus composition, selective focus, wet ink reflection material, raw authentic style",
+          "keywords": [
+            "handheld shot",
+            "artist POV",
+            "tattoo workstation lighting",
+            "foreground focus"
+          ],
+          "camera": "handheld shot",
+          "lighting": "tattoo workstation lighting",
+          "composition": "foreground focus"
+        },
+        {
+          "scene": "workstation",
+          "label": "工作台场景 — 搭配机器",
+          "prompt": "Workspace photography of a workstation, workstation shot, artist POV, overhead studio lighting, layered depth composition, deep depth of field, paper towel texture material, documentary realism style",
+          "keywords": [
+            "workstation shot",
+            "artist POV",
+            "overhead studio lighting",
+            "layered depth"
+          ],
+          "camera": "workstation shot",
+          "lighting": "overhead studio lighting",
+          "composition": "layered depth"
+        },
+        {
+          "scene": "promotional",
+          "label": "品牌宣传 — 高级感",
+          "prompt": "Commercial photography of a promotional, medium shot, front angle shot, high key lighting, negative space composition, deep depth of field, professional studio surface material, commercial polished style",
+          "keywords": [
+            "medium shot",
+            "front angle shot",
+            "high key lighting",
+            "negative space"
+          ],
+          "camera": "medium shot",
+          "lighting": "high key lighting",
+          "composition": "negative space"
+        },
+        {
+          "scene": "artist_lifestyle",
+          "label": "纹身师生活 — 氛围感",
+          "prompt": "Lifestyle photography of a artist lifestyle, artist POV, over-the-shoulder shot, moody cinematic lighting, asymmetrical balance composition, shallow depth of field, documentary realism texture material, documentary realism style",
+          "keywords": [
+            "artist POV",
+            "over-the-shoulder shot",
+            "moody cinematic lighting",
+            "asymmetrical balance"
+          ],
+          "camera": "artist POV",
+          "lighting": "moody cinematic lighting",
+          "composition": "asymmetrical balance"
+        },
+        {
+          "scene": "tattoo_cartridge",
+          "label": "产品拆解 — 多个角度",
+          "prompt": "Product photography of a tattoo cartridge, macro close-up, front angle shot, studio lighting, dynamic composition, shallow depth of field, transparent plastic texture material, high end commercial style",
+          "keywords": [
+            "macro close-up",
+            "front angle shot",
+            "studio lighting",
+            "dynamic"
+          ],
+          "camera": "macro close-up",
+          "lighting": "studio lighting",
+          "composition": "dynamic"
+        }
+      ]
+    }
+  ]
+}

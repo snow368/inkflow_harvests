@@ -1,0 +1,60 @@
+{
+  "_meta": {
+    "domain": "materials",
+    "description": "Material property terms — surface, texture, reflection, optical behavior",
+    "usage": "Describe surface qualities rather than naming materials"
+  },
+  "plastic_housing": {
+    "description": "The cartridge outer shell material qualities",
+    "terms": [
+      {"term": "frosted translucent", "prompt_fragment": "frosted translucent plastic, light diffusing through"},
+      {"term": "matte white", "prompt_fragment": "matte white finish, soft non-reflective surface"},
+      {"term": "satin smooth", "prompt_fragment": "satin-smooth plastic with subtle sheen"},
+      {"term": "micro-textured", "prompt_fragment": "micro-textured surface, fine grain visible in macro"},
+      {"term": "semi-transparent", "prompt_fragment": "semi-transparent casing, internal parts vaguely visible"},
+      {"term": "glossy clear", "prompt_fragment": "glossy clear window section, high transparency"}
+    ]
+  },
+  "metal_finish": {
+    "description": "Metal surface qualities on brass ring and needle tip",
+    "terms": [
+      {"term": "polished chrome", "prompt_fragment": "polished chrome, mirror-like reflection"},
+      {"term": "brushed metal", "prompt_fragment": "brushed metal, fine parallel scratch texture"},
+      {"term": "gold brass", "prompt_fragment": "gold brass warm metallic, slight tarnish patina"},
+      {"term": "satin nickel", "prompt_fragment": "satin nickel, soft metallic sheen"},
+      {"term": "mirror finish", "prompt_fragment": "mirror finish, reflecting studio lights"},
+      {"term": "anodized", "prompt_fragment": "anodized metal surface, color-shifting tint"}
+    ]
+  },
+  "needle_tip": {
+    "description": "Needle tip specific material qualities",
+    "terms": [
+      {"term": "stainless steel", "prompt_fragment": "stainless steel needle tips, cool silver tone"},
+      {"term": "beveled point", "prompt_fragment": "beveled needle point, angled cut reflecting light"},
+      {"term": "micro-polished", "prompt_fragment": "micro-polished surface, specular glint at tip"},
+      {"term": "precision ground", "prompt_fragment": "precision-ground bevel, uniform geometric reflection"},
+      {"term": "surgical grade", "prompt_fragment": "surgical-grade steel, flawless surface sheen"}
+    ]
+  },
+  "optical_behavior": {
+    "description": "How light interacts with surfaces",
+    "terms": [
+      {"term": "specular reflection", "prompt_fragment": "sharp specular highlights on metal surface"},
+      {"term": "diffuse reflection", "prompt_fragment": "soft diffuse reflection on matte plastic"},
+      {"term": "translucent glow", "prompt_fragment": "translucent inner glow, light passing through shell"},
+      {"term": "subsurface scatter", "prompt_fragment": "subsurface scattering, light penetrating translucent material"},
+      {"term": "refraction edge", "prompt_fragment": "refraction at edges, prismatic color separation"},
+      {"term": "caustic projection", "prompt_fragment": "light caustics projected through clear sections"}
+    ]
+  },
+  "surface_detail": {
+    "description": "Micro-surface characteristics visible in macro",
+    "terms": [
+      {"term": "mold seam line", "prompt_fragment": "fine mold parting line visible on plastic edge"},
+      {"term": "knurled grip", "prompt_fragment": "knurled texture, cross-hatch grip pattern"},
+      {"term": "laser etched", "prompt_fragment": "laser-etched marking, micro-debossed text"},
+      {"term": "polished to matte gradient", "prompt_fragment": "gradient from polished to matte along surface"},
+      {"term": "orange peel texture", "prompt_fragment": "fine orange peel texture in paint finish"}
+    ]
+  }
+}

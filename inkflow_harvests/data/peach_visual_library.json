@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "source": "7 brands × 183 frames analysis",
+    "generated_at": "2026-06-01"
+  },
+  "top_20_scenes": [
+    {"rank":1, "scene":"成品展示 | 近景 | 戏剧光", "usage":"47.0%", "note":"行业标配，所有品牌都在做"},
+    {"rank":2, "scene":"产品展示 | 近景 | 戏剧光", "usage":"7.1%", "note":"Kwadron主力，Peach核心方向"},
+    {"rank":3, "scene":"成品展示 | 近景 | 棚拍", "usage":"6.0%", "note":"干净明亮风，BigWasp常用"},
+    {"rank":4, "scene":"品牌生活 | 近景 | 戏剧光", "usage":"3.8%", "note":"BlackClaw最爱，氛围感"},
+    {"rank":5, "scene":"成品展示 | 中景 | 戏剧光", "usage":"3.8%", "note":"展示 tattoo 全貌"},
+    {"rank":6, "scene":"产品展示 | 微距 | 戏剧光", "usage":"3.3%", "note":"针尖特写，Cheyenne做得最好"},
+    {"rank":7, "scene":"品牌生活 | 中景 | 戏剧光", "usage":"2.7%", "note":"工作场景氛围"},
+    {"rank":8, "scene":"成品展示 | 近景 | 自然光", "usage":"2.7%", "note":"少见的清新风格"},
+    {"rank":9, "scene":"产品展示 | 近景 | 棚拍", "usage":"2.2%", "note":"白背景商业摄影"},
+    {"rank":10,"scene":"成品展示 | 近景 | 临床光", "usage":"2.2%", "note":"Cheyenne的医疗级风格"},
+    {"rank":11,"scene":"品牌生活 | POV | 戏剧光", "usage":"1.6%", "note":"第一人称视角"},
+    {"rank":12,"scene":"转发作品 | 中景 | 戏剧光", "usage":"1.6%", "note":"纹身师投稿"},
+    {"rank":13,"scene":"梗图 | 近景 | 戏剧光", "usage":"1.6%", "note":"Kwadron/MagicMoon"},
+    {"rank":14,"scene":"操作过程 | 近景 | 戏剧光", "usage":"1.1%", "note":"上肤过程，Cheyenne"},
+    {"rank":15,"scene":"梗图 | 全景 | 戏剧光", "usage":"1.1%", "note":"宽幅梗图"},
+    {"rank":16,"scene":"梗图 | 中景 | 戏剧光", "usage":"1.1%", "note":""},
+    {"rank":17,"scene":"操作过程 | 近景 | 临床光", "usage":"0.5%", "note":"医疗感"},
+    {"rank":18,"scene":"技术教育 | 中景 | 戏剧光", "usage":"0.5%", "note":"Kwadron独有，空白市场"},
+    {"rank":19,"scene":"微距细节 | 微距 | 戏剧光", "usage":"0.5%", "note":"Cheyenne"},
+    {"rank":20,"scene":"微距细节 | 微距 | 临床光", "usage":"0.5%", "note":"Cheyenne"}
+  ],
+  "core_scenes_for_peach": [
+    "产品展示 | 近景 | 戏剧光 | 暗背景 | ← 主力内容，占35%",
+    "产品展示 | 微距 | 戏剧光 | 暗背景 | ← 针尖特写",
+    "品牌生活 | 近景 | 戏剧光 | 暗背景 | ← 氛围感",
+    "技术教育 | 中景 | 棚拍 | 白背景 | ← 知识轮播",
+    "梗图 | 近景 | 戏剧光 | 暗背景 | ← 互动内容",
+    "操作过程 | POV | 自然光 | 工作室 | ← 视频"
+  ],
+  "visual_dna": {
+    "dominant_camera": "close_up (73%)",
+    "dominant_lighting": "dramatic (77%)",
+    "dominant_composition": "dynamic (53%) / center (30%)",
+    "dominant_background": "dark (42%) / blurred (25%) / clean_desk (15%)",
+    "dominant_tone": "premium_trust (50%) + technical_expertise (22%)"
+  }
+}

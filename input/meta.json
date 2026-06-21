@@ -1,0 +1,9 @@
+{
+  "test_01": {
+    "image_path": "input/images/test_01.jpg",
+    "source": "instagram",
+    "platform": "kwadron",
+    "type_hint": "tattoo_cartridge_product_shot",
+    "url": "https://www.instagram.com/p/DXGspjMjTS1/"
+  }
+}

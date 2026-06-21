@@ -1,0 +1,56 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+*.db
+*.db-shm
+*.db-wal
+*.pid
+.env*
+!.env.example
+
+# Runtime artifacts
+data/screenshots/
+data/product_images/
+data/product_photos_preview/
+data/content_scraped/
+data/generated_samples/
+data/hook_frames/
+data/hook_media/
+data/scrape_output/
+data/review_queue/
+data/test_15/
+data/test_needle_batch/
+data/bot_logs/
+data/bot_state/
+data/browser_forum_monitor/
+data/comment_review/
+data/content_review/
+data/elements/
+data/forum_intel/
+temp_test.jpg
+deep_scan_tasks.db
+
+# OS/filesystem
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Chrome / Browser profiles
+.chrome_profile/
+.cloakbrowser_cache/
+venv/
+data/bot_profile/
+data/bot_profiles/
+backups/
+
+# Claude memory / project config
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+venv/

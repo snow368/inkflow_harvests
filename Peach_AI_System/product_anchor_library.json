@@ -1,0 +1,39 @@
+{
+  "peach_cartridge": {
+    "product_name": "Peach Tattoo Cartridge",
+
+    "identity_lock": [
+      "tattoo cartridge",
+      "cartridge grip body",
+      "transparent cartridge housing",
+      "needle module inside cartridge",
+      "professional tattoo equipment"
+    ],
+
+    "geometry": {
+      "orientation": "vertical",
+      "needle_direction": "up",
+      "body_shape": "cylindrical cartridge",
+      "structure_locked": true
+    },
+
+    "poses": {
+      "handheld": "black nitrile glove holding cartridge mid-body, thumb and index finger pinch grip",
+
+      "workbench": "cartridge placed on black tattoo workstation mat surrounded by ink caps",
+
+      "floating": "cartridge floating vertically in center frame",
+
+      "in_use_skin": "cartridge installed in tattoo machine touching skin surface"
+    },
+
+    "forbidden": [
+      "sewing needle",
+      "medical syringe",
+      "hypodermic needle",
+      "pen",
+      "redesigned cartridge",
+      "modified geometry"
+    ]
+  }
+}

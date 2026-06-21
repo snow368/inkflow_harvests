@@ -1,0 +1,22 @@
+[
+  {
+    "id": 1,
+    "sku": "CON0803RL",
+    "name": "Peach Con",
+    "category": "General",
+    "vendor": "",
+    "unit": "Box",
+    "unit_price": 0,
+    "reorder_point": 200,
+    "reorder_qty": 1000,
+    "lead_time_days": 45,
+    "moq": 500,
+    "carton_qty": 100,
+    "source": "manual",
+    "shopify_variant_id": null,
+    "created_at": 1780905438517,
+    "updated_at": 1780911501545,
+    "barcode": "",
+    "image_url": ""
+  }
+]

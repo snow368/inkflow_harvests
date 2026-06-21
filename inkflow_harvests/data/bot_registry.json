@@ -1,0 +1,34 @@
+﻿{
+    "bots":  [
+                 {
+                     "botId":  "bot_wa_01",
+                     "accountId":  "acc_wa_01",
+                     "tier":  "A",
+                     "timezone":  "Asia/Shanghai",
+                     "proxy":  "socks5://127.0.0.1:11081",
+                     "profileDir":  "F:/bots/profiles/bot_wa_01",
+                     "enabled":  true,
+                     "role":  "browse"
+                 },
+                 {
+                     "botId":  "bot_wa_02",
+                     "accountId":  "acc_wa_02",
+                     "tier":  "B",
+                     "timezone":  "Asia/Shanghai",
+                     "proxy":  "socks5://127.0.0.1:11082",
+                     "profileDir":  "F:/bots/profiles/bot_wa_02",
+                     "enabled":  true,
+                     "role":  "like"
+                 },
+                 {
+                     "botId":  "bot_wa_03",
+                     "accountId":  "acc_wa_03",
+                     "tier":  "C",
+                     "timezone":  "Asia/Shanghai",
+                     "proxy":  "socks5://127.0.0.1:11083",
+                     "profileDir":  "F:/bots/profiles/bot_wa_03",
+                     "enabled":  true,
+                     "role":  "comment"
+                 }
+             ]
+}

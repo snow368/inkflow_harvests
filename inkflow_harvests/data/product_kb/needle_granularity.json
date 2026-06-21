@@ -1,0 +1,216 @@
+{
+  "_meta": {
+    "domain": "needle_granularity",
+    "description": "Needle productDetail 颗粒度扩展 — 定义每个字段的可检测性、提取方式、置信度阈值",
+    "version": "1.0",
+    "created": "2026-05-28",
+    "extends": "needle.json"
+  },
+
+  "schema_expansion": {
+    "description": "当前 Hook Vision 的 needleSpec 只有 gauge/count/type/taper 4 个字段。目标是扩展到 7+ 字段，覆盖 cartridge 级别视觉信息。",
+
+    "current_needleSpec": ["gauge", "gaugeMm", "count", "type", "typeName", "taper"],
+
+    "proposed_needleSpec": {
+      "needle_type": {
+        "type": "string",
+        "values": ["RL", "RS", "RM", "M1", "CM", "F", "Bugpin", "SEM", "TRL", "OpenLiner", "Stacked", "unknown"],
+        "detectability": "high (macro) / medium (medium shot) / low (wide shot)",
+        "method": "tip arrangement analysis — circle tight=RL, circle loose=RS, double row=M1, curved=CM, single=F"
+      },
+      "needle_type_name": {
+        "type": "string",
+        "method": "derived from needle_type using NEEDLE_TYPE_NAMES mapping"
+      },
+      "needle_gauge": {
+        "type": "string",
+        "values": ["06", "08", "10", "12", "14", "unknown"],
+        "detectability": "low — requires label text legibility",
+        "method": "read from printed label on cartridge body or packaging text"
+      },
+      "needle_gauge_mm": {
+        "type": "string",
+        "method": "derived from needle_gauge using GAUGE_MAP"
+      },
+      "needle_count": {
+        "type": "string",
+        "values": ["01", "03", "05", "07", "09", "11", "14", "18", "33", "67", "unknown"],
+        "detectability": "medium — can count tips in macro, approximate in medium shots",
+        "method": "count visible needle tips at cartridge opening"
+      },
+      "needle_taper": {
+        "type": "string",
+        "values": ["ST", "MT", "LT", "XLT", "unknown"],
+        "detectability": "low — rarely visible in product shots",
+        "method": "side profile of needle tip required to estimate taper length"
+      },
+      "cartridgeColor": {
+        "type": "string",
+        "values": ["black_gold", "black", "white", "clear", "translucent_blue", "translucent_pink", "translucent_purple", "frosted", "rainbow", "metal", "black_metal", "rainbow_metal", "other"],
+        "detectability": "high — directly visible",
+        "method": "direct observation of housing shell color"
+      },
+      "membraneType": {
+        "type": "string",
+        "values": ["white_standard", "clear_thin", "silicone_high", "none_visible", "unknown"],
+        "detectability": "medium — need base/side view",
+        "method": "check cartridge base for visible membrane color and material"
+      },
+      "connectionType": {
+        "type": "string",
+        "values": ["screw_long", "screw_short", "bayonet", "magnetic", "push_fit", "unknown"],
+        "detectability": "low — need side profile of base",
+        "method": "examine cartridge base side profile for thread vs smooth vs bayonet"
+      },
+      "packagingFormat": {
+        "type": "string",
+        "values": ["individual_blister", "multi_blister", "box_set", "loose_display", "bulk_tray", "unknown"],
+        "detectability": "high — directly visible",
+        "method": "direct observation of how cartridge is packaged"
+      },
+      "brandPrediction": {
+        "type": "string",
+        "values": ["kwadron", "cheyenne", "bigwasp", "blackclaw", "dragonhawk", "tatsoul", "cnc", "magicmoon", "fkirons", "stigma", "unknown"],
+        "detectability": "medium — based on housing color + label style combo",
+        "method": "combine cartridgeColor + label style for brand inference"
+      },
+      "brandConfidence": {
+        "type": "string",
+        "values": ["high", "medium", "low"],
+        "method": "high = color+label match unique brand; medium = color matches 2+ brands; low = ambiguous"
+      },
+      "flowChannelVisible": {
+        "type": "string",
+        "values": ["yes_wide_gap", "yes_tight_gap", "yes_moderate_gap", "no_opaque_housing", "unknown"],
+        "detectability": "medium — requires transparent/translucent housing",
+        "method": "examine clearance between needle bundle and inner housing wall through transparent housing sidewall"
+      },
+      "internalTaperVisible": {
+        "type": "string",
+        "values": ["steep_angle", "shallow_angle", "multi_stage", "not_visible", "unknown"],
+        "detectability": "low — requires side profile of tip plus transparent housing",
+        "method": "examine internal taper/convergence profile at housing tip from side view"
+      }
+    }
+  },
+
+  "detection_confidence_thresholds": {
+    "description": "Confidence levels for each detection method — used to decide which path to trust",
+    "label_text_extraction": {
+      "condition": "text visible and legible on cartridge body or packaging",
+      "confidence": "0.9",
+      "action": "use exact match, parse gauge+count+type+taper from text"
+    },
+    "tip_visual_analysis": {
+      "condition": "needle tip visible in macro or close-up (needle fills >30% of frame or macro shot)",
+      "confidence": {
+        "type_identification": "0.85",
+        "count_estimation_sub_14": "0.7",
+        "count_estimation_over_14": "0.3",
+        "gauge_estimation": "0.2"
+      },
+      "action": "fill type from tip arrangement, count from tip counting, leave gauge/taper as unknown"
+    },
+    "housing_color_analysis": {
+      "condition": "cartridge housing visible (any view)",
+      "confidence": {
+        "color_identification": "0.95",
+        "brand_from_color": "0.7"
+      },
+      "action": "fill cartridgeColor, infer brand from color_brand_map if unique match"
+    },
+    "packaging_analysis": {
+      "condition": "packaging visible in frame",
+      "confidence": {
+        "format": "0.9",
+        "brand_from_packaging": "0.8"
+      },
+      "action": "fill packagingFormat, use packaging labels for additional brand/model confirmation"
+    },
+    "membrane_and_connection": {
+      "condition": "cartridge base visible in angled/side view",
+      "confidence": "0.6",
+      "action": "fill if visible, otherwise unknown"
+    },
+    "no_needle_detail_visible": {
+      "condition": "needle in frame but no detail visible (e.g. needle in machine, wide shot)",
+      "confidence": "0.1",
+      "action": "set type='unknown', all other fields='unknown'"
+    }
+  },
+
+  "productDetail_assembly": {
+    "description": "How to assemble the final productDetail string from the structured fields",
+    "primary_format": "{gauge}{count}{type}_{taper}",
+    "examples": {
+      "full_label": {"input": "label shows '1003RL LT'", "output": "1003RL_LT", "needleSpec": {"gauge":"10","count":"03","type":"RL","taper":"LT"}},
+      "partial_label": {"input": "label shows '3RL' but no gauge", "output": "xx03RL", "needleSpec": {"gauge":"unknown","count":"03","type":"RL","taper":"unknown"}},
+      "tip_only": {"input": "macro: tip shows 3 needles in tight circle", "output": "xx03RL", "needleSpec": {"gauge":"unknown","count":"03","type":"RL","taper":"unknown"}},
+      "type_only": {"input": "medium shot: M1 arrangement visible", "output": "xxxxM1", "needleSpec": {"gauge":"unknown","count":"unknown","type":"M1","taper":"unknown"}},
+      "brand_only": {"input": "black+gold housing identified", "output": "kwadron_hybrid", "needleSpec": null, "cartridgeInfo": {"brandPrediction":"kwadron","cartridgeColor":"black_gold"}},
+      "full_brand_detail": {"input": "black+gold + Macro: 3RL tight circle", "output": "kwadron_1003RL", "needleSpec": {"gauge":"unknown","count":"03","type":"RL","taper":"unknown","brandPrediction":"kwadron"}},
+      "cheyenne_blue": {"input": "translucent blue housing", "output": "cheyenne_safety", "needleSpec": null, "cartridgeInfo": {"brandPrediction":"cheyenne","cartridgeColor":"translucent_blue","membraneType":"silicone_high"}}
+    }
+  },
+
+  "style_to_needle_recommendation_engine": {
+    "description": "Enhanced recommendation logic — not just mapping style to needle type, but considering what DETAIL LEVEL is appropriate for the detected content",
+    "logic": [
+      {
+        "condition": "productCategory=needle AND needleSpec has gauge+count+type",
+        "detail_level": "exact_match",
+        "use_case": "product photo with legible label — can recommend exact same spec",
+        "recommendation_strength": "high"
+      },
+      {
+        "condition": "productCategory=needle AND needleSpec has type only (partial)",
+        "detail_level": "partial",
+        "use_case": "macro photo showing tip arrangement but no label",
+        "recommendation_scope": "recommend the identified type in common gauges",
+        "recommendation_strength": "medium"
+      },
+      {
+        "condition": "productCategory=needle AND brandPrediction is set but needleSpec is null",
+        "detail_level": "brand_only",
+        "use_case": "brand photo showing cartridge color but not tip detail",
+        "recommendation_scope": "recommend brand's most popular needle configurations",
+        "recommendation_strength": "medium"
+      },
+      {
+        "condition": "contentType=process_shot showing tattooing with visible needle",
+        "detail_level": "contextual_inference",
+        "use_case": "tattooing video where cartridge tip briefly visible",
+        "recommendation_scope": "match visible needle characteristics to detected tattoo style",
+        "recommendation_strength": "low"
+      }
+    ]
+  },
+
+  "needle_knowledge_gaps": {
+    "description": "什么是当前 research 已覆盖 vs 未覆盖的 — 参见 needle_knowledge_gaps.json 完整调研。品牌情报/趋势/推理规则参见 needle_intelligence.json。",
+    "covered": [
+      "行业统一命名系统 (XXYYZZ)",
+      "针号与直径对照 (06-14 gauge)",
+      "针型分类完整版 (RL/RS/RM/M1/CM/F/Bugpin/Stacked/SEM/TRL/OpenLiner)",
+      "Taper 类型 (ST/MT/LT/XLT)",
+      "品牌针型映射",
+      "品牌口碑",
+      "品牌视觉特征 (housing color, membrane, connection)",
+      "品质维度 (锋利度/回弹性/一致性等)",
+      "Style ↔ Needle 映射",
+      "流道视觉识别 (inner diameter clearance + internal taper angle)",
+      "膜类型与流道关联 (membrane ↔ flow resistance relationship)",
+      "Needle ↔ Machine 兼容性矩阵 (connectionType 映射通用/专用品牌列表)",
+      "灭菌包装视觉识别 (Gamma dot vs EO Tyvek 区分方法)",
+      "品牌 taper 长度差异 (各品牌 ST/MT/LT/XLT 的 mm 定义不同)",
+      "品牌颜色标记系统 (Eikon/Precision/Cheyenne 的颜色编码规则)",
+      "价格区间与包装视觉关系 (budget/mid/premium 包装特征)"
+    ],
+    "not_covered_yet": [
+      "染色/标记针尖 (needle tip coating) — 照片中不可见，跳过",
+      "Cartridge 外壳材料触感差异 (医疗级 vs 普通塑料) — 视觉无法判断，跳过",
+      "品牌型号映射 (1003RL → 品牌 SKU) — 行业通用编号已够用，跳过"
+    ]
+  }
+}

@@ -1,0 +1,385 @@
+{
+  "_meta": {
+    "domain": "needle_intelligence",
+    "description": "Brand intelligence, market trends, forum-sourced reputation, and decision-making rules for tattoo needle/cartridge analysis",
+    "version": "1.0",
+    "created": "2026-05-28",
+    "sources": [
+      "web research — industry publications, supplier blogs, artist reviews",
+      "product kb — needle_granularity.json, cartridge_visual_rules.json, needle_knowledge_gaps.json"
+    ],
+    "update_instructions": "This file should be updated quarterly or when significant new market information becomes available. Run reddit_sentiment_scraper.py and update brand profiles accordingly."
+  },
+
+  "brand_intelligence": {
+    "kwadron": {
+      "headquarters": "Poland",
+      "positioning": "mid_premium",
+      "price_per_cartridge": "$1.20-$2.00",
+      "quality_reputation": "excellent_consistent",
+      "signature_advantage": "Hybrid multi-stage taper system — steep front-end + shallow rear-end for compound ink control",
+      "membrane": "clear_thin — low resistance design, faster ink delivery",
+      "typical_configs": ["1003RL", "1005RL", "1207M1", "1005RS", "bugpin variants"],
+      "artist_sentiment": {
+        "praise": [
+          "exceptional consistency — very few duds per box",
+          "multi-stage taper gives unique ink control, good for both lining and shading",
+          "clear membrane makes visual inspection easy",
+          "black+gold aesthetic looks premium on social media"
+        ],
+        "complaints": [
+          "price increased 15-20% in 2024-2025",
+          "some artists report occasional QC drift on high-count magnums (>14)",
+          "black housing makes flow channel invisible — can't verify internal design"
+        ],
+        "common_comparisons": "Often compared to Cheyenne Safety as a slightly more affordable but equally consistent alternative. Kwadron preferred by artists who want the multi-stage taper advantage."
+      },
+      "market_position": "Strong in Europe. Growing in US market via online distribution. Popular among mid-to-high-end artists."
+    },
+
+    "cheyenne": {
+      "headquarters": "Germany (Amann Group)",
+      "positioning": "premium",
+      "price_per_cartridge": "$1.50-$2.50+",
+      "quality_reputation": "gold_standard",
+      "signature_advantage": "Capillary reservoir (Capillary series) — 10x ink flow duration via capillary tube in tip. ISO 13485 certified manufacturing.",
+      "membrane": "silicone_high (Safety series) — white translucent, high-performance",
+      "product_lines": {
+        "safety": "translucent blue, ISO 13485, the industry benchmark. Visible white silicone membrane.",
+        "craft": "translucent pink, budget line, fewer configurations. Good value. Made in China, Cheyenne branded.",
+        "capillary": "translucent purple, capillary tube ink reservoir, latest tech. 10x longer ink flow. Premium line."
+      },
+      "artist_sentiment": {
+        "praise": [
+          "industry gold standard — trusted by top artists worldwide",
+          "Safety series membrane sets the benchmark for backflow prevention",
+          "Capillary series genuinely changes ink flow dynamics — less dipping, more consistent saturation",
+          "tight quality control — near-zero duds"
+        ],
+        "complaints": [
+          "premium pricing — 30-50% more than Kwadron",
+          "Craft series (pink) perceived as lower quality despite Cheyenne branding",
+          "proprietary thread causes occasional fit issues on non-Cheyenne machines",
+          "Capillary series has learning curve — ink flow behaves differently"
+        ],
+        "common_comparisons": "The benchmark everyone compares to. 'If it's good enough for Cheyenne's QC, it's good enough for me.' Some artists find them overpriced vs Kwadron."
+      },
+      "market_position": "Global market leader in premium segment. Strongest in Europe and regulated markets (ISO certification matters)."
+    },
+
+    "blackclaw": {
+      "headquarters": "USA",
+      "positioning": "ultra_premium",
+      "price_per_cartridge": "$1.50-$3.00+",
+      "quality_reputation": "boutique_excellent",
+      "signature_advantage": "Metal (aluminum/steel) cartridge housing — unique in the industry. Precision CNC machined. Custom grind taper options.",
+      "membrane": "varies, some models membrane-less (relies on precision fit)",
+      "product_lines": {
+        "wraith": "standard line, black anodized aluminum",
+        "saber": "rainbow PVD titanium finish, premium",
+        "custom": "bespoke taper grinds on request"
+      },
+      "artist_sentiment": {
+        "praise": [
+          "metal housing is indestructible — no cracking, no warping",
+          "custom grind options let artists dial in exact taper preference",
+          "rainbow PVD finish is distinctive and photogenic",
+          "zero wobble — precision fit is unmatched",
+          "American made, small batch quality control"
+        ],
+        "complaints": [
+          "very expensive — 2-3x Kwadron price",
+          "metal housing heavier than plastic — changes machine balance",
+          "can't see flow channel at all (opaque metal)",
+          "membrane-less design concerns some artists about backflow",
+          "limited distribution — hard to get outside US"
+        ],
+        "common_comparisons": "Boutique choice for artists who want the absolute best build quality. Not a daily driver for most due to cost and weight."
+      },
+      "market_position": "Niche premium. Loyal following among high-end US artists. Aspirational brand — many artists want to use them but cost is prohibitive for volume work."
+    },
+
+    "bigwasp": {
+      "headquarters": "China (OEM manufacturer)",
+      "positioning": "budget_to_mid",
+      "price_per_cartridge": "$0.80-$1.00",
+      "quality_reputation": "good_for_price",
+      "signature_advantage": "Transparent housing — full visibility of flow channel, needle, and membrane. Gen 3/4 iterations show rapid improvement.",
+      "membrane": "white_standard",
+      "generation_evolution": {
+        "gen_1": "basic cartridge, occasional QC issues",
+        "gen_2": "improved membrane, better consistency",
+        "gen_3": "signature generation — clear shell, better QC, gained market trust",
+        "gen_4": "latest — further improved membrane, color coding"
+      },
+      "artist_sentiment": {
+        "praise": [
+          "best value proposition — 80% of premium quality at 50% of price",
+          "transparent housing lets you see the needle and flow channel clearly",
+          "Gen 3+ quality is surprisingly consistent",
+          "great for high-volume work where cost matters",
+          "clear shell is photogenic for social media content"
+        ],
+        "complaints": [
+          "Gen 2 and earlier had notable QC issues (barbs, wobble)",
+          "occasional dud in every box (though improving with each generation)",
+          "packaging feels cheap — doesn't match premium brand presentation",
+          "naming/generation confusion — hard to tell Gen 3 from Gen 4 visually"
+        ],
+        "common_comparisons": "'Budget Cheyenne alternative.' Artists recommend Gen 3+ only. The clear housing is genuinely useful for inspection."
+      },
+      "market_position": "Strong in budget segment. Popular for high-volume shops, apprentices, and artists who value see-through housing. Rapidly improving."
+    },
+
+    "dragonhawk_mast": {
+      "headquarters": "China",
+      "positioning": "budget",
+      "price_per_cartridge": "$0.75-$1.10",
+      "quality_reputation": "entry_level_improving",
+      "signature_advantage": "Vast product range. Mast Pro series is their premium line. Rainbow anodized option is visually distinctive.",
+      "membrane": "white_standard",
+      "product_lines": {
+        "mast_pro": "premium line, better QC, $1.00-$1.10/cartridge",
+        "mast_tour": "mid line",
+        "mast_magi": "entry level",
+        "fold_pro": "machine + cartridge bundle"
+      },
+      "artist_sentiment": {
+        "praise": [
+          "best entry-level option for apprentices",
+          "extremely affordable — good for practice on fake skin",
+          "improved significantly over 2023-2025",
+          "rainbow colors look interesting in photos"
+        ],
+        "complaints": [
+          "QC inconsistency — 2-3 duds per box not uncommon",
+          "barbs on needles — must inspect every cartridge before use",
+          "sharper than before but not premium-level sharp",
+          "membrane can leak/spit ink on some batches"
+        ],
+        "common_comparisons": "'Fine for learning, graduate to Kwadron/Cheyenne when you start tattooing clients.' Widely recommended for practice only."
+      },
+      "market_position": "Dominant in beginner/apprentice segment. Large market share in Asia and entry-level Western markets. Improving reputation but still budget."
+    },
+
+    "tatsoul": {
+      "headquarters": "Unknown (marketed internationally)",
+      "positioning": "mid_tier",
+      "price_per_cartridge": "$1.25-$1.75",
+      "quality_reputation": "growing_positive",
+      "signature_advantage": "Envy Gen 2 series — clear shell + colored label ring system for easy identification. Social media friendly aesthetics.",
+      "membrane": "white_standard",
+      "artist_sentiment": {
+        "praise": [
+          "Envy Gen 2 is well-regarded for consistency",
+          "color-coded label system makes configuration identification fast",
+          "clear shell + colored rings look great in content",
+          "good mid-point between budget and premium pricing"
+        ],
+        "complaints": [
+          "less established than Kwadron/Cheyenne — fewer long-term reviews",
+          "distribution limited in some regions"
+        ]
+      },
+      "market_position": "Growing mid-tier brand. Popular on Instagram due to photogenic packaging. Targeting artists who want mid-range quality with visual appeal."
+    },
+
+    "cnc": {
+      "headquarters": "China",
+      "positioning": "budget",
+      "price_per_cartridge": "$0.85-$1.20",
+      "quality_reputation": "mixed",
+      "signature_advantage": "Solid black housing with groove cutout for finger placement — ergonomic design feature. Police series has distinctive branding.",
+      "artist_sentiment": {
+        "praise": ["ergonomic groove design is genuinely useful", "aggressive pricing", "solid black looks professional"],
+        "complaints": ["QC inconsistency", "membrane issues on some batches", "can be confused with Kwadron due to black housing"]
+      }
+    },
+
+    "magicmoon": {
+      "headquarters": "China",
+      "positioning": "budget_to_mid",
+      "quality_reputation": "emerging",
+      "signature_advantage": "Frosted/matte translucent housing — unique visual differentiation from clear/glossy competitors",
+      "artist_sentiment": {
+        "praise": ["frosted finish is distinctive and non-slip", "good value"],
+        "complaints": ["limited track record", "less established distribution"]
+      }
+    }
+  },
+
+  "market_trends": {
+    "2025_2026_major_shifts": [
+      {
+        "trend": "Capillary Reservoir Technology",
+        "description": "Cheyenne Capillary series leads with 10x ink flow via capillary tube. Other brands likely to follow. This is the biggest needle tech advance since membrane standardization.",
+        "impact": "high — changes how artists work (less dipping, different hand speed)",
+        "detection_cue": "Look for translucent purple housing (Cheyenne Capillary) or visible capillary tube inside tip"
+      },
+      {
+        "trend": "15CM (Curved Magnum) Dominance",
+        "description": "15-needle Curved Magnum is becoming the go-to shading/packing configuration. Artists report faster saturation with less trauma.",
+        "impact": "high — affects which configurations are most popular in content/photography",
+        "detection_cue": "CM needle type with count 15 — visible curved arc arrangement"
+      },
+      {
+        "trend": "Ultra-Fine (#06 gauge) Boom",
+        "description": "Driven by micro-realism and fine line tattoo popularity. #06 (0.20mm) and bugpin #08 (0.25mm) growing fast.",
+        "impact": "medium — affects which products are featured as 'new' or 'trending'",
+        "detection_cue": "Labels showing 06XX or 08XX prefix, bugpin branding"
+      },
+      {
+        "trend": "Medical-Grade Materials as Baseline",
+        "description": "316L stainless steel with molybdenum becoming expected. ISO/CE certification now a marketing requirement.",
+        "impact": "medium — brands using medical-grade materials should be highlighted",
+        "detection_cue": "Packaging mentioning '316L', 'surgical steel', 'ISO 13485', 'medical grade'"
+      },
+      {
+        "trend": "Artist-Founded Brands",
+        "description": "Lotus Needles (by Ryan Ussher + TomTom) is the latest. Artists trust artist-founded brands over corporate ones.",
+        "impact": "medium — new brand detection is valuable for competitive intelligence",
+        "detection_cue": "Packaging with artist names, 'co-founded by', 'artist developed'"
+      },
+      {
+        "trend": "Visible Quality Features",
+        "description": "Brands adding visual quality signals: color-coded backstems, clear windows, printed configuration on each cartridge.",
+        "impact": "low_medium — affects packaging/premium perception",
+        "detection_cue": "Color-coded elements, printed labels on individual cartridges"
+      }
+    ],
+    "configuration_popularity": {
+      "lining": ["1003RL", "1005RL", "1203RL", "1205RL", "0801RL_bugpin"],
+      "shading": ["1007RS", "1205RS", "1207RS", "1009RS"],
+      "color_packing": ["1207M1", "1209M1", "1211M1", "1509M1"],
+      "smooth_shading_bng": ["1007CM", "1209CM", "1215CM", "1015CM"],
+      "fine_detail": ["0601RL_bugpin", "0803RL_bugpin", "1001RL"],
+      "geometric_precision": ["1003F", "1005F", "1203F"]
+    }
+  },
+
+  "reasoning_framework": {
+    "description": "How to reason about new needle products using visual + market intelligence",
+    "when_to_activate": [
+      "productCategory = needle_pack or tattoo_cartridges",
+      "a new/unknown brand is detected (brandPrediction = unknown but cartridge visible)",
+      "a known brand shows an unfamiliar visual feature (new shell color, new membrane design)"
+    ],
+
+    "analysis_dimensions": {
+      "brand_positioning": {
+        "question": "Where does this brand sit in the market?",
+        "visual_cues": ["housing material (plastic vs metal)", "packaging quality (blister vs loose)", "color scheme perceived quality"],
+        "intelligence_crossref": "match against brand_intelligence profiles above",
+        "decision_rules": [
+          "metal housing → almost always premium/ultra-premium positioning",
+          "translucent colored shell → likely Cheyenne or premium brand",
+          "clear shell → budget to mid-tier (unless branded Kwadron/TATSoul)",
+          "individual blister + high quality print → mid to premium",
+          "loose/bulk packaging → budget"
+        ]
+      },
+
+      "quality_indicator": {
+        "question": "What quality level does this product signal?",
+        "visual_cues": [
+          "membrane type — silicone_high > clear_thin > white_standard",
+          "housing finish — matte metal > glossy plastic > basic plastic",
+          "label detail — full printed specs vs minimal branding",
+          "needle tip exposure — centered and clean vs off-center"
+        ],
+        "decision_rules": [
+          "silicone_high membrane + colored translucent shell → likely Cheyenne Safety = premium quality",
+          "clear thin membrane + black gold housing → Kwadron = premium quality",
+          "white standard membrane + clear shell → generic/budget",
+          "metal housing → BlackClaw or boutique = ultra-premium"
+        ]
+      },
+
+      "newness_detection": {
+        "question": "Is this a new product or configuration I haven't seen before?",
+        "visual_cues": [
+          "unfamiliar shell color not in known color palettes",
+          "new membrane design (e.g. capillary tube visible)",
+          "packaging mentions 'new', 'gen', '2025', '2026'",
+          "unusual needle count/type combination"
+        ],
+        "decision_rules": [
+          "unfamiliar shell color + new brand name → flag as potential new entrant",
+          "visible capillary tube in tip → Cheyenne Capillary or copy — this is current bleeding edge tech",
+          "unusual gauge/count combo (e.g. 1509CM) → possible new trending configuration",
+          "packaging with 'Lotus', 'SPARK', 'Neebol' → new brand — needs investigation"
+        ]
+      },
+
+      "social_media_fit": {
+        "question": "How well would this product perform as social media content?",
+        "visual_cues": [
+          "color distinctiveness — does the shell color pop against common backgrounds?",
+          "packaging aesthetics — is the box/branding instagrammable?",
+          "lighting reflection — does the housing produce appealing highlights?",
+          "configuration rarity — is this a common config (relatable) or exotic (intriguing)?"
+        ],
+        "decision_rules": [
+          "distinctive shell colors (rainbow, metal, translucent blue) → high visual content potential",
+          "black+gold → universally appealing aesthetic across all audiences",
+          "clear shell → lower visual impact but educational value (see-through = informative content)",
+          "rainbow/multi-color → high engagement on social feeds, especially video"
+        ]
+      },
+
+      "competitive_intelligence": {
+        "question": "What does this product reveal about the brand's strategy or market direction?",
+        "visual_cues": [
+          "is the brand iterating on housing design? (new gen markers)",
+          "are they copying a competitor's visual language?",
+          "is the packaging design improving (moving upmarket)?",
+          "are they adding visual QC signals (color coding, inspection windows)?"
+        ],
+        "decision_rules": [
+          "BigWasp transparent shell + increasing packaging quality → moving upmarket toward mid-tier",
+          "Dragonhawk adding Mast Pro line with better packaging → segmenting into premium sub-brand",
+          "any brand adding color-coded system → investing in user experience (positive signal)",
+          "capillary/visible flow channel design → following Cheyenne's lead in ink flow innovation"
+        ]
+      }
+    },
+
+    "decision_output": {
+      "format": "添加到 product_analysis 输出的 notes/reasoning 字段中",
+      "examples": {
+        "new_brand_detected": "Unbranded clear shell cartridge with capillary tube visible. Not Cheyenne (shell is clear not purple). Potential new entrant copying Cheyenne Capillary design. Quality indicators: white standard membrane (not silicone), basic blister pack. Likely budget copy of premium tech.",
+        "trending_config": "Kwadron 1015CM — 10 gauge 15-count Curved Magnum. This configuration is currently trending (2025-2026) for smooth black and grey shading. High content potential due to CM arrangement being visually distinctive in macro.",
+        "quality_concern": "Dragonhawk Mast Pro — improved packaging suggests they're targeting mid-tier. But membrane still white standard (not silicone). Potential gap between branding and actual quality. Worth watching.",
+        "social_media_win": "BlackClaw rainbow PVD Saber — extremely photogenic. Housing catches light in unique ways. High probability of good engagement on product shots. Configurations: 1003RL (lining) and 1205M1 (packing) — covers both popular use cases."
+      }
+    }
+  },
+
+  "feedback_integration_protocol": {
+    "description": "How to incorporate external feedback and forum intelligence into needle analysis decisions",
+    "feedback_sources": {
+      "reddit": {
+        "subreddits": ["r/tattoo", "r/tattooartists", "r/tattooadvice", "r/sticknpokes"],
+        "signal_types": ["brand recommendations", "quality complaints", "new product mentions", "price discussions"],
+        "update_frequency": "要求运行 reddit_scraper weekly 更新 sentiment data"
+      },
+      "review_sites": ["Trustpilot (brand pages)", "Amazon tattoo supply reviews", "specialty tattoo supply reviews"],
+      "forum_discussions": ["tattooing101.com forums", "shop owner FB groups", "supplier-specific communities"]
+    },
+    "sentiment_classification": {
+      "positive_signals": ["sharp out of box", "consistent", "no duds", "heals fast", "less trauma",
+        "smooth", "zero wobble", "recommended", "switched to", "never going back"],
+      "negative_signals": ["dud", "bent tip", "barbs", "wobble", "inconsistent", "ink spit",
+        "membrane fail", "backflow", "dull", "expensive for what it is", "hit or miss",
+        "bad batch", "QC issue", "not sharp", "leaking"],
+      "price_sensitivity": ["worth every penny", "pricey but worth", "expensive but good",
+        "overpriced", "good for the price", "cheap alternative", "best value"]
+    },
+    "reputation_tracking_rules": [
+      "3+ negative signals from different sources on same brand in 30 days → flag reputation issue",
+      "new brand appearing in 5+ artist conversations in 30 days → trending — track it",
+      "brand improving packaging (visual detection) + forum sentiment stable/positive → moving upmarket",
+      "brand reducing packaging quality + increasing complaints → brand decline"
+    ]
+  }
+}

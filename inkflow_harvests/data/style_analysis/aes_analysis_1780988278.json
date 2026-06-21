@@ -1,0 +1,219 @@
+[
+  {
+    "file": "微信图片_20251204100128_206_619.png",
+    "analysis": {
+      "background": {
+        "type": "studio",
+        "colors": [
+          "#cccccc"
+        ]
+      },
+      "lighting": {
+        "setup": "soft",
+        "direction": "top"
+      },
+      "composition": "center",
+      "mood": "industrial",
+      "color_palette": "vibrant neon greens, pinks, purples, and contrasting black and white text",
+      "product_placement": "surface",
+      "camera_perspective": "eye-level",
+      "key_style_elements": [
+        "anime-style character illustration",
+        "bold graffiti-style typography"
+      ]
+    }
+  },
+  {
+    "file": "微信图片_20251204100129_207_619.png",
+    "analysis": {
+      "background": {
+        "type": "studio",
+        "colors": [
+          "#d3d3d3"
+        ]
+      },
+      "lighting": {
+        "setup": "soft",
+        "direction": "top"
+      },
+      "composition": "flat lay",
+      "mood": "clinical",
+      "color_palette": "vibrant neon pinks, greens, and purples with contrasting black and white text",
+      "product_placement": "surface",
+      "camera_perspective": "eye-level",
+      "key_style_elements": [
+        "bold graphic illustrations",
+        "neon color accents"
+      ]
+    }
+  },
+  {
+    "file": "微信图片_20251204100130_208_619.png",
+    "analysis": {
+      "background": {
+        "type": "studio",
+        "colors": [
+          "#d3d3d3"
+        ]
+      },
+      "lighting": {
+        "setup": "soft",
+        "direction": "top"
+      },
+      "composition": "center",
+      "mood": "clinical",
+      "color_palette": "vibrant with neon pinks, greens, and purples against a neutral gray background",
+      "product_placement": "surface",
+      "camera_perspective": "eye-level",
+      "key_style_elements": [
+        "bold typography",
+        "anime-inspired character art"
+      ]
+    }
+  },
+  {
+    "file": "微信图片_20251204100131_209_619.png",
+    "analysis": {
+      "background": {
+        "type": "studio",
+        "colors": [
+          "#e0e0e0"
+        ]
+      },
+      "lighting": {
+        "setup": "soft",
+        "direction": "ring"
+      },
+      "composition": "angled",
+      "mood": "luxury",
+      "color_palette": "pastel pink, vibrant neon green and purple accents with clean white text",
+      "product_placement": "floating with props",
+      "camera_perspective": "45-degree",
+      "key_style_elements": [
+        "vibrant anime-style artwork",
+        "heart-shaped window on cartridge"
+      ]
+    }
+  },
+  {
+    "file": "微信图片_20251204100132_210_619.png",
+    "analysis": {
+      "background": {
+        "type": "solid",
+        "colors": [
+          "#f0f0f0"
+        ]
+      },
+      "lighting": {
+        "setup": "soft",
+        "direction": "ring"
+      },
+      "composition": "center",
+      "mood": "clinical",
+      "color_palette": "soft pink, transparent, and neutral gray tones with teal accents for text",
+      "product_placement": "floating",
+      "camera_perspective": "eye-level",
+      "key_style_elements": [
+        "minimalist design",
+        "clean typography"
+      ]
+    }
+  },
+  {
+    "file": "微信图片_20251204100133_211_619.png",
+    "analysis": {
+      "background": {
+        "type": "solid",
+        "colors": [
+          "#e6e6e6"
+        ]
+      },
+      "lighting": {
+        "setup": "soft",
+        "direction": "top"
+      },
+      "composition": "center",
+      "mood": "clinical",
+      "color_palette": "Soft pink, metallic silver, teal accents, and neutral gray background",
+      "product_placement": "floating",
+      "camera_perspective": "eye-level",
+      "key_style_elements": [
+        "minimalist design",
+        "clean typography",
+        "product symmetry"
+      ]
+    }
+  },
+  {
+    "file": "微信图片_20251204100134_212_619.png",
+    "analysis": {
+      "background": {
+        "type": "solid",
+        "colors": [
+          "#d3d3d3"
+        ]
+      },
+      "lighting": {
+        "setup": "soft",
+        "direction": "ring"
+      },
+      "composition": "angled",
+      "mood": "clinical",
+      "color_palette": "soft pink and transparent with neutral gray background",
+      "product_placement": "floating",
+      "camera_perspective": "45-degree",
+      "key_style_elements": [
+        "transparent cartridge body",
+        "extended nozzle"
+      ]
+    }
+  },
+  {
+    "file": "微信图片_20251204100135_213_619.png",
+    "analysis": {
+      "background": {
+        "type": "solid",
+        "colors": [
+          "#d3d3d3"
+        ]
+      },
+      "lighting": {
+        "setup": "soft",
+        "direction": "ring"
+      },
+      "composition": "angled",
+      "mood": "luxury",
+      "color_palette": "Pastel pink and clear acrylic with vibrant packaging accents",
+      "product_placement": "floating",
+      "camera_perspective": "45-degree",
+      "key_style_elements": [
+        "heart-shaped window",
+        "pink branding"
+      ]
+    }
+  },
+  {
+    "file": "微信图片_20251204100136_214_619.png",
+    "analysis": {
+      "background": {
+        "type": "studio",
+        "colors": [
+          "#d3d3d3"
+        ]
+      },
+      "lighting": {
+        "setup": "soft",
+        "direction": "ring"
+      },
+      "composition": "angled",
+      "mood": "luxury",
+      "color_palette": "pastel pink, clear acrylic, vibrant packaging with neon accents",
+      "product_placement": "floating",
+      "camera_perspective": "45-degree",
+      "key_style_elements": [
+        "heart-shaped window",
+        "transparent cartridge design"
+      ]
+    }
+  }
+]

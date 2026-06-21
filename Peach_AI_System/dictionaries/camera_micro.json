@@ -1,0 +1,157 @@
+{
+  "_meta": {
+    "domain": "camera_micro",
+    "description": "Micro-level camera adjustments and optical characteristics — fine-tuning the photographic feel beyond basic shot type",
+    "usage": "Pick 1-2 terms for fine visual tuning"
+  },
+  "focus_technique": {
+    "description": "Precise focus behavior and technique",
+    "terms": [
+      {"term": "critical sharp", "prompt_fragment": "critically sharp where it matters, soft elsewhere"},
+      {"term": "soft falloff", "prompt_fragment": "focus falls off gently from sharp center"},
+      {"term": "breathing", "prompt_fragment": "slight lens breathing, focus pulsing subtly"},
+      {"term": "split diopter", "prompt_fragment": "split diopter effect, near and far both in focus"},
+      {"term": "racking", "prompt_fragment": "focus racking from front to back of product"},
+      {"term": "micro contrast", "prompt_fragment": "high micro-contrast, edge definition crisp"}
+    ]
+  },
+  "exposure_character": {
+    "description": "How exposure is handled",
+    "terms": [
+      {"term": "highlight priority", "prompt_fragment": "exposed for highlights, shadows fall to black"},
+      {"term": "shadow priority", "prompt_fragment": "exposed for shadows, highlights slightly blown"},
+      {"term": "ettr", "prompt_fragment": "exposed to the right, maximum shadow detail"},
+      {"term": "low key exposure", "prompt_fragment": "low-key exposure, predominantly dark tones"},
+      {"term": "high key exposure", "prompt_fragment": "high-key exposure, bright and airy"},
+      {"term": "balanced", "prompt_fragment": "perfectly balanced exposure across all tones"}
+    ]
+  },
+  "chromatic_behavior": {
+    "description": "Lens color and light dispersion properties",
+    "terms": [
+      {"term": "warm tint", "prompt_fragment": "subtle warm lens tint"},
+      {"term": "cool tint", "prompt_fragment": "slight cool lens cast"},
+      {"term": "neutral render", "prompt_fragment": "neutral color rendering, accurate"},
+      {"term": "slight CA", "prompt_fragment": "faint chromatic aberration at high contrast edges"},
+      {"term": "no CA", "prompt_fragment": "perfectly corrected, no color fringing"}
+    ]
+  },
+  "frame_dynamics": {
+    "description": "Subtle frame positioning adjustments",
+    "terms": [
+      {"term": "breathing room", "prompt_fragment": "generous breathing room around product"},
+      {"term": "tight crop", "prompt_fragment": "tightly cropped, edge barely visible"},
+      {"term": "off-center tension", "prompt_fragment": "purposefully off-center, asymmetrical tension"},
+      {"term": "leading space", "prompt_fragment": "leading space in the direction product faces"},
+      {"term": "centered perfect", "prompt_fragment": "dead center, perfect symmetry"},
+      {"term": "rule of thirds", "prompt_fragment": "product on left third line"}
+    ]
+  },
+  "bokeh_quality": {
+    "description": "Quality of out-of-focus areas",
+    "terms": [
+      {"term": "creamy bokeh", "prompt_fragment": "creamy smooth bokeh, seamless blur"},
+      {"term": "bubble bokeh", "prompt_fragment": "bubble bokeh, circular highlights in blur"},
+      {"term": "swirly bokeh", "prompt_fragment": "swirly bokeh pattern, vintage lens character"},
+      {"term": "cat-eye bokeh", "prompt_fragment": "cat-eye bokeh, oval blur shapes toward edges"},
+      {"term": "neutral bokeh", "prompt_fragment": "neutral smooth bokeh, unobtrusive"},
+      {"term": "dust specular", "prompt_fragment": "tiny dust speculars visible in bokeh"}
+    ]
+  },
+  "vignette": {
+    "description": "Edge darkening characteristics",
+    "terms": [
+      {"term": "natural falloff", "prompt_fragment": "natural optical vignette, corners slightly darker"},
+      {"term": "heavy vignette", "prompt_fragment": "heavy vignette, dark edges frame the product"},
+      {"term": "no vignette", "prompt_fragment": "zero vignette, uniform brightness edge to edge"},
+      {"term": "radial gradient", "prompt_fragment": "radial light gradient from center outward"}
+    ]
+  },
+  "lens_type": {
+    "description": "Specific lens characteristics and optical compression",
+    "lenses": [
+      {
+        "id": "ln_01",
+        "label": "85mm portrait compression",
+        "tags": ["cinematic"],
+        "usage": "soft background compression look",
+        "prompt_fragment": "85mm lens, gentle background compression, cinematic perspective"
+      },
+      {
+        "id": "ln_02",
+        "label": "macro 1:1 magnification",
+        "tags": ["detail"],
+        "usage": "extreme product detail shots",
+        "prompt_fragment": "1:1 macro magnification, life-size reproduction on sensor"
+      },
+      {
+        "id": "ln_03",
+        "label": "50mm standard field",
+        "tags": ["natural", "neutral"],
+        "usage": "natural perspective close to human eye",
+        "prompt_fragment": "50mm standard lens, natural perspective matching human vision"
+      },
+      {
+        "id": "ln_04",
+        "label": "24mm wide environmental",
+        "tags": ["context", "environmental"],
+        "usage": "showing product in full environment",
+        "prompt_fragment": "24mm wide angle, environmental context with slight edge distortion"
+      },
+      {
+        "id": "ln_05",
+        "label": "100mm macro isolation",
+        "tags": ["macro", "isolation"],
+        "usage": "extreme close-up with working distance",
+        "prompt_fragment": "100mm macro lens, extreme detail with generous working distance"
+      },
+      {
+        "id": "ln_06",
+        "label": "tilt-shift perspective control",
+        "tags": ["creative", "architectural"],
+        "usage": "miniature effect or focus plane control",
+        "prompt_fragment": "tilt-shift lens, selective focus plane angled across product"
+      }
+    ]
+  },
+  "motion_type": {
+    "description": "Camera stability and motion characteristics",
+    "motions": [
+      {
+        "id": "mt_01",
+        "label": "static tripod locked frame",
+        "tags": ["stable"],
+        "usage": "product catalog shot",
+        "prompt_fragment": "locked down on tripod, perfectly static zero motion"
+      },
+      {
+        "id": "mt_02",
+        "label": "handheld micro shake",
+        "tags": ["realism"],
+        "usage": "documentary tattoo workflow feel",
+        "prompt_fragment": "handheld with subtle micro-shake, organic documentary feel"
+      },
+      {
+        "id": "mt_03",
+        "label": "slider dolly smooth",
+        "tags": ["professional", "smooth"],
+        "usage": "controlled lateral motion for video",
+        "prompt_fragment": "slider dolly tracking, smooth controlled lateral movement"
+      },
+      {
+        "id": "mt_04",
+        "label": "turntable rotation",
+        "tags": ["360", "automated"],
+        "usage": "360° product rotation showcase",
+        "prompt_fragment": "product on motorized turntable, smooth 360° rotation"
+      },
+      {
+        "id": "mt_05",
+        "label": "shoulder mount organic",
+        "tags": ["cinematic", "fluid"],
+        "usage": "following artist movement naturally",
+        "prompt_fragment": "shoulder-mounted camera, organic flowing movement following action"
+      }
+    ]
+  }
+}

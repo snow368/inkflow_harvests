@@ -1,0 +1,233 @@
+{
+  "_meta": {
+    "domain": "machine",
+    "description": "纹身机器知识库 — 类型、风格匹配、品牌、规格参数",
+    "version": "1.0",
+    "created": "2026-05-26",
+    "expandable": true
+  },
+
+  "types": {
+    "coil_liner": {
+      "name": "Coil Liner",
+      "description": "电磁线圈机，专门勾线，有力干脆",
+      "stroke": "3.0-4.0mm",
+      "best_for": ["传统勾线", "粗线条", "黑工轮廓"],
+      "weight": "heavy",
+      "noise": "loud",
+      "maintenance": "需要定期调校（弹簧、触点）"
+    },
+    "coil_shader": {
+      "name": "Coil Shader",
+      "description": "电磁线圈机，专门上色/shading",
+      "stroke": "3.5-4.5mm",
+      "best_for": ["大面积上色", "传统 shading"],
+      "note": "比 liner 磁力弱一些，运行更慢"
+    },
+    "rotary_pen": {
+      "name": "Rotary Pen",
+      "description": "旋转电机笔式机，轻便安静，多功能",
+      "stroke": "2.5-4.0mm（可调）",
+      "best_for": ["写实", "黑灰", "细线条", "点刺", "几何"],
+      "weight": "light",
+      "noise": "quiet",
+      "maintenance": "低维护，即插即用"
+    },
+    "rotary_traditional": {
+      "name": "Rotary Traditional（龙门机）",
+      "description": "传统旋转机框，比 pen 有力",
+      "best_for": ["上色", "大面填充"],
+      "note": "部分师认为比 coil 更温和"
+    }
+  },
+
+  "style_mapping": {
+    "realism_bg": {
+      "name": "写实/黑灰",
+      "recommended": "rotary_pen",
+      "stroke": "2.5-3.2mm",
+      "reason": "平滑连续的电机运动，适合渐变叠加，长时间不累",
+      "also_works": "coil（硬边结构部分）"
+    },
+    "traditional": {
+      "name": "传统/老派",
+      "recommended": "coil_liner",
+      "stroke": "3.5-4.0mm",
+      "reason": "电磁脉冲干脆有力，一笔过不拖泥带水",
+      "also_works": "rotary_pen（不想太重的师）"
+    },
+    "color_realism": {
+      "name": "彩色写实",
+      "recommended": "rotary_pen",
+      "stroke": "3.0-3.5mm",
+      "reason": "控制力好，适合多层次彩色叠加"
+    },
+    "geometric": {
+      "name": "几何/线条",
+      "recommended": "rotary_pen",
+      "stroke": "2.5-3.0mm",
+      "reason": "像笔一样控制，低电压稳定出针"
+    },
+    "blackwork": {
+      "name": "黑工/实黑",
+      "recommended": "coil_liner + rotary_pen",
+      "reason": "coil 勾粗线，rotary 填大面积"
+    },
+    "dotwork": {
+      "name": "点刺",
+      "recommended": "rotary_pen",
+      "stroke": "2.5-3.0mm",
+      "reason": "低电压稳定，点距均匀"
+    },
+    "watercolor": {
+      "name": "水彩",
+      "recommended": "rotary_pen",
+      "stroke": "3.0-3.5mm",
+      "reason": "柔和操作，适合稀释墨水扩散"
+    }
+  },
+
+  "visual_dimensions": {
+    "description": "纹身机器视觉特征维度 — 可从产品照片中识别",
+    "bodyShape": {
+      "zh": "机身造型",
+      "en": "Body Shape",
+      "description": "机器整体外形轮廓",
+      "values": {
+        "pen_cylindrical": "笔形圆柱 — FK Irons ONE、Bishop Wand、Cheyenne Sol Nova",
+        "pen_tapered": "笔形锥体 — FK Irons Spektra Xion（流线型）",
+        "boxy_rectangular": "矩形方块 — FK Irons Flux（散热孔方块）",
+        "traditional_frame": "传统线圈机框 — Vlad Blad、Peak（线圈裸露）",
+        "bird_beak": "鸟喙形 — Cheyenne Hawk Pen（前盖尖出）",
+        "engine_fin": "引擎散热鳍 — Cheyenne Thunder"
+      }
+    },
+    "bodyColor": {
+      "zh": "机身颜色",
+      "en": "Body Color",
+      "values": {
+        "black": "纯黑 — Bishop Wand、FK Irons Flux",
+        "black_gold": "黑金 — Kwadron Equalizer（金环点缀）",
+        "rainbow_ano": "彩色阳极氧化 — Dragonhawk（红/蓝/紫/金等）",
+        "gunmetal": "枪灰 — Vlad Blad 金属质感",
+        "silver": "银色 — 部分线圈机",
+        "custom_wrap": "个性化贴膜/涂装 — 限量版"
+      }
+    },
+    "displayType": {
+      "zh": "显示屏",
+      "en": "Display Type",
+      "values": {
+        "led_screen": "LED屏 — FK Irons Spektra Xion（调参可视化）",
+        "led_ring": "LED光环 — Cheyenne Sol Nova（状态指示）",
+        "no_display": "无显示屏 — 传统/简约机型"
+      }
+    },
+    "gripDesign": {
+      "zh": "手柄设计",
+      "en": "Grip Design",
+      "values": {
+        "integrated_standard": "一体化标准 — 机身自带",
+        "integrated_ergonomic": "一体化人体工学 — 握持凹槽",
+        "replaceable_standard": "可更换标准 — 螺纹拆换",
+        "heatable": "可加热 — 冬季舒适握持",
+        "vibration_dampened": "减震 — 降低手部疲劳"
+      }
+    },
+    "connectionType": {
+      "zh": "连接方式",
+      "en": "Connection Type",
+      "values": {
+        "wireless_battery": "无线内置电池 — Bishop Power Wand、FK Irons ONE",
+        "wireless_detach": "无线可拆卸电池 — FK Irons Spektra Xion",
+        "cable_clipcord": "有线clipcord — 传统/通用",
+        "dual": "双模有线+无线 — 灵活切换"
+      }
+    },
+    "motorType": {
+      "zh": "电机类型",
+      "en": "Motor Type",
+      "values": {
+        "brushless": "无刷电机 — 主流高端",
+        "brushed": "有刷电机 — 入门/传统",
+        "coreless": "空心杯 — 极静音/精细控制",
+        "coil": "电磁线圈 — 传统线圈机",
+        "linear": "线性电机 — 新技术方向"
+      }
+    },
+    "sterilizationCompatibility": {
+      "zh": "灭菌方式",
+      "en": "Sterilization",
+      "values": {
+        "autoclavable": "可高温高压灭菌 — 医疗级",
+        "uv_sterilizable": "紫外线灭菌",
+        "wipe_down": "仅表面擦拭 — 不可高温",
+        "full_dissassembly": "可完全拆解灭菌"
+      }
+    },
+    "brandVisualCues": {
+      "description": "各品牌的关键视觉识别特征",
+      "FK Irons": "Spektra Xion → 流线型+LED屏 / Flux → 方形散热孔 / ONE → 简约笔形无屏",
+      "Cheyenne": "Hawk Pen → 鸟喙形前盖 / Sol Nova → 圆润笔形+LED光环 / Thunder → 引擎散热鳍",
+      "Bishop Rotary": "Wand → 纯黑细长笔形 / Power Wand → 带电池底座 / Packer → 短粗有力",
+      "Kwadron Equalizer": "纯黑方形机身 + 金色/红色装饰环",
+      "Dragonhawk": "笔形 + 彩色阳极氧化外壳（红/蓝/紫/金），价格实惠",
+      "Vlad Blad": "手工感 + 木材/碳纤维手柄 + 线圈裸露",
+      "Peak": "传统线圈机 + 无装饰工业风 + 线圈裸露"
+    }
+  },
+
+  "brands": {
+    "fk_irons": {
+      "name": "FK Irons",
+      "country": "USA",
+      "website": "fkirons.com",
+      "popular_models": ["Spektra Xion", "Flux", "FK Irons ONE"],
+      "position": "high_end",
+      "best_for": ["全能", "写实", "细线条"]
+    },
+    "cheyenne": {
+      "name": "Cheyenne",
+      "country": "Germany",
+      "website": "cheyennetattoo.com",
+      "popular_models": ["Solinova", "Hawk Pen", "Thunder"],
+      "position": "high_end",
+      "best_for": ["全能", "黑灰", "写实"]
+    },
+    "bishop_rotary": {
+      "name": "Bishop Rotary",
+      "country": "UK/USA",
+      "popular_models": ["Bishop Wand", "Bishop Packer", "Bishop Liner"],
+      "position": "high_end",
+      "best_for": ["上色（Packer）", "勾线（Liner）"]
+    },
+    "kwadron": {
+      "name": "Kwadron",
+      "country": "Poland",
+      "popular_models": ["Proton Rotary Pen", "Equaliser Spike", "Mikron"],
+      "position": "mid_high",
+      "best_for": ["全能"]
+    },
+    "dragonhawk": {
+      "name": "Dragonhawk / Mast",
+      "country": "China",
+      "popular_models": ["Mast Pro", "Mast Arrow", "Dragonhawk X"],
+      "position": "budget",
+      "best_for": ["入门", "练手", "性价比"]
+    },
+    "vladblad": {
+      "name": "Vlad Blad",
+      "country": "Russia",
+      "popular_models": ["Vlad Blad Avant", "Vlad Blad Pro"],
+      "position": "high_end",
+      "best_for": ["写实", "黑灰"]
+    },
+    "peak": {
+      "name": "Peak / Microbeau",
+      "country": "USA",
+      "popular_models": ["Microbeau Z3", "Peak X"],
+      "position": "high_end",
+      "best_for": ["全能"]
+    }
+  }
+}

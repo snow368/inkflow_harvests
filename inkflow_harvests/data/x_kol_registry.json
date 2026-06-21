@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "description": "X.com KOL 注册表 — 由 scraper 维护，可手动增删",
+    "last_updated": "2026-06-10",
+    "total": 14
+  },
+  "kols": [
+    { "handle": "Alexzartarian", "name": "Alex Zartarian", "category": "saas", "tags": ["coldemail", "outreach"], "priority": 4, "source": "manual", "added_at": "2026-06-10" },
+    { "handle": "LoganTGott", "name": "Logan Gott", "category": "saas", "tags": ["linkedin", "outreach"], "priority": 4, "source": "manual", "added_at": "2026-06-10" },
+    { "handle": "SEOKeval", "name": "SEO Keval", "category": "b2c", "tags": ["ecommerce", "seo"], "priority": 4, "source": "manual", "added_at": "2026-06-10" },
+    { "handle": "kai_cromwell", "name": "Kai Cromwell", "category": "b2c", "tags": ["ecommerce", "blog"], "priority": 3, "source": "manual", "added_at": "2026-06-10" },
+    { "handle": "foley_seo", "name": "Foley SEO", "category": "seo", "tags": ["seo", "analytics"], "priority": 5, "source": "manual", "added_at": "2026-06-10" },
+    { "handle": "davidgquaid", "name": "David Quaid", "category": "seo", "tags": ["seo", "b2b"], "priority": 3, "source": "manual", "added_at": "2026-06-10" },
+    { "handle": "Frontend_Prince", "name": "Frontend Prince", "category": "generic", "tags": ["cro", "uiux"], "priority": 3, "source": "manual", "added_at": "2026-06-10" },
+    { "handle": "denohawari", "name": "Deno Hawari", "category": "seo", "tags": ["seo", "ai"], "priority": 3, "source": "manual", "added_at": "2026-06-10" },
+    { "handle": "Pluvio9yte", "name": "Pluvio", "category": "generic", "tags": ["youtube", "monetization"], "priority": 2, "source": "manual", "added_at": "2026-06-10" },
+    { "handle": "SammyLandix4o", "name": "Sammy Landix", "category": "generic", "tags": ["cro", "conversion"], "priority": 3, "source": "manual", "added_at": "2026-06-10" },
+    { "handle": "cmwalker", "name": "CM Walker", "category": "b2c", "tags": ["local", "leads"], "priority": 3, "source": "manual", "added_at": "2026-06-10" },
+    { "handle": "Max_Alexxander", "name": "Max Alexxander", "category": "b2c", "tags": ["email", "flows"], "priority": 3, "source": "manual", "added_at": "2026-06-10" },
+    { "handle": "LocalSEO_Guy", "name": "Local SEO Guy", "category": "seo", "tags": ["localseo", "maps"], "priority": 4, "source": "manual", "added_at": "2026-06-10" },
+    { "handle": "jasminelocalseo", "name": "Jasmine Local SEO", "category": "seo", "tags": ["localseo"], "priority": 3, "source": "manual", "added_at": "2026-06-10" }
+  ],
+  "_candidates": [],
+  "_blacklist": []
+}

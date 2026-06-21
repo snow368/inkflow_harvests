@@ -1,0 +1,85 @@
+{
+  "brand": "kwadron",
+  "category": "tattoo_supply_product_photography",
+  "summary": "高端工业美学，冷峻专业，高对比光影，渐变背景，材质质感突出",
+
+  "lighting": {
+    "type": "hard_soft_mix",
+    "direction": "upper_left_or_upper_front",
+    "key_characteristics": [
+      "硬光勾勒产品轮廓，锐利高光",
+      "柔和漫射光覆盖主体，避免过曝",
+      "顶部偏前光源，形成均匀高光带",
+      "阴影清晰但不过暗，过渡自然"
+    ],
+    "shadow_style": "clear_but_gradual, natural transition",
+    "highlight_placement": "product_top_and_front, metallic edge glow"
+  },
+
+  "composition": {
+    "angles": [
+      "low_angle_upward (低角度仰拍) - 40%",
+      "low_angle_oblique (低角度斜侧) - 30%",
+      "top_down_flat_lay (俯视平铺) - 20%",
+      "eye_level_closeup (平视特写) - 10%"
+    ],
+    "layout": [
+      "product_centered_vertical",
+      "diagonal_arrangement (对角线排列)",
+      "triangular_grouping (三角形布局)",
+      "grid_matrix (九宫格阵列)"
+    ],
+    "depth_of_field": "shallow_to_medium, background blurred",
+    "background_type": "gradient纯色, no texture, no clutter"
+  },
+
+  "color_palette": {
+    "primary_background": [
+      "black_to_dark_gray_gradient",
+      "blue_to_black_gradient",
+      "dark_blue_gradient"
+    ],
+    "accent_colors": [
+      "gold/metallic (金色金属点缀)",
+      "white_text_over_dark",
+      "brand_color_pop (饱和色点缀)"
+    ],
+    "color_relationship": "冷峻主调 + 金属暖色点缀",
+    "saturation": "product_colors_high, background_low",
+    "contrast": "high_luminance_contrast, warm_cool_balance"
+  },
+
+  "material_rendering": {
+    "plastic_bottle": "细腻磨砂质感, 柔和高光, 半透明光泽",
+    "metal_parts": "拉丝纹理, 镜面反射, 冷峻金属光泽",
+    "glass_cap": "光滑镜面, 环境光反射, 晶莹感",
+    "label": "清晰锐利文字, 微反光, 金属质感",
+    "matte_black": "哑光吸收光线, 无反光, 深邃感"
+  },
+
+  "mood": [
+    "professional",
+    "precise",
+    "premium",
+    "futuristic_tech",
+    "industrial_elegance"
+  ],
+
+  "avoid": [
+    "natural_lighting",
+    "cluttered_background",
+    "warm_homey_feel",
+    "soft_pastel_colors",
+    "casual_snap_photos",
+    "heavy_filters",
+    "text_overlays_on_product"
+  ],
+
+  "prompt_formula": "【角度】+【光源描述】+【产品材质强调】+【渐变背景】+【高对比光影】+【工业美学氛围】",
+
+  "examples": [
+    "低角度仰拍，硬光勾勒墨水瓶轮廓，纯黑渐变背景，瓶身磨砂质感与金属标签冷峻反光，高对比光影",
+    "俯视九宫格平铺，均匀顶光，金色金属针头模块在黑色网格背景上呈现精密工业质感",
+    "低角度斜侧构图，顶部偏前柔和光，手机屏幕与产品对角线布局，深蓝渐变背景，金属边框冷峻光泽"
+  ]
+}

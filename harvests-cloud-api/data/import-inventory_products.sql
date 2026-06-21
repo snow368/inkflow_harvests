@@ -1,0 +1,2 @@
+INSERT OR IGNORE INTO inventory_products (id,sku,name,category,vendor,unit,unit_price,reorder_point,reorder_qty,lead_time_days,moq,carton_qty,source,shopify_variant_id,created_at,updated_at,barcode,image_url) VALUES
+(1,'CON0803RL','Peach Con','General','','Box',0,200,1000,45,500,100,'manual',NULL,1780905438517,1780911501545,'','');

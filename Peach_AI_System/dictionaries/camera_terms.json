@@ -1,0 +1,65 @@
+{
+  "_meta": {
+    "domain": "camera",
+    "description": "Camera-related terms for prompt assembly — shot types, angles, lens, focus, movement",
+    "usage": "Pick 1-2 terms per prompt, combine with lighting and scene"
+  },
+  "shot_type": {
+    "description": "Frame scale relative to product",
+    "terms": [
+      {"term": "extreme macro", "prompt_fragment": "extreme macro, needle tip filling the frame"},
+      {"term": "macro close-up", "prompt_fragment": "macro close-up, product fills 80% of frame"},
+      {"term": "medium close-up", "prompt_fragment": "medium close-up, product with slight breathing room"},
+      {"term": "full product shot", "prompt_fragment": "full product in frame, centered"},
+      {"term": "wide establishing", "prompt_fragment": "wide shot showing product in full environment context"},
+      {"term": "overhead flat lay", "prompt_fragment": "overhead flat lay, camera directly above 90°"},
+      {"term": "45-degree three-quarter", "prompt_fragment": "45° three-quarter view, showing front and side"},
+      {"term": "side profile", "prompt_fragment": "side profile view, product silhouette visible"},
+      {"term": "top-down", "prompt_fragment": "top-down view, directly above product"}
+    ]
+  },
+  "camera_angle": {
+    "description": "Vertical camera angle relative to product",
+    "terms": [
+      {"term": "eye level", "prompt_fragment": "eye-level shot at product height"},
+      {"term": "low angle", "prompt_fragment": "low angle looking up, heroic perspective"},
+      {"term": "high angle", "prompt_fragment": "high angle slightly above, natural viewing"},
+      {"term": "dutch angle", "prompt_fragment": "dutch angle, tilted frame for dynamic feel"},
+      {"term": "birds-eye", "prompt_fragment": "direct overhead bird's-eye view"}
+    ]
+  },
+  "depth_of_field": {
+    "description": "Depth of field and focus characteristics",
+    "terms": [
+      {"term": "extreme shallow dof", "prompt_fragment": "extreme shallow depth of field, only 2mm in focus"},
+      {"term": "shallow dof", "prompt_fragment": "shallow depth of field, background softly blurred"},
+      {"term": "medium dof", "prompt_fragment": "medium depth of field, product fully sharp with slight bg blur"},
+      {"term": "deep dof", "prompt_fragment": "deep depth of field, entire scene sharp front to back"},
+      {"term": "selective focus", "prompt_fragment": "selective focus on brass ring, rest soft"},
+      {"term": "focus pull", "prompt_fragment": "focus pulling from cartridge tip to base"},
+      {"term": "focus stack", "prompt_fragment": "focus stacked, edge-to-edge sharpness"}
+    ]
+  },
+  "lens_feeling": {
+    "description": "Lens characteristics and optical qualities",
+    "terms": [
+      {"term": "macro lens", "prompt_fragment": "macro lens, 1:1 magnification"},
+      {"term": "tilt-shift", "prompt_fragment": "tilt-shift lens effect, miniature feel"},
+      {"term": "wide angle", "prompt_fragment": "wide angle lens, slight perspective distortion"},
+      {"term": "telephoto compression", "prompt_fragment": "telephoto compression, flattened perspective"},
+      {"term": "anamorphic", "prompt_fragment": "anamorphic lens, cinematic flare and oval bokeh"},
+      {"term": "fisheye", "prompt_fragment": "fisheye lens, extreme wide distortion"}
+    ]
+  },
+  "camera_movement": {
+    "description": "Camera motion characteristics (for video/frame extraction)",
+    "terms": [
+      {"term": "locked down", "prompt_fragment": "locked down on tripod, perfectly still"},
+      {"term": "handheld subtle", "prompt_fragment": "subtle handheld micro-movement, organic feel"},
+      {"term": "slider dolly", "prompt_fragment": "slider dolly, slow lateral movement"},
+      {"term": "rotating turntable", "prompt_fragment": "rotating on turntable, 360° product view"},
+      {"term": "push-in", "prompt_fragment": "slow push-in, moving closer to product"},
+      {"term": "pull-back", "prompt_fragment": "pull-back reveal, product shrinking in frame"}
+    ]
+  }
+}

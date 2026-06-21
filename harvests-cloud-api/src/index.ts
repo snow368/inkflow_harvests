@@ -11,7 +11,7 @@ async function neonQuery(connStr: string, query: string): Promise<any[]> {
   const m = connStr.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^/]+)\/neondb/);
   if (!m) throw new Error('Invalid Neon URL format');
   const [, user, pass, host] = m;
-  const basic = Buffer.from(`${user}:${pass}`).toString('base64');
+  const basic = btoa(`${user}:${pass}`);
   const resp = await fetch(`https://${host}/v2/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${basic}` },
@@ -35,6 +35,9 @@ type Variables = {
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 app.use('/*', cors())
+
+// Health check — no DB dependency
+app.get('/_health', (c) => c.json({ ok: true, time: Date.now() }))
 
 // ── Firebase JWT verification ──
 const FIREBASE_PROJECT_ID = 'harvests-3b238'
@@ -766,94 +769,113 @@ app.get('/api/admin/stats', async (c) => {
   }})
 })
 
-// ============ AUTOMATION TASKS (Neon) — bot worker task queue ============
+// ============ BOT ACCOUNT CONFIG (write to Neon, read D1 dashboard) ============
 
-app.get('/api/automation/tasks', async (c) => {
-  const { uid } = c.get('user')
-  const me = await c.env.DB.prepare('SELECT role FROM users WHERE user_id = ?').bind(uid).first() as any
-  const isAdmin = me?.role === 'admin'
-
-  const limit = Math.min(200, Math.max(1, Number(c.req.query('limit')) || 50))
-  const status = (c.req.query('status') || '').trim()
-
+app.put('/api/automation/bot-account', async (c) => {
+  const { botId, firstUsedAt, dailyTaskLimit } = await c.req.json();
+  if (!botId) return c.json({ error: 'botId required' }, 400);
   try {
-    let query = `SELECT id, payload::text as payload, status, run_at, lease_until, leased_by,
-                 attempts, max_attempts, error_reason, created_at, updated_at
-                 FROM automation_tasks WHERE 1=1`
-
-    if (status) query += ` AND status = '${status.replace(/'/g, "''")}'`
-    if (!isAdmin) {
-      query += ` AND (leased_by = 'user_${uid.replace(/'/g, "''")}' OR payload->>'botId' = 'user_${uid.replace(/'/g, "''")}')`
-    }
-    query += ` ORDER BY created_at DESC LIMIT ${Math.min(limit, 200)}`
-
-    const result = await neonQuery(c.env.NEON_DATABASE_URL, query)
-    const tasks = result.map((r: any) => ({
-      id: r.id,
-      payload: (() => { try { return JSON.parse(r.payload) } catch { return r.payload } })(),
-      status: r.status,
-      runAt: Number(r.run_at || 0),
-      leaseUntil: r.lease_until ? Number(r.lease_until) : null,
-      leasedBy: r.leased_by,
-      attempts: Number(r.attempts || 0),
-      maxAttempts: Number(r.max_attempts || 3),
-      errorReason: r.error_reason,
-      createdAt: Number(r.created_at || 0),
-      updatedAt: Number(r.updated_at || 0),
-    }))
-    return c.json({ ok: true, total: tasks.length, source: 'neon', tasks })
+    const sets: string[] = [];
+    if (firstUsedAt !== undefined) sets.push(`first_used_at='${firstUsedAt}'`);
+    if (dailyTaskLimit !== undefined) sets.push(`daily_task_limit=${Number(dailyTaskLimit)}`);
+    if (!sets.length) return c.json({ error: 'no fields to update' }, 400);
+    await neonQuery(c.env.NEON_DATABASE_URL,
+      `UPDATE bot_accounts SET ${sets.join(', ')} WHERE bot_id='${botId}'`);
+    return c.json({ ok: true });
   } catch (e: any) {
-    return c.json({ error: 'Failed to query Neon automation_tasks', details: e?.message || String(e) }, 500)
+    return c.json({ ok: false, error: String(e?.message || e) }, 500);
   }
-})
+});
 
-// ============ AUTOMATION DASHBOARD — per-bot daily stats ============
+// ============ SYNC ENDPOINT (called by VPS server to push data to D1) ============
 
-app.get('/api/automation/stats/dashboard', async (c) => {
+app.post('/api/automation/sync', async (c) => {
+  const token = c.req.header('x-sync-token');
+  if (token !== 'vps-sync-token-2026') return c.json({ error: 'unauthorized' }, 401);
+  const body: any = await c.req.json();
+
+  // Migrate D1 schema if needed
+  try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN first_used_at TEXT').run(); } catch {}
+
+  // Insert/update sync data
+  if (body.counts) {
+    try {
+      await c.env.DB.prepare('DELETE FROM automation_tasks').run();
+      for (const [status, cnt] of Object.entries(body.counts)) {
+        if (Number(cnt) > 0) {
+          await c.env.DB.prepare('INSERT INTO automation_tasks (id, status, created_at) VALUES (?, ?, ?)')
+            .bind(`sync_${status}`, status, Date.now()).run();
+        }
+      }
+    } catch { /* table may not exist yet */ }
+  }
+
+  // Daily stats
+  if (body.daily) {
+    try {
+      await c.env.DB.prepare('DELETE FROM daily_task_stats').run();
+      for (const d of body.daily) {
+        await c.env.DB.prepare('INSERT INTO daily_task_stats (day, status, cnt) VALUES (?, ?, ?)')
+          .bind(d.day, d.status, d.cnt).run();
+      }
+    } catch {}
+  }
+
+  // Bot accounts
+  if (body.accounts) {
+    try {
+      await c.env.DB.prepare('DELETE FROM bot_accounts').run();
+      for (const a of body.accounts) {
+        await c.env.DB.prepare('INSERT INTO bot_accounts (account_id, ig_handle, stage, daily_task_limit, speed_factor, first_used_at) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(a.account_id, a.ig_handle, a.stage, a.daily_task_limit, a.speed_factor, a.first_used_at || null).run();
+      }
+    } catch {}
+  }
+
+  return c.json({ ok: true });
+});
+
+// ============ DASHBOARD (read from D1) ============
+
+app.get('/api/automation/dashboard', async (c) => {
   try {
-    const days = Math.max(1, Math.min(90, Number(c.req.query('days')) || 14));
-    const since = Date.now() - days * 86400000;
-    const query = `
-      SELECT
-        DATE(to_timestamp(created_at / 1000)) as day,
-        COALESCE(payload->>'botId', leased_by, 'unknown') as bot,
-        status,
-        COUNT(*) as cnt
-      FROM automation_tasks
-      WHERE created_at >= ${since}
-      GROUP BY day, bot, status
-      ORDER BY day DESC, bot
-    `;
-    const neonStats = await neonQuery(c.env.NEON_DATABASE_URL, query);
+    // Counts
+    const summary = await c.env.DB.prepare('SELECT status, COUNT(*) as cnt FROM automation_tasks GROUP BY status').all();
+    const counts: Record<string, number> = { pending: 0, leased: 0, done: 0, failed: 0 };
+    for (const r of (summary.results || []) as any) counts[r.status] = Number(r.cnt || 0);
 
+    // Daily
+    const daily = await c.env.DB.prepare('SELECT day, status, cnt FROM daily_task_stats ORDER BY day DESC LIMIT 56').all();
     const byDay: Record<string, any> = {};
-    const byBot: Record<string, any> = {};
-    let total = 0;
-    for (const row of neonStats) {
-      const day = String(row.day).slice(0, 10);
-      const bot = String(row.bot || 'unknown');
-      const st = String(row.status || 'unknown');
-      const cnt = Number(row.cnt || 0);
-      if (!byDay[day]) byDay[day] = { day, pending: 0, leased: 0, done: 0, failed: 0, total: 0 };
-      if (!byBot[bot]) byBot[bot] = { bot, pending: 0, leased: 0, done: 0, failed: 0, total: 0 };
-      byDay[day][st] = (byDay[day][st] || 0) + cnt;
-      byDay[day].total += cnt;
-      byBot[bot][st] = (byBot[bot][st] || 0) + cnt;
-      byBot[bot].total += cnt;
-      total += cnt;
+    for (const r of (daily.results || []) as any) {
+      if (!byDay[r.day]) byDay[r.day] = { day: r.day, pending: 0, leased: 0, done: 0, failed: 0, total: 0 };
+      byDay[r.day][r.status] = Number(r.cnt || 0);
+      byDay[r.day].total += Number(r.cnt || 0);
     }
 
-    const accounts = await neonQuery(c.env.NEON_DATABASE_URL, 'SELECT account_id, ig_handle, stage, daily_task_limit, speed_factor FROM bot_accounts');
+    // Accounts
+    const accounts = await c.env.DB.prepare('SELECT account_id, ig_handle, stage, daily_task_limit, speed_factor, first_used_at FROM bot_accounts').all();
 
     return c.json({
-      ok: true, total,
+      ok: true,
+      total: Object.values(counts).reduce((a: number, b: number) => a + b, 0),
+      counts,
       days: Object.values(byDay).sort((a: any, b: any) => String(b.day).localeCompare(String(a.day))),
-      bots: Object.values(byBot).sort((a: any, b: any) => b.total - a.total),
-      accounts: accounts.map((a: any) => ({ accountId: a.account_id, igHandle: a.ig_handle, stage: a.stage, dailyLimit: a.daily_task_limit, speed: a.speed_factor })),
+      accounts: (accounts.results || []).map((a: any) => ({
+        accountId: a.account_id, igHandle: a.ig_handle, stage: a.stage,
+        dailyLimit: a.daily_task_limit, speed: a.speed_factor,
+        firstUsedAt: a.first_used_at || null,
+      })),
     });
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e) }, 500);
   }
+});
+
+// Also expose legacy path for the frontend
+app.get('/api/automation/stats/dashboard', async (c) => {
+  const resp = await c.req.raw.clone();
+  return (await c.env.ASSETS?.fetch?.(new URL('/api/automation/dashboard', c.req.url))) || c.redirect('/api/automation/dashboard');
 });
 
 export default app

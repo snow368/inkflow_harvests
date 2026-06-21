@@ -1,0 +1,215 @@
+{
+  "_meta": {
+    "domain": "subject_state",
+    "description": "Current state/condition of the tattoo cartridge in the scene — DO NOT modify product design, only change its contextual state",
+    "rule": "State changes are about usage context, not product modification"
+  },
+  "seal_state": {
+    "description": "Packaging and sterility status",
+    "terms": [
+      {"term": "factory sealed", "prompt_fragment": "factory-sealed sterile blister pack, untouched"},
+      {"term": "fresh unwrapped", "prompt_fragment": "freshly unwrapped, sterile packaging just opened"},
+      {"term": "sterile pouch opened", "prompt_fragment": "sterile pouch torn open, cartridge partially exposed"},
+      {"term": "ready to mount", "prompt_fragment": "ready for mounting, removed from packaging"},
+      {"term": "blister pack peeled", "prompt_fragment": "peeled blister pack, cartridge lifted from tray"}
+    ]
+  },
+  "usage_state": {
+    "description": "Deployment stage in tattooing workflow",
+    "terms": [
+      {"term": "unused pristine", "prompt_fragment": "pristine unused cartridge, no contact marks"},
+      {"term": "mounted on machine", "prompt_fragment": "mounted on tattoo machine, ready for work"},
+      {"term": "inked loaded", "prompt_fragment": "ink-loaded, pigment visible inside tip"},
+      {"term": "post-use", "prompt_fragment": "post-use, slight ink residue on membrane"},
+      {"term": "used disposed", "prompt_fragment": "used cartridge set aside for disposal"}
+    ]
+  },
+  "hygiene_zone": {
+    "description": "Sterile vs non-sterile visual cues",
+    "terms": [
+      {"term": "sterile field", "prompt_fragment": "within sterile field, fresh barrier wrap underneath"},
+      {"term": "clean zone", "prompt_fragment": "clean zone, organized and hygienic setup"},
+      {"term": "work area", "prompt_fragment": "active work area, functional but clean"},
+      {"term": "contamination", "prompt_fragment": "visible ink residue, used surface, realistic wear"}
+    ]
+  },
+  "display_purpose": {
+    "description": "Intent of showing the product",
+    "terms": [
+      {"term": "product showcase", "prompt_fragment": "product showcase, clean hero presentation"},
+      {"term": "technical detail", "prompt_fragment": "technical detail view, highlighting construction"},
+      {"term": "size reference", "prompt_fragment": "size reference, scale object alongside"},
+      {"term": "compatibility demo", "prompt_fragment": "compatibility demonstration, shown with machine"},
+      {"term": "unboxing", "prompt_fragment": "unboxing presentation, packaging positioned nearby"},
+      {"term": "review comparison", "prompt_fragment": "side-by-side comparison with other cartridges"}
+    ]
+  },
+
+  "needle_state": {
+    "description": "Current state of needle-skin interaction during tattooing — describes penetration depth and ink behavior",
+    "rule": "Describes needle behavior relative to skin, not cartridge modification",
+    "states": [
+      {
+        "id": "ns_01",
+        "label": "just touching epidermis",
+        "tags": ["contact", "surface"],
+        "usage": "needle barely touches skin surface",
+        "constraints": "no ink diffusion visible"
+      },
+      {
+        "id": "ns_02",
+        "label": "shallow dermis penetration",
+        "tags": ["early insertion"],
+        "usage": "needle enters first skin layer",
+        "constraints": "slight redness only"
+      },
+      {
+        "id": "ns_03",
+        "label": "mid dermis ink deposit",
+        "tags": ["ink flow", "mid depth"],
+        "usage": "ink visibly deposited under skin",
+        "constraints": "visible ink diffusion"
+      },
+      {
+        "id": "ns_04",
+        "label": "deep pigment packing",
+        "tags": ["saturation", "full depth"],
+        "usage": "needle at full working depth, pigment packing",
+        "constraints": "consistent ink flow, slight skin stress"
+      },
+      {
+        "id": "ns_05",
+        "label": "lift off after pass",
+        "tags": ["exit", "post-stroke"],
+        "usage": "needle lifting after completing a pass",
+        "constraints": "ink residue on needle tip visible"
+      },
+      {
+        "id": "ns_06",
+        "label": "hovering above skin",
+        "tags": ["approach", "positioning"],
+        "usage": "needle poised above skin before contact",
+        "constraints": "no skin contact yet"
+      },
+      {
+        "id": "ns_07",
+        "label": "color change wipe",
+        "tags": ["clean", "color switch"],
+        "usage": "needle wiped clean between color changes",
+        "constraints": "ink residue on paper towel visible nearby"
+      }
+    ]
+  },
+
+  "skin_state": {
+    "description": "Visible condition of the skin being tattooed — reaction and healing indicators",
+    "rule": "Describes skin response, not cartridge or machine state",
+    "states": [
+      {
+        "id": "ss_01",
+        "label": "fresh skin redness",
+        "tags": ["irritation"],
+        "usage": "post needle contact skin reaction",
+        "constraints": "no heavy swelling"
+      },
+      {
+        "id": "ss_02",
+        "label": "ink diffusion under skin",
+        "tags": ["subdermal ink"],
+        "usage": "ink spreading under epidermis",
+        "constraints": "visible pigment blur"
+      },
+      {
+        "id": "ss_03",
+        "label": "clean skin prep",
+        "tags": ["pre-tattoo", "disinfected"],
+        "usage": "skin cleaned and shaved, ready for stencil",
+        "constraints": "no ink or redness"
+      },
+      {
+        "id": "ss_04",
+        "label": "stencil applied",
+        "tags": ["guide lines"],
+        "usage": "purple stencil lines visible on skin",
+        "constraints": "stencil intact, not smudged"
+      },
+      {
+        "id": "ss_05",
+        "label": "wipe residue",
+        "tags": ["excess ink", "cleanup"],
+        "usage": "excess ink being wiped, skin slightly stained",
+        "constraints": "paper towel or gauze in frame"
+      },
+      {
+        "id": "ss_06",
+        "label": "vaseline protected",
+        "tags": ["lubrication", "barrier"],
+        "usage": "thin vaseline layer on skin for needle glide",
+        "constraints": "slight shine visible on skin surface"
+      },
+      {
+        "id": "ss_07",
+        "label": "bandaged fresh",
+        "tags": ["post-tattoo", "aftercare"],
+        "usage": "fresh tattoo wrapped in protective film",
+        "constraints": "clear film wrap visible"
+      },
+      {
+        "id": "ss_08",
+        "label": "healing day 1-3",
+        "tags": ["early healing"],
+        "usage": "tattoo in early healing, slight redness persists",
+        "constraints": "no scabbing yet"
+      },
+      {
+        "id": "ss_09",
+        "label": "peeling stage",
+        "tags": ["mid healing"],
+        "usage": "skin peeling, tattoo settling",
+        "constraints": "light flaking visible"
+      },
+      {
+        "id": "ss_10",
+        "label": "fully healed",
+        "tags": ["complete healing"],
+        "usage": "tattoo fully settled, vibrant colors",
+        "constraints": "no redness or peeling"
+      }
+    ]
+  },
+
+  "machine_state": {
+    "description": "Operational state of the tattoo machine relative to the work",
+    "rule": "Describes machine behavior, not machine design",
+    "states": [
+      {
+        "id": "ms_01",
+        "label": "idle parked",
+        "tags": ["resting"],
+        "usage": "machine resting on surface, not in use",
+        "constraints": "clip cord relaxed, machine stable"
+      },
+      {
+        "id": "ms_02",
+        "label": "running in air",
+        "tags": ["testing", "adjusting"],
+        "usage": "machine running with no skin contact",
+        "constraints": "visible vibration, slight motion blur"
+      },
+      {
+        "id": "ms_03",
+        "label": "mid-stroke",
+        "tags": ["active tattooing"],
+        "usage": "machine actively tattooing, needle in skin",
+        "constraints": "ink flowing, skin taut"
+      },
+      {
+        "id": "ms_04",
+        "label": "dipping ink",
+        "tags": ["reload", "interruption"],
+        "usage": "needle tip dipping into ink cap for reload",
+        "constraints": "ink cap in foreground, machine tilted"
+      }
+    ]
+  }
+}

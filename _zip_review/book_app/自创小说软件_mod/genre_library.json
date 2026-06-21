@@ -1,0 +1,50 @@
+[
+  {
+    "name": "都市小说",
+    "description": "以现代城市为主要舞台，强调现实冲突与人物关系。",
+    "children": [
+      {
+        "name": "都市生活小说",
+        "description": "以现实生活、邻里关系、家庭与日常经营为主要舞台。",
+        "children": []
+      },
+      {
+        "name": "都市异能小说",
+        "description": "现代都市框架下叠加超常能力、隐秘规则或特殊职业。",
+        "children": []
+      },
+      {
+        "name": "都市职场小说",
+        "description": "围绕职业成长、组织关系与现实利益推进剧情。",
+        "children": []
+      }
+    ]
+  },
+  {
+    "name": "科幻小说",
+    "description": "以科技变革、未来秩序、宇宙探索或末世生存为核心驱动力。",
+    "children": [
+      {
+        "name": "近未来科幻小说",
+        "description": "基于现实延展的近未来社会、技术和日常冲突。",
+        "children": []
+      },
+      {
+        "name": "末世科幻小说",
+        "description": "灾变、资源危机和秩序重建共同驱动人物选择。",
+        "children": []
+      }
+    ]
+  },
+  {
+    "name": "悬疑",
+    "description": "萨达范德萨",
+    "children": [
+      {
+        "name": "乡野悬疑",
+        "description": "阿第三方",
+        "children": []
+      }
+    ]
+  }
+]

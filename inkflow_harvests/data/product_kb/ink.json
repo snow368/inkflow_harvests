@@ -1,0 +1,217 @@
+{
+  "_meta": {
+    "domain": "ink",
+    "description": "纹身墨水知识库 — 品牌、风格匹配、类型、品质特征",
+    "version": "1.0",
+    "created": "2026-05-26",
+    "expandable": true
+  },
+
+  "types": {
+    "black_liner": {
+      "name": "Lining Black",
+      "description": "勾线专用黑墨，流动性好，不堵针",
+      "key_brands": ["Dynamic Black", "Panthera Black Gold", "Eternal Lining Black"]
+    },
+    "black_shading": {
+      "name": "Shading Black / Grey Wash",
+      "description": "灰度洗色/稀释黑墨，平滑过渡",
+      "key_brands": ["Dynamic Ganga Black", "Panthera Smooth Series", "Starbrite Lunar Graywash"]
+    },
+    "color_packing": {
+      "name": "Color Packing",
+      "description": "高浓度彩色颜料，饱和度高",
+      "key_brands": ["Eternal Ink", "Radiant Colors Evolved", "Starbrite"]
+    },
+    "white": {
+      "name": "White Ink",
+      "description": "白色墨水，用于高光/调色",
+      "key_brands": ["Eternal White", "Dynamic White"]
+    }
+  },
+
+  "style_mapping": {
+    "realism_bg": {
+      "name": "写实/黑灰",
+      "recommended": ["Dynamic Ganga Black", "Panthera Smooth Set", "Starbrite Lunar Graywash"],
+      "reason": "必须平滑过渡不起灰，wash 后不发蓝"
+    },
+    "traditional": {
+      "name": "传统/老派",
+      "recommended": ["Dynamic Black", "Eternal Ink"],
+      "reason": "Dynamic 黑得正、Eternal 颜色饱和"
+    },
+    "color_realism": {
+      "name": "彩色写实",
+      "recommended": ["Eternal Ink", "Starbrite Draz Series"],
+      "reason": "色域广、浓度足，多种肤色都适用"
+    },
+    "blackwork": {
+      "name": "黑工/实黑",
+      "recommended": ["Dynamic Black", "Panthera Black Tribal XXX"],
+      "reason": "极致黑、持久不褪色、大面积均匀"
+    },
+    "geometric": {
+      "name": "几何/线条",
+      "recommended": ["Dynamic Black", "Panthera Black Gold"],
+      "reason": "线条要锐利不扩散"
+    },
+    "dotwork": {
+      "name": "点刺",
+      "recommended": ["Dynamic Black", "Panthera Black Gold"],
+      "reason": "一致性好，点距均匀"
+    },
+    "watercolor": {
+      "name": "水彩",
+      "recommended": ["Eternal Ink", "Radiant Colors Evolved"],
+      "reason": "稀释后色彩保持好，不分离"
+    }
+  },
+
+  "brands": {
+    "dynamic": {
+      "name": "Dynamic",
+      "country": "USA",
+      "position": "industry_standard",
+      "best_for": ["Black", "Grey Wash"],
+      "notable": ["Dynamic Black — 行业标杆黑墨", "Dynamic Ganga Black — 写实/肖像特调"],
+      "quality": "流动性好、愈合后不偏蓝、性价比高"
+    },
+    "eternal": {
+      "name": "Eternal Ink",
+      "country": "USA",
+      "position": "premium_color",
+      "best_for": ["Color Packing", "Color Realism"],
+      "notable": ["色域最广、色素浓度最高、多种肤色友好"],
+      "quality": "浓稠、饱和度极高、适合专业上色"
+    },
+    "panthera": {
+      "name": "Panthera",
+      "country": "Italy",
+      "position": "premium_black",
+      "best_for": ["Blackwork", "Realism"],
+      "notable": ["Black Gold — 黑金顶级黑墨", "Smooth Set — Ralf Nonnweiler 联名写实系列"],
+      "quality": "超细颜料、哑光质感、愈合后不发灰"
+    },
+    "starbrite": {
+      "name": "Starbrite",
+      "country": "USA",
+      "position": "premium_specialist",
+      "best_for": ["Realism", "Portrait", "Floral"],
+      "notable": ["签名系列（与顶级师联名）", "Draz Palaming — 彩色写实", "Lunar Graywash — 灰度套装"],
+      "quality": "风格特化，每个系列由特定风格大师调色"
+    },
+    "radiant": {
+      "name": "Radiant Colors Evolved",
+      "country": "USA",
+      "position": "premium_color",
+      "best_for": ["Color", "Neo-trad"],
+      "quality": "纯色未稀释，颜色鲜艳持久，REACH 合规"
+    },
+    "wormhole": {
+      "name": "Wormhole",
+      "country": "USA",
+      "position": "mid_range",
+      "best_for": ["Black", "性价比"],
+      "notable": ["WormholePro Endless Black"],
+      "quality": "对比 Dynamic 稍浓，性价比不错"
+    },
+    "unistar": {
+      "name": "Unistar (Kwadron)",
+      "country": "Poland",
+      "position": "premium_europe",
+      "parent_brand": "Kwadron",
+      "best_for": ["Color", "European market"],
+      "products": ["Unistar Colors Ink 30ml", "Inkarnation Numb numbing foam", "SkinStitch aftercare"],
+      "notable": ["REACH合规欧洲标准", "高色素浓度不褪色", "与Kwadron针头搭配优化"],
+      "quality": "波兰制造，REACH合规，色素浓度高，流动性佳",
+      "formats": ["30ml瓶装"],
+      "visual_cues": "黑色瓶身+彩色标签，标签上有UNISTAR COLORS字样和Kwadron logo"
+    }
+  },
+
+  "dm_recommendation": {
+    "realism_bg": "你做黑灰写实的话，Dynamic Ganga Black 或 Panthera Smooth Set 是顶级师首选，wash 后过渡自然不发灰。",
+    "traditional": "传统风格推荐 Dynamic Black 勾线 + Eternal Ink 上色，经典搭配。",
+    "color_realism": "彩色写实推荐 Eternal Ink 或 Starbrite Draz 系列，色域广饱和度高。",
+    "blackwork": "大面积黑工推荐 Panthera Black Gold 或 Dynamic Black，黑得正黑得久。",
+    "geometric": "几何线条推荐 Dynamic Black 或 Panthera Black Gold，线条锐利不扩散。",
+    "europe_ink": "你在欧洲的话看看 Kwadron 的 Unistar 墨水，波兰产 REACH 合规，色素浓度高还不贵。"
+  },
+
+  "bottle_dimensions": {
+    "description": "墨水瓶视觉特征维度 — 可从产品照片中识别",
+    "bodyShape": {
+      "zh": "瓶身形状",
+      "en": "Bottle Body Shape",
+      "values": {
+        "cylindrical": "圆柱形 — Dynamic、Radiant 等",
+        "square": "方型 — Intenze 标志性方瓶",
+        "tapered": "锥形 — World Famous 个性锥形瓶",
+        "slim_round": "细圆瓶 — 部分限量/联名款",
+        "squeeze": "挤压瓶/喷罐 — World Famous 喷罐"
+      }
+    },
+    "bodyColor": {
+      "zh": "瓶身颜色",
+      "en": "Bottle Body Color",
+      "description": "瓶身主色，品牌识别的关键特征",
+      "values": {
+        "white": "白色 — Dynamic、Radiant、Starbrite 部分系列",
+        "black": "黑色 — Panthera 磨砂黑、Unistar 黑瓶",
+        "translucent": "半透明 — Intenze、Eternal 部分系列",
+        "dark": "深色 — Eternal 矮胖深色瓶",
+        "silver": "银色 — Wormhole Pro",
+        "clear": "透明 — 部分展示瓶"
+      }
+    },
+    "capType": {
+      "zh": "瓶盖类型",
+      "en": "Cap / Closure Type",
+      "values": {
+        "dropper": "滴管式 — 精确控量",
+        "pump": "按压泵 — 快速取墨",
+        "screw_cap": "螺旋盖 — 最常见标准",
+        "flip_top": "翻盖 — 方便单手操作",
+        "spray": "喷头 — World Famous 喷罐",
+        "nozzle": "尖嘴 — 细口设计"
+      }
+    },
+    "labelDesign": {
+      "zh": "标签设计类",
+      "en": "Label Design",
+      "description": "标签视觉风格，品牌识别依据",
+      "styles": {
+        "colored_band": "彩色色带/色条 — Intenze 小圆标签、Unistar 彩色色块",
+        "full_color": "全彩印刷 — Eternal 彩色标签",
+        "minimal": "简约 — Panthera 金/银文字",
+        "logo_centric": "以logo为中心 — World Famous 骷髅logo",
+        "gradient": "渐变 — Starbrite 系列标识",
+        "spectrum_ring": "光谱色环 — Radiant Colors 标志性标签"
+      }
+    },
+    "size": {
+      "zh": "常见容量",
+      "en": "Common Sizes",
+      "values": {
+        "15ml": "15ml — 试用/小瓶",
+        "30ml": "30ml — Unistar 标准",
+        "1oz": "1oz (~30ml) — 行业标准",
+        "2oz": "2oz (~60ml) — 常用大瓶",
+        "4oz": "4oz (~120ml) — 大容量",
+        "8oz": "8oz (~240ml) — 超大"
+      }
+    },
+    "brandVisualCues": {
+      "Dynamic": "白色圆柱瓶 + 红/黑标签 + 'Dynamic' 粗体字",
+      "Eternal": "矮胖深色瓶 + 全彩标签 + 'Eternal Ink' 标志",
+      "Panthera": "纯黑磨砂圆柱瓶 + 金/银色标签 + 'Black Gold' / 'Smooth' 系列名",
+      "World Famous": "个性锥形瓶或喷罐 + 鲜艳色彩 + 骷髅logo",
+      "Intenze": "方型半透明瓶 + 标志性小圆彩色标签",
+      "Starbrite": "黑/白瓶身 + 渐变色系列标识 + 'Draz' / 'Lunar' 系列名",
+      "Radiant Colors": "白色瓶身 + 彩虹光谱色环标签",
+      "Unistar": "黑色瓶身 + 彩色色块标签 + 'UNISTAR COLORS' + Kwadron logo",
+      "Wormhole": "白/银瓶身 + 'WormholePro' 标识"
+    }
+  }
+}

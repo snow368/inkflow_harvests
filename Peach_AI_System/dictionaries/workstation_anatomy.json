@@ -1,0 +1,186 @@
+{
+  "_meta": {
+    "domain": "workstation_anatomy",
+    "description": "Tattoo workstation elements — surfaces, barriers, tools, and spatial layout",
+    "usage": "Use these to build realistic tattoo workspace scenes"
+  },
+  "surface_type": {
+    "description": "Primary work surface material",
+    "terms": [
+      {"term": "black matte workstation", "prompt_fragment": "black matte workstation surface, non-reflective"},
+      {"term": "stainless steel table", "prompt_fragment": "stainless steel table, clinical reflective surface"},
+      {"term": "carbon fiber mat", "prompt_fragment": "carbon fiber textured mat, high-tech grip surface"},
+      {"term": "clinical white laminate", "prompt_fragment": "white clinical laminate, clean bright surface"},
+      {"term": "rubber anti-slip mat", "prompt_fragment": "black rubber anti-slip mat, subtle diamond pattern"},
+      {"term": "wooden desk surface", "prompt_fragment": "warm wooden desk, natural grain visible"},
+      {"term": "metal utility cart", "prompt_fragment": "metal utility cart top, wire shelf texture"},
+      {"term": "black acrylic sheet", "prompt_fragment": "glossy black acrylic, mirror-like reflection"}
+    ]
+  },
+  "barrier_cover": {
+    "description": "Disposable protective covering on work surface",
+    "terms": [
+      {"term": "black dental bib", "prompt_fragment": "black dental bib paper, subtle crinkle texture"},
+      {"term": "plastic barrier wrap", "prompt_fragment": "transparent plastic barrier wrap, tight stretched film"},
+      {"term": "paper towel layer", "prompt_fragment": "layered white paper towels, soft absorbent texture"},
+      {"term": "medical blue sheet", "prompt_fragment": "blue medical protective sheet, disposable drape"},
+      {"term": "absorbent pad", "prompt_fragment": "blue-backed absorbent pad, padded cushion layer"},
+      {"term": "clean clinical drape", "prompt_fragment": "fresh white clinical drape, crisp unwrinkled fabric"}
+    ]
+  },
+  "adjacent_tools": {
+    "description": "Tools commonly visible alongside the cartridge",
+    "terms": [
+      {"term": "ink caps", "prompt_fragment": "silicone ink caps in a row, small colored dots"},
+      {"term": "tattoo machine", "prompt_fragment": "tattoo machine parked on surface, clip cord trailing"},
+      {"term": "power supply", "prompt_fragment": "power supply unit, screen showing voltage"},
+      {"term": "ink bottles", "prompt_fragment": "ink bottles in background, label colors visible"},
+      {"term": "transfer paper", "prompt_fragment": "stencil transfer paper with purple design visible"},
+      {"term": "gauze pads", "prompt_fragment": "stacked sterile gauze pads, soft white texture"},
+      {"term": "gloves package", "prompt_fragment": "glove box open, nitrile gloves protruding"},
+      {"term": "tweezers forceps", "prompt_fragment": "stainless steel tweezers laid parallel"},
+      {"term": "vaseline pot", "prompt_fragment": "small vaseline pot, reflective white lid"},
+      {"term": "ruler scale", "prompt_fragment": "metal ruler providing scale reference"}
+    ]
+  },
+  "spatial_depth": {
+    "description": "Depth layers in the workspace",
+    "terms": [
+      {"term": "single layer flat", "prompt_fragment": "single depth layer, all elements in one plane"},
+      {"term": "two-layer depth", "prompt_fragment": "two-layer depth, product in foreground, tools behind"},
+      {"term": "multi-layer depth", "prompt_fragment": "multi-layer workspace, three visible depth planes"},
+      {"term": "deep perspective", "prompt_fragment": "deep table perspective, surface receding into distance"}
+    ]
+  },
+  "workflow_stage": {
+    "description": "Implied stage of tattoo workflow",
+    "terms": [
+      {"term": "preparation", "prompt_fragment": "preparation phase, tools being arranged before procedure"},
+      {"term": "during work", "prompt_fragment": "mid-session, active workflow with natural disarray"},
+      {"term": "clean up", "prompt_fragment": "post-work cleanup, used cartridges set aside"},
+      {"term": "product photography", "prompt_fragment": "product photography setup, staged for social media"}
+    ]
+  },
+  "table_obstruction": {
+    "description": "How the table edge interacts with the frame",
+    "terms": [
+      {"term": "table edge visible", "prompt_fragment": "workstation edge across lower frame"},
+      {"term": "full table", "prompt_fragment": "full table surface visible, spacious layout"},
+      {"term": "table corner", "prompt_fragment": "table corner entering from bottom right"},
+      {"term": "no surface", "prompt_fragment": "no surface visible, product seems suspended"}
+    ]
+  },
+  "table_type": {
+    "description": "Specific table/workstation types for tattoo setups",
+    "types": [
+      {
+        "id": "wt_01",
+        "label": "stainless steel workstation",
+        "tags": ["metal", "clean"],
+        "usage": "clinical tattoo studio setup",
+        "prompt_fragment": "stainless steel workstation surface, sterile clinical environment"
+      },
+      {
+        "id": "wt_02",
+        "label": "black silicone mat table",
+        "tags": ["grip", "mat"],
+        "usage": "anti-slip tattoo working surface",
+        "prompt_fragment": "black silicone mat table, non-slip textured surface"
+      },
+      {
+        "id": "wt_03",
+        "label": "wooden tattoo desk",
+        "tags": ["warm", "studio"],
+        "usage": "home studio or traditional shop setup",
+        "prompt_fragment": "warm wooden desk, natural grain visible with subtle wear"
+      },
+      {
+        "id": "wt_04",
+        "label": "height-adjustable clinic bed tray",
+        "tags": ["medical", "adjustable"],
+        "usage": "mobile workstation beside client bed",
+        "prompt_fragment": "adjustable metal tray table beside treatment bed"
+      },
+      {
+        "id": "wt_05",
+        "label": "acrylic light box surface",
+        "tags": ["glow", "backlit"],
+        "usage": "creative photography backlit setup",
+        "prompt_fragment": "translucent acrylic light box surface, soft glow beneath product"
+      }
+    ]
+  },
+  "surface_state": {
+    "description": "Current condition of the workstation covering",
+    "states": [
+      {
+        "id": "ws_01",
+        "label": "fully covered protective sheet",
+        "tags": ["clean", "disposable"],
+        "usage": "hygienic setup covering entire table",
+        "prompt_fragment": "full table covered with fresh disposable protective sheet, crisp and clean"
+      },
+      {
+        "id": "ws_02",
+        "label": "partial cloth drape",
+        "tags": ["natural", "messy-real"],
+        "usage": "real working studio environment",
+        "prompt_fragment": "partially draped cloth cover, slightly wrinkled from use"
+      },
+      {
+        "id": "ws_03",
+        "label": "paper towel scatter",
+        "tags": ["disposable", "practical"],
+        "usage": "quick wipe surface for active tattooing",
+        "prompt_fragment": "layered paper towels spread across work area, slightly crumpled"
+      },
+      {
+        "id": "ws_04",
+        "label": "barrier film wrapped",
+        "tags": ["sterile", "clinical"],
+        "usage": "medical-grade hygiene preparation",
+        "prompt_fragment": "transparent barrier film tightly wrapped around entire surface"
+      }
+    ]
+  },
+  "ink_cap_layout": {
+    "description": "How ink caps are arranged on the workstation",
+    "layouts": [
+      {
+        "id": "ic_01",
+        "label": "clustered left side arrangement",
+        "tags": ["organized"],
+        "usage": "ink caps grouped near working hand",
+        "prompt_fragment": "ink caps clustered on left side, organized by color in close grouping"
+      },
+      {
+        "id": "ic_02",
+        "label": "scattered workflow layout",
+        "tags": ["active-use"],
+        "usage": "real-time tattoo process setup",
+        "prompt_fragment": "ink caps scattered naturally across work area, some with ink residue"
+      },
+      {
+        "id": "ic_03",
+        "label": "linear row arrangement",
+        "tags": ["ordered", "systematic"],
+        "usage": "showcase or instructional photography",
+        "prompt_fragment": "ink caps arranged in a straight row, evenly spaced"
+      },
+      {
+        "id": "ic_04",
+        "label": "paired with machine setup",
+        "tags": ["functional"],
+        "usage": "real work configuration showing tool relationship",
+        "prompt_fragment": "ink caps positioned beside tattoo machine, ready for dipping"
+      },
+      {
+        "id": "ic_05",
+        "label": "single ink cap focus",
+        "tags": ["minimal", "macro"],
+        "usage": "detail shot emphasizing ink color and cap texture",
+        "prompt_fragment": "single ink cap as foreground element, macro detail of ink surface"
+      }
+    ]
+  }
+}

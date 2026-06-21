@@ -1,0 +1,1654 @@
+[
+  {
+    "handle": "cheyennetattooequipment",
+    "exists": true,
+    "name": "cheyennetattooequipment",
+    "bio": "Notifications",
+    "category": "general_supply"
+  },
+  {
+    "handle": "cheyennetattoo",
+    "exists": true,
+    "name": "cheyennetattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "cheyenne_professional",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "fkirons",
+    "exists": true,
+    "name": "fkirons",
+    "bio": "Notifications",
+    "category": "machine"
+  },
+  {
+    "handle": "fkironsofficial",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "fk_irons",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "bishoprotary",
+    "exists": true,
+    "name": "bishoprotary",
+    "bio": "Notifications",
+    "category": "machine"
+  },
+  {
+    "handle": "bishop_rotary",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "bishop_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "kwadron",
+    "exists": true,
+    "name": "kwadron",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "kwadronofficial",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "intenzetattoo",
+    "exists": true,
+    "name": "intenzetattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "intenzetattooink",
+    "exists": true,
+    "name": "intenzetattooink",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "intenze_ink",
+    "exists": true,
+    "name": "intenze_ink",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "stigmarotary",
+    "exists": true,
+    "name": "stigmarotary",
+    "bio": "Notifications",
+    "category": "machine"
+  },
+  {
+    "handle": "stigmatattoosupply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "stigma_tattoo",
+    "exists": true,
+    "name": "stigma_tattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "dragonhawktattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "dragonhawkofficial",
+    "exists": true,
+    "name": "dragonhawkofficial",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "dragonhawk_global",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "workhorseirons",
+    "exists": true,
+    "name": "workhorseirons",
+    "bio": "Notifications",
+    "category": "machine"
+  },
+  {
+    "handle": "workhorse_irons",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "masttattoo",
+    "exists": true,
+    "name": "masttattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "mast_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "masttattoosupply",
+    "exists": true,
+    "name": "masttattoosupply",
+    "bio": "Notifications",
+    "category": "general_supply"
+  },
+  {
+    "handle": "solongtattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "solong_tattoo",
+    "exists": true,
+    "name": "solong_tattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "eikondevice",
+    "exists": true,
+    "name": "eikondevice",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "eikontattoo",
+    "exists": true,
+    "name": "eikontattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "eikon_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "elitetattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "elite_tattoo_supply",
+    "exists": true,
+    "name": "elite_tattoo_supply",
+    "bio": "Notifications",
+    "category": "general_supply"
+  },
+  {
+    "handle": "viciousink",
+    "exists": true,
+    "name": "viciousink",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "vicious_ink",
+    "exists": true,
+    "name": "vicious_ink",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "inkjecta",
+    "exists": true,
+    "name": "inkjecta",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "inkjecta_tattoo",
+    "exists": true,
+    "name": "inkjecta_tattoo",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "young_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "youngtatt",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "neotat",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "neotat_official",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "criticaltattoo",
+    "exists": true,
+    "name": "criticaltattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "critical_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "fusiontattoo",
+    "exists": true,
+    "name": "fusiontattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "fusion_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tatsoul",
+    "exists": true,
+    "name": "tatsoul",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tatsoul_official",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "eternalink",
+    "exists": true,
+    "name": "eternalink",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "eternal_tattoo_ink",
+    "exists": true,
+    "name": "eternal_tattoo_ink",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "eternaltattoosupply",
+    "exists": true,
+    "name": "eternaltattoosupply",
+    "bio": "Notifications",
+    "category": "general_supply"
+  },
+  {
+    "handle": "solidinktattoo",
+    "exists": true,
+    "name": "solidinktattoo",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "solid_ink_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "radiantcolorsink",
+    "exists": true,
+    "name": "radiantcolorsink",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "radiant_colors_ink",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "worldfamousink",
+    "exists": true,
+    "name": "worldfamousink",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "worldfamoustattoosupply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "worldfamous_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "dynamiccolortattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "dynamicstattoosupply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "dynamic_tattoo_supply",
+    "exists": true,
+    "name": "dynamic_tattoo_supply",
+    "bio": "Notifications",
+    "category": "general_supply"
+  },
+  {
+    "handle": "silverbacktattoo",
+    "exists": true,
+    "name": "silverbacktattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "silverback_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "hustlebutter",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "hustle_butter",
+    "exists": true,
+    "name": "hustle_butter",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoogoo",
+    "exists": true,
+    "name": "tattoogoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoo_goo",
+    "exists": true,
+    "name": "tattoo_goo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "drmpickle",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "dr_pickle",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "madrabbit",
+    "exists": true,
+    "name": "madrabbit",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "mad_rabbit_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "recoverytattoo",
+    "exists": true,
+    "name": "recoverytattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoo_recovery",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "peachtattoosupplies",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "peach_tattoo",
+    "exists": true,
+    "name": "peach_tattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "ace_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "acetattoosupply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "zoraypt",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "zoray_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "electrum_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "electrum_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "bnbtattoo",
+    "exists": true,
+    "name": "bnbtattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "bnb_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "truetattoosupply",
+    "exists": true,
+    "name": "truetattoosupply",
+    "bio": "Notifications",
+    "category": "general_supply"
+  },
+  {
+    "handle": "true_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "painfulpleasures",
+    "exists": true,
+    "name": "painfulpleasures",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "painful_pleasures",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "killertattoosupply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "killer_ink",
+    "exists": true,
+    "name": "killer_ink",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "empire_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "empiretattoo",
+    "exists": true,
+    "name": "empiretattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "kingpintattoosupply",
+    "exists": true,
+    "name": "kingpintattoosupply",
+    "bio": "Notifications",
+    "category": "general_supply"
+  },
+  {
+    "handle": "kingpin_tattoo",
+    "exists": true,
+    "name": "kingpin_tattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "alliancetattoosupply",
+    "exists": true,
+    "name": "alliancetattoosupply",
+    "bio": "Notifications",
+    "category": "general_supply"
+  },
+  {
+    "handle": "alliance_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "onyxtattoosupply",
+    "exists": true,
+    "name": "onyxtattoosupply",
+    "bio": "Notifications",
+    "category": "general_supply"
+  },
+  {
+    "handle": "onyx_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "elementtattoosupply",
+    "exists": true,
+    "name": "elementtattoosupply",
+    "bio": "Notifications",
+    "category": "general_supply"
+  },
+  {
+    "handle": "element_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "crown_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "warthog_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "warthogtattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "nextgen_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "nextgentattoosupply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "keestone_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "keestonetattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "starling_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "starlingtattoo",
+    "exists": true,
+    "name": "starlingtattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "berlintattoosupply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "berlin_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tommys_supplies",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tommys_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "monstersupplies",
+    "exists": true,
+    "name": "monstersupplies",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "monster_tattoo_supply",
+    "exists": true,
+    "name": "monster_tattoo_supply",
+    "bio": "Notifications",
+    "category": "general_supply"
+  },
+  {
+    "handle": "barberdtssupply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "barberdts",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoosupply24_7",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoosupply247",
+    "exists": true,
+    "name": "",
+    "bio": "",
+    "category": "other"
+  },
+  {
+    "handle": "vetus_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "vetustattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "ace_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "acetattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "inkjet",
+    "exists": true,
+    "name": "inkjet",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "ink_jet_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "hkmachines",
+    "exists": true,
+    "name": "hkmachines",
+    "bio": "Notifications",
+    "category": "machine"
+  },
+  {
+    "handle": "hk_machines",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "zeus_tattoo_machines",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "zeustattoo",
+    "exists": true,
+    "name": "zeustattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "valhailajr",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "valhaila_jr",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "wand_tattoo",
+    "exists": true,
+    "name": "wand_tattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "wandtattoo",
+    "exists": true,
+    "name": "wandtattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "dermaglo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "derma_glo",
+    "exists": true,
+    "name": "derma_glo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "wickedink",
+    "exists": true,
+    "name": "wickedink",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "wicked_ink",
+    "exists": true,
+    "name": "wicked_ink",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "kurosumi_ink",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "kurosumi_official",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "cartridges_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "eztattoosupply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "ez_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "inkmachines_official",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "inksoultattoosupply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "inksoul_tattoo",
+    "exists": true,
+    "name": "inksoul_tattoo",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "inkintattoosupply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "inkin_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattooneedledragon",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "needle_dragon",
+    "exists": true,
+    "name": "needle_dragon",
+    "bio": "Notifications",
+    "category": "needle_cartridge"
+  },
+  {
+    "handle": "shanghaitattoopro",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "shanghai_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "shenzheninkmaster",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "inkmaster_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "guangzhoutattoogear",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoogear",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "beijingtattoosupply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "beijing_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "hangzhoutattoosolution",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "hztattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "nantatt",
+    "exists": true,
+    "name": "nantatt",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "nantattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tianjintattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tianjin_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "wuhantattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "wuhan_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "chengdutattoo",
+    "exists": true,
+    "name": "chengdutattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "chengdu_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "lotustattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "lotus_tattoo",
+    "exists": true,
+    "name": "lotus_tattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "eagletattoosupply",
+    "exists": true,
+    "name": "eagletattoosupply",
+    "bio": "Notifications",
+    "category": "general_supply"
+  },
+  {
+    "handle": "eagle_tattoo",
+    "exists": true,
+    "name": "eagle_tattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "sun_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "suntattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "jztattoo",
+    "exists": true,
+    "name": "jztattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "jz_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "ht_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "httattoo",
+    "exists": true,
+    "name": "httattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoo_star",
+    "exists": true,
+    "name": "tattoo_star",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoostar",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "cn_tattoo_supply",
+    "exists": true,
+    "name": "cn_tattoo_supply",
+    "bio": "Notifications",
+    "category": "general_supply"
+  },
+  {
+    "handle": "cntattoo",
+    "exists": true,
+    "name": "cntattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "fjtattoo",
+    "exists": true,
+    "name": "fjtattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "fj_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "gdtattoo",
+    "exists": true,
+    "name": "gdtattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "gd_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "king_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "kingtattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "best_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "besttattoo",
+    "exists": true,
+    "name": "besttattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "top_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "toptattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "pro_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "protattoo",
+    "exists": true,
+    "name": "protattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "new_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "newtattoo",
+    "exists": true,
+    "name": "newtattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "one_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "onetattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "btfl_tattoo",
+    "exists": true,
+    "name": "btfl_tattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "btfltattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoomart",
+    "exists": true,
+    "name": "tattoomart",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoo_mart",
+    "exists": true,
+    "name": "tattoo_mart",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoo_wholesale",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoowholesale",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "mickey_sharps",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "mickeysharps",
+    "exists": true,
+    "name": "mickeysharps",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "barb_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "barbsupply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "lion_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "liontattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "euro_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "eurotattoo",
+    "exists": true,
+    "name": "eurotattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "south_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "southtattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "north_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "northtattoo",
+    "exists": true,
+    "name": "northtattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattooworld_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattooworld",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoo_studio_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoostudiosupply",
+    "exists": true,
+    "name": "tattoostudiosupply",
+    "bio": "Notifications",
+    "category": "general_supply"
+  },
+  {
+    "handle": "ink_empire",
+    "exists": true,
+    "name": "ink_empire",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "inkempire",
+    "exists": true,
+    "name": "inkempire",
+    "bio": "Notifications",
+    "category": "ink"
+  },
+  {
+    "handle": "tattoo_center",
+    "exists": true,
+    "name": "tattoo_center",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoocenter",
+    "exists": true,
+    "name": "tattoocenter",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "aftercare_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "tattoo_aftercare",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "healing_tattoo",
+    "exists": true,
+    "name": "healing_tattoo",
+    "bio": "Notifications",
+    "category": "aftercare"
+  },
+  {
+    "handle": "tattoo_healing",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "second_skin_tattoo",
+    "exists": true,
+    "name": "second_skin_tattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "secondskin",
+    "exists": true,
+    "name": "secondskin",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "coil_machine",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "coiltattoo",
+    "exists": true,
+    "name": "coiltattoo",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "rotary_machine_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "rotarytattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "pen_machine_tattoo",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "pentattoo",
+    "exists": true,
+    "name": "pentattoo",
+    "bio": "Notifications",
+    "category": "machine"
+  },
+  {
+    "handle": "tattoo_machine_shop",
+    "exists": true,
+    "name": "tattoo_machine_shop",
+    "bio": "Notifications",
+    "category": "machine"
+  },
+  {
+    "handle": "tattoomachineshop",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "machine_tattoo_supply",
+    "exists": true,
+    "name": "",
+    "bio": "Notifications",
+    "category": "other"
+  },
+  {
+    "handle": "machinetattoo",
+    "exists": true,
+    "name": "machinetattoo",
+    "bio": "Notifications",
+    "category": "machine"
+  }
+]

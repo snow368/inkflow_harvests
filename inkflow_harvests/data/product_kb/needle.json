@@ -1,0 +1,461 @@
+{
+  "_meta": {
+    "domain": "needle",
+    "description": "纹身针知识库 — 命名规则、分类、规格、品牌、品质维度",
+    "version": "1.0",
+    "created": "2026-05-26",
+    "expandable": true,
+    "next_domains": ["machine", "ink", "paper", "grip", "cartridge", "power_supply"]
+  },
+
+  "naming": {
+    "format": "XXYYZZ[_taper]",
+    "description": "行业统一命名格式：gauge(2位) + 针数(2位) + 针型(字母) + 可选taper后缀",
+    "example": "1003RL_LT → #10 gauge, 3根针, Round Liner, Long Taper",
+    "fields": {
+      "gauge": {
+        "position": "前2位数字",
+        "mapping": {
+          "06": "0.20mm — 极细，micro tattoo",
+          "08": "0.25mm — 超细，bugpin，写实细节",
+          "10": "0.30mm — 标准细，通用",
+          "12": "0.35mm — 标准中，粗线条/上色",
+          "14": "0.40mm — 粗，大面积覆盖"
+        }
+      },
+      "count": {
+        "position": "中间2位数字",
+        "description": "一束中针的数量",
+        "common": ["01", "03", "05", "07", "09", "11", "14", "18", "33", "67"]
+      },
+      "type": {
+        "position": "后缀字母",
+        "values": {
+          "RL": { "name": "Round Liner", "description": "圆形紧排列，精准勾线/轮廓", "pinch": "tight" },
+          "RS": { "name": "Round Shader", "description": "圆形松排列，渐变/shading", "pinch": "loose" },
+          "RM": { "name": "Round Magnum", "description": "圆形马格南，小面积上色" },
+          "M1": { "name": "Magnum", "alt": ["M", "MAG"], "description": "平排两行，大面积上色/灰度", "pinch": "flat" },
+          "CM": { "name": "Curved Magnum", "description": "弧形马格南，平滑shading，减少皮肤创伤" },
+          "SEM": { "name": "Soft Edge Magnum", "description": "柔边马格南，过渡更自然，Kwadron特有" },
+          "F": { "name": "Flat", "description": "单排平针，精确填充/几何" },
+          "TRL": { "name": "Turbo Round Liner", "description": "快速出墨/粗线条，Kwadron特有" },
+          "Bugpin": { "name": "Bugpin", "description": "<0.30mm超细针，写实/肖像" },
+          "Stacked": { "name": "Stacked Magnum", "description": "堆叠马格南，着色更均匀" },
+          "OpenLiner": { "name": "Open Liner", "description": "平行不聚拢针，粗线条，Cheyenne特有" }
+        }
+      },
+      "taper": {
+        "position": "可选后缀，下划线连接",
+        "description": "针尖锥度长度，影响入针手感和上墨",
+        "values": {
+          "ST": "Short Taper ~1.5mm — 快速上墨，适合上色填充",
+          "MT": "Medium Taper 2.5-3.5mm — 均衡通用",
+          "LT": "Long Taper 5-7mm — 柔和入针，适合黑灰shading",
+          "XLT": "Extra Long Taper 8mm+ — 极致柔和，超精细活"
+        }
+      }
+    }
+  },
+
+  "quality_dimensions": {
+    "sharpness": {
+      "zh": "锋利度",
+      "en": "Sharpness",
+      "description": "针尖锋利程度，穿透是否干净利落",
+      "artist_says": ["feels like butter", "glides through skin"]
+    },
+    "springback": {
+      "zh": "回弹性",
+      "en": "Spring-back / Elasticity",
+      "description": "针受力后回弹能力，不塌针不变形"
+    },
+    "consistency": {
+      "zh": "一致性/QC",
+      "en": "Consistency / QC",
+      "description": "批次间质量稳定，不良率低",
+      "artist_says": ["only 1 faulty in a year"]
+    },
+    "inkflow": {
+      "zh": "出墨流畅度",
+      "en": "Ink Flow",
+      "description": "墨水是否流畅均匀，不喷溅/堵塞",
+      "artist_says": ["no ink spitting", "smooth ink delivery"]
+    },
+    "stability": {
+      "zh": "稳定性",
+      "en": "Stability / Wobble",
+      "description": "针在高速下不抖不晃",
+      "artist_says": ["no travel", "tight lines"]
+    },
+    "weld": {
+      "zh": "焊接质量",
+      "en": "Weld / Solder Quality",
+      "description": "焊点光滑无毛刺，针排列整齐"
+    },
+    "membrane": {
+      "zh": "膜质量",
+      "en": "Membrane / Backflow Prevention",
+      "description": "防回流膜是否有效，防止墨水/血液回流机器",
+      "artist_says": ["no backflow"]
+    },
+    "durability": {
+      "zh": "耐用度",
+      "en": "Durability",
+      "description": "一根针能保持锋利多长时间",
+      "artist_says": ["lasts a full session"]
+    },
+    "compatibility": {
+      "zh": "兼容性",
+      "en": "Machine Compatibility",
+      "description": "适配各种纹身机器/手柄"
+    },
+    "skintrauma": {
+      "zh": "皮肤创伤",
+      "en": "Skin Trauma",
+      "description": "对皮肤的损伤程度，影响愈合速度"
+    },
+    "splatter": {
+      "zh": "喷墨/飞墨",
+      "en": "Ink Splatter",
+      "description": "上墨时是否喷溅，常见于低价针"
+    }
+  },
+
+  "cartridge_dimensions": {
+    "description": "Cartridge 视觉特征维度 — 可从产品照片中识别的物理属性",
+    "cartridgeColor": {
+      "zh": "外壳颜色",
+      "en": "Cartridge Color",
+      "description": "针头外壳配色，品牌的重要视觉标识",
+      "values": {
+        "black_gold": "黑金 — Kwadron 标志色，高端/signature 系列",
+        "black": "纯黑 — CNC、MagicMoon、部分FK Irons",
+        "white": "白色 — Bishop Rotary、部分FK Irons",
+        "clear": "透明 — BigWasp、TATSoul、Stigma、部分Cheyenne",
+        "translucent_blue": "半透明蓝 — Cheyenne Safety",
+        "translucent_pink": "半透明粉 — Cheyenne Craft",
+        "translucent_purple": "半透明紫 — Cheyenne Capillary",
+        "frosted": "磨砂 — MagicMoon",
+        "rainbow": "阳极氧化彩色 — Dragonhawk（红/蓝/紫/金/绿等）",
+        "metal": "金属原色 — BlackClaw 阳极氧化铝",
+        "black_metal": "黑色金属 — BlackClaw 黑化处理",
+        "rainbow_metal": "彩虹金属 — BlackClaw 彩虹PVD"
+      },
+      "brand_defaults": {
+        "kwadron": "black_gold",
+        "cheyenne_safety": "translucent_blue",
+        "cheyenne_craft": "translucent_pink",
+        "cheyenne_capillary": "translucent_purple",
+        "bigwasp": "clear",
+        "blackclaw": "metal/black_metal/rainbow_metal",
+        "tatsoul": "clear",
+        "cnctattoo": "black",
+        "magicmoon": "frosted",
+        "dragonhawk": "rainbow",
+        "fkirons": "white",
+        "bishop_rotary": "white",
+        "stigma": "clear"
+      }
+    },
+    "membraneType": {
+      "zh": "膜类型",
+      "en": "Membrane Type",
+      "description": "防回流膜的类型和颜色，从针尾可见",
+      "values": {
+        "white_standard": "白色标准膜 — 最常见，通用兼容",
+        "clear_thin": "透明薄膜 — Kwadron 特色，回弹好",
+        "silicone_high": "高性能硅胶膜 — Cheyenne Safety 系列",
+        "none_visible": "无可见膜 — 可能是老款或不带膜设计"
+      }
+    },
+    "connectionType": {
+      "zh": "连接方式",
+      "en": "Connection / Thread Type",
+      "description": "Cartridge 底部与机器的连接接口类型，从侧下方可见",
+      "values": {
+        "screw_long": "长螺纹 — 通用标准，兼容大多数机器",
+        "screw_short": "短螺纹 — 部分机器专用",
+        "bayonet": "卡口式 — 快速装卸，FK Irons 等品牌",
+        "magnetic": "磁吸 — 少数新款",
+        "push_fit": "直插 — 老式针嘴"
+      }
+    },
+    "tipDesign": {
+      "zh": "针尖设计",
+      "en": "Tip Design",
+      "description": "针尖露出部分的形状设计，影响针法表现",
+      "values": {
+        "tapered_standard": "标准锥形 — 通用设计",
+        "tapered_long": "长锥形 — 用于长taper针，写实/黑灰",
+        "cylindrical": "圆柱形 — 部分排针/马格南专用",
+        "cone_wide": "宽口锥形 — 肿大针数，供墨更足"
+      }
+    },
+    "housingDesign": {
+      "zh": "外壳设计特征",
+      "en": "Housing Design Features",
+      "description": "外壳上的物理设计元素，可辅助品牌识别",
+      "features": {
+        "visible_membrane": "背部有透明窗口可见膜",
+        "grip_ridges": "外壳有防滑纹路/凹凸",
+        "laser_etched": "激光蚀刻品牌/规格",
+        "printed_label": "印刷标签",
+        "color_ring": "彩色标签环（如TATSoul）",
+        "window_port": "有可视化窗口观察回血",
+        "tapered_body": "机身流线型锥形设计",
+        "flat_back": "平背设计（易放置）"
+      }
+    },
+    "packagingFormat": {
+      "zh": "包装形式",
+      "en": "Packaging Format",
+      "description": "产品照片可见的包装形式",
+      "values": {
+        "individual_blister": "独立泡壳包装 — 每颗独立密封",
+        "multi_blister": "多联泡壳 — 3/5/10颗连排",
+        "box_set": "盒装套装 — 整套规格",
+        "loose_display": "散装展示 — 放在展示盒/支架上",
+        "bulk_tray": "批量托盘 — 大批量陈列"
+      }
+    },
+    "brandingMarkings": {
+      "zh": "品牌标识方式",
+      "en": "Branding Markings",
+      "description": "品牌/规格信息在外壳上的呈现方式",
+      "values": {
+        "laser_etched_body": "外壳激光蚀刻",
+        "printed_on_label": "标签印刷",
+        "embossed": "凸起压印",
+        "color_coded": "颜色编码（不同规格不同颜色）",
+        "ring_marking": "环状标记（位置/颜色标识规格）"
+      }
+    },
+    "innerDiameterClearance": {
+      "zh": "针壳内径与针头的边距/间隙",
+      "en": "Inner Diameter Clearance",
+      "description": "针壳内壁与针束之间的间隙宽度，直接影响墨水流速和出墨量。间隙越大流速越快（适合大面上色），间隙越小流速越慢（适合精细勾线）。也影响回血可见度和清洗难易度。",
+      "inkflow_impact": {
+        "wide_clearance": "间隙大 → 墨水流速快，出墨足，适合M1/CM上色；但可能飞墨/喷溅",
+        "tight_clearance": "间隙小 → 墨水流速慢，出墨精准，适合RL精细勾线；但可能供墨不足",
+        "optimal": "最佳间隙取决于针型：RL宜紧，M1/CM宜松"
+      },
+      "visual_clues": "从针头侧面观察针束与壳壁之间的空隙可见；透明壳容易判断，不透明壳需从开口处观察",
+      "artist_says": ["packs color well", "pulls a solid line", "ink flows perfectly", "no spitback"]
+    },
+    "innerTiltAngle": {
+      "zh": "针壳内倾斜度/内锥度",
+      "en": "Inner Tilt / Internal Taper Angle",
+      "description": "针壳内部靠近针尖一侧的收口倾斜度（内锥角），影响墨水在针尖汇聚方式和出墨的集中度。内锥角度大的壳体使墨水更集中在针尖（适合精细活），内锥角度小的壳体使墨水分布更宽（适合大面积上色）。",
+      "types": {
+        "steep_angle": "大角度内锥 → 墨水高度集中在针尖，出墨集中（适合RL/RS勾线上色精细控制）",
+        "shallow_angle": "小角度/平缓内锥 → 墨水分散更广，出墨覆盖面积大（适合M1/CM大面积上色填充）",
+        "multi_stage": "多段式内锥 → 前端集中墨水，后端增加流速的复合设计（高端品牌特色）"
+      },
+      "inkflow_impact": "内锥角度 + 内径间隙共同决定墨水的流速-集中度曲线。大角度+小间隙 = 最精准控墨；小角度+大间隙 = 最大出墨量",
+      "visual_clues": "从侧面看壳尖端内部收口角度；透明/半透明壳容易观察，金属壳需从针出口处逆光看",
+      "brand_notes": "Kwadron Hybrid 采用多段式内锥设计；Cheyenne Safety 的陡角内锥 + 硅胶膜是控墨标杆"
+    }
+  },
+
+  "brands": {
+    "kwadron": {
+      "name": "Kwadron",
+      "country": "Poland",
+      "website": "kwadron.pl",
+      "product_lines": ["Hybrid System"],
+      "special_types": ["Turbo RL", "SEM", "Bugpin"],
+      "taper_options": ["LT", "MT"],
+      "quality_reputation": {
+        "sharpness": "premium — feels like butter",
+        "consistency": "excellent — very low defect rate",
+        "best_for": ["Curved Magnum Bugpin", "Round Liners Long Taper"],
+        "weakness": "expensive; fine liners not tight enough for some"
+      }
+    },
+    "cheyenne": {
+      "name": "Cheyenne",
+      "country": "Germany",
+      "website": "cheyennetattoo.com",
+      "product_lines": ["Safety Cartridge (167 configs)", "Craft Cartridge (19 configs)", "Capillary Cartridge (18 configs)"],
+      "special_types": ["Open Liner (S-XXL)", "Big Magnum (33-67 needles)", "Premium Liner"],
+      "diameters": ["0.25mm", "0.30mm", "0.35mm", "0.40mm"],
+      "quality_reputation": {
+        "sharpness": "high — ISO 13485 certified",
+        "consistency": "high — 100% QC per cartridge",
+        "best_for": ["Safety Membrane reliability", "Open Liners for bold work"],
+        "weakness": "Craft line less configurable than Safety"
+      }
+    },
+    "fk_irons": {
+      "name": "FK Irons",
+      "country": "USA",
+      "website": "fkirons.com",
+      "note": "主要是机器品牌，不做自有针；转售 Cheyenne Craft Cartridges + Elite Three 5 Magnum（美国造）"
+    },
+    "bishop_rotary": {
+      "name": "Bishop Rotary",
+      "note": "纯机器品牌，不做自有针"
+    },
+    "bigwasp": {
+      "name": "BigWasp",
+      "country": "China",
+      "quality_reputation": {
+        "position": "value_king",
+        "sharpness": "good for price",
+        "consistency": "decent — some bleeding compared to premium",
+        "best_for": ["Gen 3 — 'no travel, tight lines'"],
+        "weakness": "slightly more bleeding than Kwadron/Cheyenne"
+      }
+    },
+    "ttech": {
+      "name": "T-Tech",
+      "quality_reputation": {
+        "position": "premium_alternative",
+        "sharpness": "sharp, consistent",
+        "best_for": ["no ink spitting", "reliable alternative to Kwadron"]
+      }
+    },
+    "stigma": {
+      "name": "Stigma",
+      "quality_reputation": {
+        "position": "mid_range",
+        "note": "稳定但不如顶级品牌锋利"
+      }
+    },
+    "rhein": {
+      "name": "Rhein",
+      "quality_reputation": {
+        "position": "avoid",
+        "note": "ink spitting 问题严重，不推荐上真人"
+      }
+    },
+    "zombee": {
+      "name": "Zombee",
+      "quality_reputation": {
+        "position": "avoid",
+        "note": "出墨差、灭菌存疑，只练手用"
+      }
+    }
+  },
+
+  "style_mapping": {
+    "description": "纹身风格 ↔ 推荐针型映射 — 用于DM推荐、内容策略、产品匹配",
+    "realism_bg": {
+      "name": "写实/黑灰",
+      "name_en": "Realism / Black & Grey",
+      "outline": ["bugpin_1003RL", "1005RL"],
+      "shading": ["0807CM_LT", "1009CM_LT", "1015CM_LT"],
+      "detail": ["bugpin_1003RL_LT", "bugpin_1005RL_LT"],
+      "gauge": "#8(0.25mm) bugpin / #10(0.30mm)",
+      "taper": "LT / XLT (长taper 柔和入针)",
+      "key_configs": ["bugpin 3RL", "7CM", "9CM", "15CM"],
+      "dm_tip": "写实师最在意渐变平滑度，CM 是他们首选"
+    },
+    "traditional": {
+      "name": "传统/老派",
+      "name_en": "Traditional / Old School",
+      "outline": ["1207RL", "1209RL", "1211RL"],
+      "shading": ["1207RS", "1209M1"],
+      "color_pack": ["1211M1_MT", "1213M1_MT"],
+      "gauge": "#12(0.35mm)",
+      "taper": "MT (中taper 均衡)",
+      "key_configs": ["9RL", "11RL", "11M1", "13M1"],
+      "dm_tip": "传统师要粗线条+实色，RL 粗针数+M1 上色是标配"
+    },
+    "color_realism": {
+      "name": "彩色写实",
+      "name_en": "Color Realism",
+      "outline": ["1003RL", "1005RL"],
+      "shading": ["1009CM_LT", "1015CM_LT"],
+      "color_pack": ["1007RS", "1009RS", "1207M1"],
+      "gauge": "#10(0.30mm) / #12(0.35mm)",
+      "taper": "LT / MT",
+      "key_configs": ["3RL", "5RL", "9CM", "15CM", "7RS", "9RS"],
+      "dm_tip": "彩色写实需要平滑过渡+饱和度，CM+RS 组合"
+    },
+    "geometric": {
+      "name": "几何/线条",
+      "name_en": "Geometric / Linework",
+      "outline": ["1001RL", "1003RL", "1005RL"],
+      "shading": ["1005RS", "1205F"],
+      "gauge": "#8(0.25mm) / #10(0.30mm)",
+      "taper": "LT (精准控制)",
+      "key_configs": ["1RL", "3RL", "5RL", "5F"],
+      "dm_tip": "几何对线条精度要求极高，细RL+长taper是标配"
+    },
+    "blackwork": {
+      "name": "黑工/实黑",
+      "name_en": "Blackwork / Solid Black",
+      "outline": ["1211RL", "1214RL"],
+      "shading": ["1209F", "1211M1"],
+      "color_pack": ["1215M1_ST", "1223M1_ST"],
+      "gauge": "#12(0.35mm)",
+      "taper": "ST (短taper 快速上墨)",
+      "key_configs": ["11RL", "14RL", "15M1", "23M1", "45M+"],
+      "dm_tip": "黑工要极致黑+大面填色，M1+短taper填得快"
+    },
+    "dotwork": {
+      "name": "点刺",
+      "name_en": "Dotwork / Stippling",
+      "outline": ["1001RL", "1003RL"],
+      "shading": ["1003RL", "1005RL"],
+      "gauge": "#8(0.25mm) / #10(0.30mm)",
+      "taper": "LT",
+      "key_configs": ["1RL", "3RL tight", "TriFlat"],
+      "dm_tip": "点刺师对针尖一致性要求极高，3RL tight 比 1RL 更实用"
+    },
+    "watercolor": {
+      "name": "水彩",
+      "name_en": "Watercolor",
+      "outline": ["1003RL"],
+      "shading": ["1009CM", "1015CM"],
+      "color_pack": ["1009M1", "1015M1"],
+      "gauge": "#10(0.30mm)",
+      "taper": "柔性taper（画笔感）",
+      "key_configs": ["3RL", "9CM", "15CM", "9M1", "15M1"],
+      "dm_tip": "水彩要柔边过渡，CM+稀释墨水能模仿画笔效果"
+    }
+  },
+
+  "productDetail_format": {
+    "standard": "{gauge}{count}{type}_{taper}",
+    "examples": [
+      "1003RL_LT  — #10 gauge, 3RL, Long Taper (fine lining)",
+      "1207M1_MT  — #12 gauge, 7M1, Medium Taper (color packing)",
+      "1005RS_LT  — #10 gauge, 5RS, Long Taper (soft shading)",
+      "0807CM_XLT — #8 gauge, 7CM, Extra Long Taper (realism)",
+      "bugpin_1005RL — bugpin #10, 5RL (ultra-fine)",
+      "cheyenne_openliner_L — Cheyenne Open Liner size L"
+    ]
+  },
+
+  "dm_recommendation": {
+    "description": "根据纹身师风格推荐针型的DM话术模板",
+    "logic": "Hook Vision AI 识别出艺术家的作品风格 → 查 style_mapping → 确定推荐针型 → 生成DM",
+    "by_style": {
+      "realism_bg": "看到你的黑灰写实作品很棒，我们的 Bugpin CM 长taper 系列很多写实师在用，渐变过渡特别顺。要不要试一组？",
+      "traditional": "你的传统风格线条干净利落！我们的 1209RL 做粗线很稳，搭配 11M1 上色一套搞定。",
+      "color_realism": "你的彩色作品饱和度真好，试过我们的 9CM 长taper 吗？彩色过渡更自然。",
+      "geometric": "你的几何线条精度很高，我们的 1003RL LT 针尖一致性极好，适合这种精细活。",
+      "blackwork": "大面积黑工，我们的 15M1 短taper 填得又快又匀，很多黑工师都在用。",
+      "dotwork": "点刺均匀度很关键，我们的 tight 3RL 比普通 1RL 更持墨、更稳定。",
+      "watercolor": "水彩风格柔边是灵魂，我们的 CM 系列配合稀释墨水效果特别好。"
+    }
+  },
+
+  "vision_recognition_tips": [
+    "RL = 针尖紧密围成圆形，适合勾线",
+    "RS = 针尖围成圆形但间距稍大，适合shading",
+    "M1/MAG = 针尖排成两排平列，适合大面积上色",
+    "CM = 针尖弧形排列，比M1更平滑",
+    "F = 针尖排成单排直线",
+    "Bugpin = 针极细，肉眼可见比普通针细得多",
+    "Cheyenne Safety = 通常有蓝色/彩色半透明外壳",
+    "Kwadron Hybrid = 黑色外壳 + 金色/银色标签",
+    "Open Liner = 针平行排列不聚拢，比普通RL宽",
+    "膜可见 = 针尾有透明/白色橡胶膜的是带膜款",
+    "针壳内径间隙决定墨水流速 — 从侧面看针与壳壁空隙大小",
+    "内锥角度决定出墨集中度 — 透明壳观察尖端收口角度",
+    "多段式内锥是高端针标识（Kwadron Hybrid 等）"
+  ]
+}

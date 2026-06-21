@@ -1,0 +1,547 @@
+{
+  "bigwasp.official": {
+    "rp0": {
+      "status": "ok",
+      "image": "rp0.jpg",
+      "analysis": {
+        "content_id": "",
+        "platform": "",
+        "content_type": "product_showcase",
+        "visual_style": "commercial_product",
+        "product_category": "unknown",
+        "camera": {
+          "shot_type": "medium close-up",
+          "camera_angle": "front angle shot",
+          "focus_style": "sharp focus",
+          "lens_feeling": "clean professional lens",
+          "depth_of_field": "shallow depth of field"
+        },
+        "lighting": {
+          "lighting_style": "commercial product lighting",
+          "contrast_level": "medium contrast lighting",
+          "shadow_density": "light shadow lighting",
+          "lighting_direction": "front lighting",
+          "temperature_feeling": "neutral tone lighting"
+        },
+        "composition": {
+          "framing_style": "tight framing",
+          "subject_focus": "subject isolation",
+          "negative_space": "minimal negative space",
+          "balance_style": "asymmetrical balance"
+        },
+        "materials": {
+          "skin_texture": "fresh tattoo irritation",
+          "glove_texture": "unknown",
+          "ink_reflection": "ink shine reflection",
+          "plastic_reflection": "unknown",
+          "metal_reflection": "chrome metallic reflection"
+        },
+        "product_scene": {
+          "product_position": "unknown",
+          "background_style": "unknown",
+          "surface_type": "unknown",
+          "material_behavior": "unknown",
+          "camera_style": "unknown",
+          "composition_style": "unknown"
+        },
+        "tattoo_authenticity": {
+          "commercial_feeling_score": 9,
+          "studio_authenticity_score": 4
+        },
+        "social_media": {
+          "hook_strength": 8,
+          "retention_potential": 7,
+          "viral_potential": 5,
+          "conversion_potential": 9
+        },
+        "style_keywords": [
+          "commercial polished",
+          "bright clean",
+          "precision detailed",
+          "high end commercial",
+          "studio professional"
+        ],
+        "generation_ready": {
+          "image_prompt_keywords": [
+            "tattoo aftercare bottle",
+            "held in hand",
+            "fresh tattoo on arm",
+            "commercial product shot",
+            "chrome cap",
+            "orange label",
+            "blurred background",
+            "shallow depth of field",
+            "bright lighting",
+            "product showcase"
+          ]
+        }
+      }
+    },
+    "rp3": {
+      "status": "ok",
+      "image": "rp3.jpg",
+      "analysis": {
+        "content_id": "",
+        "platform": "",
+        "content_type": "artist_lifestyle",
+        "visual_style": "raw_handheld",
+        "product_category": "unknown",
+        "camera": {
+          "shot_type": "handheld shot",
+          "camera_angle": "unknown",
+          "focus_style": "soft focus",
+          "lens_feeling": "raw handheld filming",
+          "depth_of_field": "shallow depth of field"
+        },
+        "lighting": {
+          "lighting_style": "ambient room lighting",
+          "contrast_level": "medium contrast lighting",
+          "shadow_density": "moderate shadow lighting",
+          "lighting_direction": "overhead lighting",
+          "temperature_feeling": "neutral tone lighting"
+        },
+        "composition": {
+          "framing_style": "tight framing",
+          "subject_focus": "foreground focus",
+          "negative_space": "minimal negative space",
+          "balance_style": "asymmetrical balance"
+        },
+        "materials": {
+          "skin_texture": "realistic skin texture",
+          "glove_texture": "unknown",
+          "ink_reflection": "unknown",
+          "plastic_reflection": "unknown",
+          "metal_reflection": "unknown"
+        },
+        "product_scene": {
+          "product_position": "unknown",
+          "background_style": "unknown",
+          "surface_type": "unknown",
+          "material_behavior": "unknown",
+          "camera_style": "unknown",
+          "composition_style": "unknown"
+        },
+        "tattoo_authenticity": {
+          "commercial_feeling_score": 1,
+          "studio_authenticity_score": 8
+        },
+        "social_media": {
+          "hook_strength": 7,
+          "retention_potential": 6,
+          "viral_potential": 7,
+          "conversion_potential": 3
+        },
+        "style_keywords": [
+          "unknown",
+          "unknown",
+          "documentary realism",
+          "urban industrial",
+          "artistic dramatic"
+        ],
+        "generation_ready": {
+          "image_prompt_keywords": [
+            "raw handheld tattoo artist lifestyle",
+            "dutch angle shot",
+            "tattoo machine in hand",
+            "natural room background",
+            "asymmetrical composition",
+            "soft focus",
+            "ambient lighting",
+            "urban industrial setting",
+            "artist with tattoos",
+            "documentary realism"
+          ]
+        }
+      }
+    },
+    "rp4": {
+      "status": "ok",
+      "image": "rp4.jpg",
+      "analysis": {
+        "content_id": "",
+        "platform": "",
+        "content_type": "product_showcase",
+        "visual_style": "clinical_clean",
+        "product_category": "unknown",
+        "camera": {
+          "shot_type": "medium close-up",
+          "camera_angle": "top-down shot",
+          "focus_style": "sharp focus",
+          "lens_feeling": "clean professional lens",
+          "depth_of_field": "deep depth of field"
+        },
+        "lighting": {
+          "lighting_style": "clinical clean lighting",
+          "contrast_level": "medium contrast lighting",
+          "shadow_density": "light shadow lighting",
+          "lighting_direction": "overhead studio lighting",
+          "temperature_feeling": "neutral tone lighting"
+        },
+        "composition": {
+          "framing_style": "tight framing",
+          "subject_focus": "subject isolation",
+          "negative_space": "minimal negative space",
+          "balance_style": "symmetrical balance"
+        },
+        "materials": {
+          "skin_texture": "realistic skin texture",
+          "glove_texture": "unknown",
+          "ink_reflection": "ink shine reflection",
+          "plastic_reflection": "unknown",
+          "metal_reflection": "unknown"
+        },
+        "product_scene": {
+          "product_position": "unknown",
+          "background_style": "unknown",
+          "surface_type": "unknown",
+          "material_behavior": "unknown",
+          "camera_style": "unknown",
+          "composition_style": "unknown"
+        },
+        "tattoo_authenticity": {
+          "commercial_feeling_score": 7,
+          "studio_authenticity_score": 8
+        },
+        "social_media": {
+          "hook_strength": 8,
+          "retention_potential": 7,
+          "viral_potential": 6,
+          "conversion_potential": 7
+        },
+        "style_keywords": [
+          "clinical clean",
+          "unknown",
+          "unknown",
+          "unknown",
+          "unknown"
+        ],
+        "generation_ready": {
+          "image_prompt_keywords": [
+            "tattooed hand",
+            "black and gray script tattoo",
+            "clinical clean lighting",
+            "paper towel surface",
+            "top-down shot",
+            "sharp focus",
+            "medium close-up",
+            "ink shine reflection",
+            "realistic skin texture"
+          ]
+        }
+      }
+    },
+    "rp5": {
+      "status": "ok",
+      "image": "rp5.jpg",
+      "analysis": {
+        "content_id": "",
+        "platform": "",
+        "content_type": "process_video",
+        "visual_style": "underground_realism",
+        "product_category": "unknown",
+        "camera": {
+          "shot_type": "medium close-up",
+          "camera_angle": "front angle shot",
+          "focus_style": "sharp focus",
+          "lens_feeling": "cinematic lens",
+          "depth_of_field": "shallow depth of field"
+        },
+        "lighting": {
+          "lighting_style": "dramatic shadow lighting",
+          "contrast_level": "unknown",
+          "shadow_density": "deep shadow lighting",
+          "lighting_direction": "side lighting",
+          "temperature_feeling": "cold tone lighting"
+        },
+        "composition": {
+          "framing_style": "tight framing",
+          "subject_focus": "subject isolation",
+          "negative_space": "minimal negative space",
+          "balance_style": "symmetrical balance"
+        },
+        "materials": {
+          "skin_texture": "realistic skin texture",
+          "glove_texture": "unknown",
+          "ink_reflection": "unknown",
+          "plastic_reflection": "unknown",
+          "metal_reflection": "unknown"
+        },
+        "product_scene": {
+          "product_position": "unknown",
+          "background_style": "unknown",
+          "surface_type": "unknown",
+          "material_behavior": "unknown",
+          "camera_style": "unknown",
+          "composition_style": "unknown"
+        },
+        "tattoo_authenticity": {
+          "commercial_feeling_score": 0,
+          "studio_authenticity_score": 0
+        },
+        "social_media": {
+          "hook_strength": 0,
+          "retention_potential": 0,
+          "viral_potential": 0,
+          "conversion_potential": 0
+        },
+        "style_keywords": [
+          "dark mood",
+          "high contrast",
+          "artistic dramatic",
+          "underground studio",
+          "unknown",
+          "unknown"
+        ],
+        "generation_ready": {
+          "image_prompt_keywords": [
+            "black and white tattoo",
+            "back tattoo",
+            "female figure with ram horns",
+            "holding lamb",
+            "detailed linework",
+            "high contrast",
+            "dramatic lighting",
+            "underground realism",
+            "cinematic shadow",
+            "symmetrical composition"
+          ]
+        }
+      }
+    },
+    "rp6": {
+      "status": "ok",
+      "image": "rp6.jpg",
+      "analysis": {
+        "content_id": "",
+        "platform": "",
+        "content_type": "product_showcase",
+        "visual_style": "underground_realism",
+        "product_category": "unknown",
+        "camera": {
+          "shot_type": "medium close-up",
+          "camera_angle": "side angle shot",
+          "focus_style": "selective focus",
+          "lens_feeling": "cinematic lens",
+          "depth_of_field": "shallow depth of field"
+        },
+        "lighting": {
+          "lighting_style": "dramatic shadow lighting",
+          "contrast_level": "high contrast lighting",
+          "shadow_density": "deep shadow lighting",
+          "lighting_direction": "side lighting",
+          "temperature_feeling": "cold tone lighting"
+        },
+        "composition": {
+          "framing_style": "tight framing",
+          "subject_focus": "foreground focus",
+          "negative_space": "minimal negative space",
+          "balance_style": "asymmetrical balance"
+        },
+        "materials": {
+          "skin_texture": "realistic skin texture",
+          "glove_texture": "unknown",
+          "ink_reflection": "ink shine reflection",
+          "plastic_reflection": "unknown",
+          "metal_reflection": "unknown"
+        },
+        "product_scene": {
+          "product_position": "unknown",
+          "background_style": "unknown",
+          "surface_type": "unknown",
+          "material_behavior": "unknown",
+          "camera_style": "unknown",
+          "composition_style": "unknown"
+        },
+        "tattoo_authenticity": {
+          "commercial_feeling_score": 3,
+          "studio_authenticity_score": 8
+        },
+        "social_media": {
+          "hook_strength": 9,
+          "retention_potential": 8,
+          "viral_potential": 7,
+          "conversion_potential": 6
+        },
+        "style_keywords": [
+          "dark mood",
+          "high contrast",
+          "artistic dramatic",
+          "underground studio",
+          "unknown",
+          "unknown"
+        ],
+        "generation_ready": {
+          "image_prompt_keywords": [
+            "tattoo sleeve close-up",
+            "realistic skin texture",
+            "ink shine reflection",
+            "dramatic shadow lighting",
+            "shallow depth of field",
+            "cinematic lens",
+            "underground realism",
+            "asymmetrical balance",
+            "tight framing",
+            "high contrast"
+          ]
+        }
+      }
+    },
+    "rp7": {
+      "status": "ok",
+      "image": "rp7.jpg",
+      "analysis": {
+        "content_id": "",
+        "platform": "",
+        "content_type": "product_showcase",
+        "visual_style": "commercial_product",
+        "product_category": "unknown",
+        "camera": {
+          "shot_type": "medium close-up",
+          "camera_angle": "front angle shot",
+          "focus_style": "sharp focus",
+          "lens_feeling": "clean professional lens",
+          "depth_of_field": "deep depth of field"
+        },
+        "lighting": {
+          "lighting_style": "unknown",
+          "contrast_level": "high contrast lighting",
+          "shadow_density": "moderate shadow lighting",
+          "lighting_direction": "front lighting",
+          "temperature_feeling": "neutral tone lighting"
+        },
+        "composition": {
+          "framing_style": "tight framing",
+          "subject_focus": "center composition",
+          "negative_space": "minimal negative space",
+          "balance_style": "symmetrical balance"
+        },
+        "materials": {
+          "skin_texture": "realistic skin texture",
+          "glove_texture": "unknown",
+          "ink_reflection": "ink shine reflection",
+          "plastic_reflection": "unknown",
+          "metal_reflection": "unknown"
+        },
+        "product_scene": {
+          "product_position": "unknown",
+          "background_style": "unknown",
+          "surface_type": "unknown",
+          "material_behavior": "unknown",
+          "camera_style": "unknown",
+          "composition_style": "unknown"
+        },
+        "tattoo_authenticity": {
+          "commercial_feeling_score": 9,
+          "studio_authenticity_score": 7
+        },
+        "social_media": {
+          "hook_strength": 9,
+          "retention_potential": 8,
+          "viral_potential": 7,
+          "conversion_potential": 9
+        },
+        "style_keywords": [
+          "commercial polished",
+          "high contrast",
+          "precision detailed",
+          "studio professional",
+          "bright clean"
+        ],
+        "generation_ready": {
+          "image_prompt_keywords": [
+            "tattoo cartridge",
+            "hero single",
+            "commercial product shot",
+            "sharp focus",
+            "high contrast lighting",
+            "pure white seamless background",
+            "ink shine reflection",
+            "center composition",
+            "tight framing",
+            "symmetrical balance"
+          ]
+        }
+      }
+    },
+    "rp8": {
+      "status": "error",
+      "error": "HTTP Error 500: Internal Server Error",
+      "image": "rp8.jpg"
+    },
+    "rp9": {
+      "status": "ok",
+      "image": "rp9.jpg",
+      "analysis": {
+        "content_id": "",
+        "platform": "",
+        "content_type": "process_video",
+        "visual_style": "underground_realism",
+        "product_category": "unknown",
+        "camera": {
+          "shot_type": "unknown",
+          "camera_angle": "front angle shot",
+          "focus_style": "sharp focus",
+          "lens_feeling": "cinematic lens",
+          "depth_of_field": "shallow depth of field"
+        },
+        "lighting": {
+          "lighting_style": "dramatic shadow lighting",
+          "contrast_level": "unknown",
+          "shadow_density": "deep shadow lighting",
+          "lighting_direction": "side lighting",
+          "temperature_feeling": "neutral tone lighting"
+        },
+        "composition": {
+          "framing_style": "tight framing",
+          "subject_focus": "subject isolation",
+          "negative_space": "minimal negative space",
+          "balance_style": "asymmetrical balance"
+        },
+        "materials": {
+          "skin_texture": "realistic skin texture",
+          "glove_texture": "unknown",
+          "ink_reflection": "ink shine reflection",
+          "plastic_reflection": "unknown",
+          "metal_reflection": "unknown"
+        },
+        "product_scene": {
+          "product_position": "unknown",
+          "background_style": "unknown",
+          "surface_type": "unknown",
+          "material_behavior": "unknown",
+          "camera_style": "unknown",
+          "composition_style": "unknown"
+        },
+        "tattoo_authenticity": {
+          "commercial_feeling_score": 3,
+          "studio_authenticity_score": 8
+        },
+        "social_media": {
+          "hook_strength": 8,
+          "retention_potential": 7,
+          "viral_potential": 6,
+          "conversion_potential": 5
+        },
+        "style_keywords": [
+          "dark mood",
+          "high contrast",
+          "documentary realism",
+          "underground studio",
+          "artistic dramatic"
+        ],
+        "generation_ready": {
+          "image_prompt_keywords": [
+            "close-up tattoo of skull with spiders and web",
+            "black and gray realism",
+            "dramatic shadow lighting",
+            "high contrast",
+            "skin texture detail",
+            "underground tattoo style",
+            "cinematic lens",
+            "shallow depth of field"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "_meta": {
+    "domain": "hand_interaction",
+    "description": "How hands, gloves, and fingers interact with the cartridge — essential for scale reference and workflow scenes",
+    "rule": "Hands provide scale and usage context. Never show cartridge being modified, only handled."
+  },
+  "glove_state": {
+    "description": "Glove presence and condition",
+    "terms": [
+      {"term": "bare hand", "prompt_fragment": "bare clean hand, natural skin with subtle texture"},
+      {"term": "black nitrile glove", "prompt_fragment": "black nitrile glove, matte synthetic grip texture"},
+      {"term": "blue nitrile glove", "prompt_fragment": "blue nitrile glove, medical-grade appearance"},
+      {"term": "white cotton glove", "prompt_fragment": "white cotton handling glove, clean room aesthetic"},
+      {"term": "glove with ink stain", "prompt_fragment": "gloved hand with subtle ink stains, working condition"}
+    ]
+  },
+  "grip_type": {
+    "description": "How the product is held",
+    "terms": [
+      {"term": "precision pinch", "prompt_fragment": "precision pinch between thumb and index finger"},
+      {"term": "palm rest", "prompt_fragment": "resting on open palm, full product visible"},
+      {"term": "finger roll", "prompt_fragment": "rolled between fingers, dynamic rotation"},
+      {"term": "tweezer hold", "prompt_fragment": "held with stainless steel tweezers, sterile handling"},
+      {"term": "offering hand", "prompt_fragment": "offering gesture, product presented on flat palm"},
+      {"term": "mounting grip", "prompt_fragment": "gripping cartridge base, preparing to mount on machine"}
+    ]
+  },
+  "hand_position": {
+    "description": "Hand position relative to frame",
+    "terms": [
+      {"term": "entering from bottom", "prompt_fragment": "hand entering frame from bottom edge"},
+      {"term": "entering from side", "prompt_fragment": "hand reaching in from side of frame"},
+      {"term": "central holding", "prompt_fragment": "hand centered in frame, product held mid-air"},
+      {"term": "foreground only", "prompt_fragment": "fingers only in extreme foreground, depth layer"},
+      {"term": "full arm visible", "prompt_fragment": "full forearm visible, tattoo on skin adds context"}
+    ]
+  },
+  "action_type": {
+    "description": "What the hand is doing",
+    "terms": [
+      {"term": "presenting", "prompt_fragment": "presenting product toward camera, open gesture"},
+      {"term": "inspecting", "prompt_fragment": "inspecting closely, rotated for examination"},
+      {"term": "mounting", "prompt_fragment": "aligning cartridge with machine grip, assembly moment"},
+      {"term": "unwrapping", "prompt_fragment": "peeling sterile pack open with both hands"},
+      {"term": "organizing", "prompt_fragment": "arranging cartridges in row on work surface"},
+      {"term": "demonstrating", "prompt_fragment": "demonstrating twist-lock mechanism, instructional"}
+    ]
+  },
+  "glove_grip": {
+    "description": "Specific gloved-hand grip types for cartridge handling",
+    "grips": [
+      {
+        "id": "hg_01",
+        "label": "thumb index precision grip",
+        "tags": ["precision"],
+        "usage": "holding cartridge with fine control",
+        "prompt_fragment": "thumb and index finger precision grip, fine motor control"
+      },
+      {
+        "id": "hg_02",
+        "label": "full palm wrap grip",
+        "tags": ["strong grip"],
+        "usage": "stabilizing tattoo machine body",
+        "prompt_fragment": "full palm wrap around machine grip, firm steady hold"
+      },
+      {
+        "id": "hg_03",
+        "label": "three-finger stability grip",
+        "tags": ["balanced", "control"],
+        "usage": "steady cartridge handling for macro photography",
+        "prompt_fragment": "three-finger grip providing stability, cartridge held steady"
+      },
+      {
+        "id": "hg_04",
+        "label": "palm-up offering hold",
+        "tags": ["presentation", "open"],
+        "usage": "showing cartridge to camera",
+        "prompt_fragment": "palm-up open hand presenting cartridge, all angles visible"
+      }
+    ]
+  },
+  "wrist_motion": {
+    "description": "Wrist movement during tattooing workflow",
+    "motions": [
+      {
+        "id": "wm_01",
+        "label": "15 degree micro rotation",
+        "tags": ["control"],
+        "usage": "fine tattoo line control movement",
+        "prompt_fragment": "15° micro wrist rotation, precise line control motion"
+      },
+      {
+        "id": "wm_02",
+        "label": "45 degree active angle",
+        "tags": ["dynamic"],
+        "usage": "active tattooing motion",
+        "prompt_fragment": "45° active wrist angle, full tattooing stroke motion"
+      },
+      {
+        "id": "wm_03",
+        "label": "neutral resting angle",
+        "tags": ["static", "pause"],
+        "usage": "hand at rest between passes",
+        "prompt_fragment": "neutral wrist position, hand resting between work strokes"
+      },
+      {
+        "id": "wm_04",
+        "label": "pronated rotation",
+        "tags": ["wrist turn"],
+        "usage": "rotating cartridge for inspection",
+        "prompt_fragment": "pronated wrist rotation, turning cartridge to examine needle tip"
+      }
+    ]
+  }
+}

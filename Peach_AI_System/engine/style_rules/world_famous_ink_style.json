@@ -1,0 +1,82 @@
+{
+  "brand": "world_famous_ink",
+  "category": "tattoo_supply_product_photography",
+  "summary": "奢华商业广告，高饱和色彩，黑金配色，强烈视觉冲击",
+
+  "lighting": {
+    "type": "hard_commercial",
+    "direction": "upper_front",
+    "key_characteristics": [
+      "硬光营造清晰锐利阴影",
+      "高强度均匀布光",
+      "瓶身镜面高光反射",
+      "标签图案清晰锐利",
+      "色彩饱和度极高"
+    ],
+    "shadow_style": "sharp_clear, directional, dramatic",
+    "highlight_placement": "bottle_top_curves, metallic_cap_gleam"
+  },
+
+  "composition": {
+    "angles": [
+      "low_angle_eye_level (低角度平视) - 40%",
+      "slight_overhead (微俯拍) - 30%",
+      "eye_level_symmetric (平视对称) - 30%"
+    ],
+    "layout": [
+      "triangular_stacked (三角堆叠)",
+      "arc_array (弧形阵列)",
+      "symmetric_formation (对称排列)",
+      "diagonal_line (斜线排列)"
+    ],
+    "depth_of_field": "medium_shallow, back rows slightly blurred",
+    "background_type": "solid_gradient_or_pure_black"
+  },
+
+  "color_palette": {
+    "primary_background": [
+      "pure_black_matte",
+      "dark_gray_to_black_gradient",
+      "orange_to_teal_gradient"
+    ],
+    "accent_colors": [
+      "gold_luxury (金色奢华)",
+      "orange_brand (橙色品牌)",
+      "warm_golden_red (暖金黄红)"
+    ],
+    "color_relationship": "高饱和产品色 vs 纯黑背景，强烈冷暖对比",
+    "saturation": "very_high_product_colors",
+    "contrast": "maximum, commercial_ad_intensity"
+  },
+
+  "material_rendering": {
+    "glossy_bottle": "镜面高光，通透塑料质感，色彩饱满",
+    "metallic_cap": "金属光泽反射，冷峻精密",
+    "label_print": "清晰锐利，细节丰富，烫金效果",
+    "glass_cap": "晶莹剔透，高折射光线",
+    "premium_box": "哑光黑拼接亮面金，奢华质感"
+  },
+
+  "mood": [
+    "luxurious",
+    "commercial_bold",
+    "high_energy",
+    "premium_premium",
+    "advertising_ready"
+  ],
+
+  "avoid": [
+    "muted_colors",
+    "soft_lighting",
+    "textured_backgrounds",
+    "rustic_casual",
+    "minimalist"
+  ],
+
+  "prompt_formula": "【低角度/对称构图】+【高强度商业布光】+【纯黑背景】+【高饱和色彩+金色点缀】+【奢华商业广告质感】",
+
+  "examples": [
+    "低角度平视，十瓶墨水对称排列礼盒前，柔和漫射光，纯黑哑光背景，黑金配色奢华高级，塑料瓶身细腻高光过渡",
+    "低角度俯拍，六瓶墨水斜线排列，硬光锐利阴影，橙色渐变青绿背景，紫橙蓝红黄酒红高饱和色彩强烈对比"
+  ]
+}

@@ -1,0 +1,158 @@
+{
+  "_meta": {
+    "domain": "environment_micro",
+    "description": "Micro-environment details and atmospheric elements that add realism and depth",
+    "usage": "Add 0-2 micro elements per image for subtle realism, avoid clutter"
+  },
+  "atmospheric_particles": {
+    "description": "Fine particles visible in the air",
+    "terms": [
+      {"term": "dust motes", "prompt_fragment": "fine dust motes floating in light beam"},
+      {"term": "light haze", "prompt_fragment": "subtle atmospheric haze, depth softening"},
+      {"term": "lint particles", "prompt_fragment": "tiny lint particles suspended, macro-visible"},
+      {"term": "smoke wisp", "prompt_fragment": "thin smoke wisp curling through light"},
+      {"term": "no particles", "prompt_fragment": "clean air, no visible particles"}
+    ]
+  },
+  "surface_wear": {
+    "description": "Realistic use marks on surfaces",
+    "terms": [
+      {"term": "ink droplet", "prompt_fragment": "single tiny ink droplet on surface nearby"},
+      {"term": "water ring", "prompt_fragment": "faint water ring mark on table surface"},
+      {"term": "smudge fingerprint", "prompt_fragment": "subtle fingerprint smudge on glossy surface"},
+      {"term": "scratch mark", "prompt_fragment": "fine scratch marks on metal surface, realistic wear"},
+      {"term": "pristine surface", "prompt_fragment": "perfect pristine surface, no wear marks"}
+    ]
+  },
+  "reflection_objects": {
+    "description": "Objects visible as reflections on glossy surfaces",
+    "terms": [
+      {"term": "studio softbox", "prompt_fragment": "softbox reflection visible in glossy surface"},
+      {"term": "window reflection", "prompt_fragment": "window frame reflected in metal"},
+      {"term": "photographer shadow", "prompt_fragment": "faint photographer silhouette in chrome reflection"},
+      {"term": "grid pattern", "prompt_fragment": "softbox grid pattern reflected in brass ring"}
+    ]
+  },
+  "background_depth": {
+    "description": "Background depth and spatial cues",
+    "terms": [
+      {"term": "solid color wall", "prompt_fragment": "solid color wall at close distance"},
+      {"term": "corner vignette", "prompt_fragment": "vignette shadow fading to black at corners"},
+      {"term": "gradient fade", "prompt_fragment": "smooth gradient from light to dark, atmospheric depth"},
+      {"term": "distant wall", "prompt_fragment": "wall visible far in background, deep space"},
+      {"term": "shelving blur", "prompt_fragment": "shelving unit blurred in deep background"}
+    ]
+  },
+  "color_cast": {
+    "description": "Subtle environmental color influence",
+    "terms": [
+      {"term": "warm bounce", "prompt_fragment": "warm bounce light from nearby surface"},
+      {"term": "cool ambient", "prompt_fragment": "cool blue ambient fill from sky window"},
+      {"term": "green tint", "prompt_fragment": "green tint bounce from studio plants"},
+      {"term": "neutral clean", "prompt_fragment": "neutral color environment, no dominant cast"}
+    ]
+  },
+  "micro_lighting": {
+    "description": "Subtle lighting imperfections for realism",
+    "terms": [
+      {"term": "light leak", "prompt_fragment": "subtle light leak at frame edge"},
+      {"term": "lens flare speck", "prompt_fragment": "tiny lens flare speck, optical realism"},
+      {"term": "shadow gradient", "prompt_fragment": "natural shadow gradient across background"},
+      {"term": "highlight bloom", "prompt_fragment": "gentle highlight bloom on bright metal edge"}
+    ]
+  },
+  "studio_type": {
+    "description": "Overall studio environment type and atmosphere",
+    "types": [
+      {
+        "id": "et_01",
+        "label": "underground tattoo studio",
+        "tags": ["dark", "raw"],
+        "usage": "raw artistic environment",
+        "prompt_fragment": "underground tattoo studio, exposed brick walls, dim warm lighting, artistic raw atmosphere"
+      },
+      {
+        "id": "et_02",
+        "label": "clinical clean studio",
+        "tags": ["sterile", "white"],
+        "usage": "medical precision style tattoo room",
+        "prompt_fragment": "clinical clean tattoo studio, white walls, bright even lighting, sterilized surfaces"
+      },
+      {
+        "id": "et_03",
+        "label": "minimalist white gallery",
+        "tags": ["clean", "modern"],
+        "usage": "contemporary product photography setting",
+        "prompt_fragment": "minimalist white gallery space, clean lines, abundant natural light"
+      },
+      {
+        "id": "et_04",
+        "label": "industrial loft",
+        "tags": ["rough", "urban"],
+        "usage": "urban street culture aesthetic",
+        "prompt_fragment": "industrial loft studio, concrete floors, metal beams, urban aesthetic"
+      },
+      {
+        "id": "et_05",
+        "label": "neon-lit street studio",
+        "tags": ["neon", "cyberpunk"],
+        "usage": "futuristic cyberpunk vibe",
+        "prompt_fragment": "neon-lit street studio, pink and blue ambient light, city night vibe"
+      },
+      {
+        "id": "et_06",
+        "label": "luxury boutique studio",
+        "tags": ["premium", "elegant"],
+        "usage": "high-end tattoo parlor",
+        "prompt_fragment": "luxury boutique tattoo studio, marble surfaces, gold accents, elegant furniture"
+      }
+    ]
+  },
+  "surface_material": {
+    "description": "Specific surface material types for product placement",
+    "materials": [
+      {
+        "id": "sm_01",
+        "label": "matte black metal surface",
+        "tags": ["industrial"],
+        "usage": "high contrast product photography base",
+        "prompt_fragment": "matte black metal surface, non-reflective, industrial aesthetic"
+      },
+      {
+        "id": "sm_02",
+        "label": "oiled stainless steel reflection",
+        "tags": ["reflective"],
+        "usage": "premium industrial aesthetic surface",
+        "prompt_fragment": "oiled stainless steel surface, warm metallic reflection, premium feel"
+      },
+      {
+        "id": "sm_03",
+        "label": "brushed aluminum plate",
+        "tags": ["modern", "tech"],
+        "usage": "tech-forward product display",
+        "prompt_fragment": "brushed aluminum surface, fine parallel grain texture, modern tech aesthetic"
+      },
+      {
+        "id": "sm_04",
+        "label": "lacquered wood desktop",
+        "tags": ["warm", "classic"],
+        "usage": "traditional studio warmth",
+        "prompt_fragment": "lacquered wood surface, warm chestnut tone, subtle gloss reflection"
+      },
+      {
+        "id": "sm_05",
+        "label": "sandblasted glass panel",
+        "tags": ["etched", "frosted"],
+        "usage": "creative diffusion surface",
+        "prompt_fragment": "sandblasted frosted glass surface, soft light diffusion beneath"
+      },
+      {
+        "id": "sm_06",
+        "label": "black acrylic gloss",
+        "tags": ["reflective", "glossy"],
+        "usage": "glossy reflection product photography",
+        "prompt_fragment": "glossy black acrylic surface, mirror-like reflection doubling the product"
+      }
+    ]
+  }
+}

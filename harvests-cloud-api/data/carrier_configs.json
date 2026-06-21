@@ -1,0 +1,35 @@
+[
+  {
+    "id": 1,
+    "carrier": "yanwen",
+    "label": "燕文物流",
+    "api_base_url": "https://open.yw56.com.cn/api/order",
+    "api_key": "20143416",
+    "api_secret": "31FCFA6815219B24D462099EBD681901",
+    "extra_config": "{\"channelId\":\"481\"}",
+    "enabled": 1,
+    "created_at": 1781240309
+  },
+  {
+    "id": 2,
+    "carrier": "equick",
+    "label": "易快通(E-Quick)",
+    "api_base_url": "https://ekttech.net/pos-web/",
+    "api_key": "QIL00013",
+    "api_secret": "808e1ccc405b47518ffa9f44a74da6b2",
+    "extra_config": "{\"hubInCode\":\"HEUTP\"}",
+    "enabled": 1,
+    "created_at": 1781240309
+  },
+  {
+    "id": 11,
+    "carrier": "shopify",
+    "label": "Shopify",
+    "api_base_url": "https://dptattoo.myshopify.com/admin/api/2024-04",
+    "api_key": "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",
+    "api_secret": "",
+    "extra_config": "{\"scopes\":\"read_all_orders,write_orders\"}",
+    "enabled": 1,
+    "created_at": 1781244868085
+  }
+]

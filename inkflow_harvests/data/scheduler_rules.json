@@ -1,0 +1,37 @@
+﻿{
+  "global": {
+    "maxHighRiskPerMinute": 2,
+    "minGapSecBetweenHighRisk": 25,
+    "quietHours": { "startHour": 1, "endHour": 8 }
+  },
+  "weeklyRhythm": {
+    "lowDaysPerWeek": 2,
+    "midDaysPerWeek": 4,
+    "highDaysPerWeek": 1,
+    "lowFactor": 0.45,
+    "midFactor": 0.75,
+    "highFactor": 0.95
+  },
+  "jitter": {
+    "actionDelaySecMin": 35,
+    "actionDelaySecMax": 130
+  },
+  "roleScheduling": {
+    "rotationEnabled": true,
+    "rotationMinutes": 20,
+    "allowSameRoleConcurrency": false,
+    "roles": {
+      "browse": { "actions": ["visit_profile"], "risk": "low", "maxConcurrent": 3 },
+      "like": { "actions": ["like"], "risk": "low", "maxConcurrent": 3 },
+      "follow": { "actions": ["follow"], "risk": "high", "maxConcurrent": 1 },
+      "comment": { "actions": ["comment"], "risk": "high", "maxConcurrent": 1 },
+      "chat": { "actions": ["dm"], "risk": "high", "maxConcurrent": 1 }
+    },
+    "defaultRoleOrder": ["browse", "like", "follow", "comment", "chat"],
+    "hourlyRoleMix": {
+      "09-12": ["browse", "like", "follow"],
+      "12-18": ["browse", "like", "comment"],
+      "18-23": ["browse", "like", "chat"]
+    }
+  }
+}

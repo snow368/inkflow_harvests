@@ -1,0 +1,46 @@
+{
+  "_meta": {
+    "domain": "motion",
+    "description": "Motion and dynamics — for video frame prompts and dynamic stills",
+    "usage": "Use motion blur terms sparingly for still product photography"
+  },
+  "product_motion": {
+    "description": "Motion state of the product itself",
+    "terms": [
+      {"term": "still static", "prompt_fragment": "perfectly still, no motion"},
+      {"term": "slight rotation", "prompt_fragment": "slow rotation, product in motion"},
+      {"term": "floating drift", "prompt_fragment": "floating weightless, subtle drift"},
+      {"term": "dropping suspended", "prompt_fragment": "caught mid-drop, suspended in air"},
+      {"term": "spinning", "prompt_fragment": "spinning on axis, motion blur at edges"}
+    ]
+  },
+  "camera_motion": {
+    "description": "Camera movement types for video/film",
+    "terms": [
+      {"term": "locked static", "prompt_fragment": "locked down tripod, zero camera movement"},
+      {"term": "slow push in", "prompt_fragment": "slow push-in, camera advancing toward product"},
+      {"term": "slow pull out", "prompt_fragment": "slow pull-back, camera retreating from product"},
+      {"term": "orbiting", "prompt_fragment": "orbiting around product, 180° arc"},
+      {"term": "tracking lateral", "prompt_fragment": "tracking laterally across product lineup"},
+      {"term": "crane up", "prompt_fragment": "crane arm rising, product shrinking in frame"}
+    ]
+  },
+  "blur_effect": {
+    "description": "Intentional blur for visual effect",
+    "terms": [
+      {"term": "motion blur", "prompt_fragment": "motion blur trail at product edge, dynamic feel"},
+      {"term": "radial blur", "prompt_fragment": "radial zoom blur, speed lines from center"},
+      {"term": "focal plane blur", "prompt_fragment": "focal plane tilt, blur gradient across image"},
+      {"term": "breathing blur", "prompt_fragment": "lens breathing effect, subtle focus oscillation"}
+    ]
+  },
+  "timing_moment": {
+    "description": "When in a sequence the frame is captured",
+    "terms": [
+      {"term": "frozen instant", "prompt_fragment": "frozen in time, sharp stop-motion"},
+      {"term": "long exposure", "prompt_fragment": "long exposure, smooth trails around moving parts"},
+      {"term": "mid-action", "prompt_fragment": "caught mid-action, dynamic pause"},
+      {"term": "settled rest", "prompt_fragment": "at rest, settled, no kinetic energy"}
+    ]
+  }
+}

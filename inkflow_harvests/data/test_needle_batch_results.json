@@ -1,0 +1,552 @@
+{
+  "black-friday-special-peach-tattoo-needle-set-3-types-2-models-peach-con-peach-cog-peach-aes-only-99_33.png": {
+    "status": "ok",
+    "analysis": {
+      "content_id": "",
+      "platform": "",
+      "content_type": "product_showcase",
+      "visual_style": "commercial_product",
+      "product_category": "tattoo_cartridges",
+      "camera": {
+        "shot_type": "commercial product shot",
+        "camera_angle": "commercial product shot",
+        "focus_style": "sharp focus",
+        "lens_feeling": "clean professional lens",
+        "depth_of_field": "deep depth of field"
+      },
+      "lighting": {
+        "lighting_style": "commercial product lighting",
+        "contrast_level": "unknown",
+        "shadow_density": "unknown",
+        "lighting_direction": "overhead studio lighting",
+        "temperature_feeling": "unknown"
+      },
+      "composition": {
+        "framing_style": "tight framing",
+        "subject_focus": "subject isolation",
+        "negative_space": "minimal negative space",
+        "balance_style": "symmetrical balance"
+      },
+      "materials": {
+        "skin_texture": "unknown",
+        "glove_texture": "unknown",
+        "ink_reflection": "unknown",
+        "plastic_reflection": "unknown",
+        "metal_reflection": "chrome metallic reflection"
+      },
+      "product_scene": {
+        "product_position": "clustered arrangement",
+        "background_style": "unknown",
+        "surface_type": "unknown",
+        "material_behavior": "glossy plastic reflection",
+        "camera_style": "commercial product shot",
+        "composition_style": "symmetrical balance",
+        "desk_surface": "unknown",
+        "desk_cover": "unknown",
+        "tool_layout": "unknown",
+        "contamination_level": "clean organized setup",
+        "workflow_state": "product photography"
+      },
+      "lighting_fine": {
+        "light_direction": "overhead",
+        "light_hardness": "soft (diffused)",
+        "light_count": "multi-light studio (4+)",
+        "contrast_level": "medium contrast",
+        "temperature_feeling": "neutral (5000K)"
+      },
+      "position_fine": {
+        "product_angle": "45° three-quarter",
+        "distance": "medium (30-50cm)",
+        "framing": "tight",
+        "perspective": "eye-level (0°)"
+      },
+      "material_fine": {
+        "specular_intensity": "moderately specular (semi-gloss)",
+        "surface_roughness": "polished smooth",
+        "material_category": "plastic (hard)"
+      },
+      "camera_fine": {
+        "focal_length_equivalent": "standard (35-70mm)",
+        "aperture_feeling": "narrow (f/8-11)",
+        "camera_movement_style": "locked down (tripod)"
+      },
+      "composition_fine": {
+        "visual_weight_distribution": "center-weighted",
+        "depth_construction": "single-plane (flat)",
+        "negative_space_ratio": "minimal (<20% empty)"
+      },
+      "background_fine": {
+        "background_material": "unknown",
+        "background_depth": "infinite (seamless)"
+      },
+      "spatial_realism": {
+        "foreground_obstruction": "unknown",
+        "partial_visibility": "unknown",
+        "cropped_objects": "unknown",
+        "depth_layering": "unknown",
+        "focus_falloff": "unknown"
+      },
+      "tattoo_authenticity": {
+        "commercial_feeling_score": 9,
+        "studio_authenticity_score": 1
+      },
+      "social_media": {
+        "hook_strength": 8,
+        "retention_potential": 7,
+        "viral_potential": 6,
+        "conversion_potential": 9
+      },
+      "needle_detail": {
+        "needle_type": "unknown",
+        "needle_gauge": "unknown",
+        "needle_count": "unknown",
+        "needle_taper": "unknown",
+        "cartridge_color": "other",
+        "membrane_type": "unknown",
+        "connection_type": "unknown",
+        "packaging_format": "box_set",
+        "brand_prediction": "peach",
+        "flow_channel_visible": "unknown",
+        "internal_taper_visible": "unknown"
+      },
+      "style_keywords": [
+        "commercial polished",
+        "bright colorful",
+        "clean minimalist",
+        "high end commercial",
+        "modern digital"
+      ],
+      "generation_ready": {
+        "image_prompt_keywords": [
+          "commercial product shot",
+          "tattoo cartridge gift pack",
+          "PEACH brand",
+          "pink background",
+          "three box sets",
+          "AES, CON, COG models",
+          "glossy plastic packaging",
+          "sharp focus",
+          "deep depth of field",
+          "symmetrical composition",
+          "minimal negative space",
+          "clean professional lens",
+          "overhead studio lighting",
+          "neutral white balance",
+          "product photography",
+          "social media ad"
+        ]
+      }
+    }
+  },
+  "black-friday-special-peach-tattoo-needle-set-3-types-2-models-peach-con-peach-cog-peach-aes-only-99_34.jpg": {
+    "status": "ok",
+    "analysis": {
+      "content_id": "",
+      "platform": "",
+      "content_type": "product_showcase",
+      "visual_style": "commercial_product",
+      "product_category": "tattoo_cartridges",
+      "camera": {
+        "shot_type": "commercial product shot",
+        "camera_angle": "commercial product shot",
+        "focus_style": "sharp focus",
+        "lens_feeling": "clean professional lens",
+        "depth_of_field": "deep depth of field"
+      },
+      "lighting": {
+        "lighting_style": "commercial product lighting",
+        "contrast_level": "unknown",
+        "shadow_density": "unknown",
+        "lighting_direction": "overhead studio lighting",
+        "temperature_feeling": "unknown"
+      },
+      "composition": {
+        "framing_style": "tight framing",
+        "subject_focus": "subject isolation",
+        "negative_space": "minimal negative space",
+        "balance_style": "asymmetrical balance"
+      },
+      "materials": {
+        "skin_texture": "unknown",
+        "glove_texture": "unknown",
+        "ink_reflection": "unknown",
+        "plastic_reflection": "unknown",
+        "metal_reflection": "unknown"
+      },
+      "product_scene": {
+        "product_position": "clustered arrangement",
+        "background_style": "pure black seamless",
+        "surface_type": "pure black seamless",
+        "material_behavior": "plastic blister pack",
+        "camera_style": "commercial product shot",
+        "composition_style": "asymmetrical balance",
+        "desk_surface": "black matte workstation",
+        "desk_cover": "no cover",
+        "tool_layout": "organized tool row",
+        "contamination_level": "clean organized setup",
+        "workflow_state": "product photography"
+      },
+      "lighting_fine": {
+        "light_direction": "overhead + front fill",
+        "light_hardness": "soft (diffused, large source)",
+        "light_count": "multi-light studio (4+)",
+        "contrast_level": "medium contrast",
+        "temperature_feeling": "neutral (5000K)"
+      },
+      "position_fine": {
+        "product_angle": "45° three-quarter",
+        "distance": "medium (30-50cm)",
+        "framing": "tight",
+        "perspective": "eye-level (0°)"
+      },
+      "material_fine": {
+        "specular_intensity": "moderately specular (semi-gloss)",
+        "surface_roughness": "polished smooth",
+        "material_category": "plastic (hard)"
+      },
+      "camera_fine": {
+        "focal_length_equivalent": "standard (35-70mm)",
+        "aperture_feeling": "narrow (f/8-11)",
+        "camera_movement_style": "locked down (tripod)"
+      },
+      "composition_fine": {
+        "visual_weight_distribution": "center-weighted",
+        "depth_construction": "two-plane (product + surface)",
+        "negative_space_ratio": "minimal (<20% empty)"
+      },
+      "background_fine": {
+        "background_material": "seamless black (paper/vinyl)",
+        "background_depth": "infinite (seamless)"
+      },
+      "spatial_realism": {
+        "foreground_obstruction": "unknown",
+        "partial_visibility": "unknown",
+        "cropped_objects": "unknown",
+        "depth_layering": "unknown",
+        "focus_falloff": "unknown"
+      },
+      "tattoo_authenticity": {
+        "commercial_feeling_score": 9,
+        "studio_authenticity_score": 1
+      },
+      "social_media": {
+        "hook_strength": 8,
+        "retention_potential": 7,
+        "viral_potential": 6,
+        "conversion_potential": 9
+      },
+      "needle_detail": {
+        "needle_type": "unknown",
+        "needle_gauge": "unknown",
+        "needle_count": "unknown",
+        "needle_taper": "unknown",
+        "cartridge_color": "other",
+        "membrane_type": "unknown",
+        "connection_type": "unknown",
+        "packaging_format": "box_set",
+        "brand_prediction": "peach",
+        "flow_channel_visible": "unknown",
+        "internal_taper_visible": "unknown"
+      },
+      "style_keywords": [
+        "commercial polished",
+        "bright clean",
+        "studio professional",
+        "clean minimalist",
+        "high end commercial"
+      ],
+      "generation_ready": {
+        "image_prompt_keywords": [
+          "commercial product shot",
+          "tattoo cartridge boxes",
+          "Peach brand",
+          "colorful packaging",
+          "asymmetrical arrangement",
+          "black background",
+          "sharp focus",
+          "studio lighting",
+          "product photography",
+          "clean setup",
+          "plastic blister pack",
+          "eye-level shot",
+          "deep depth of field"
+        ]
+      }
+    }
+  },
+  "oem-odm-permanent-makeup-needles-high-quality-disposable-tattoo-cartridge-needles_210.jpg": {
+    "status": "ok",
+    "analysis": {
+      "content_id": "",
+      "platform": "",
+      "content_type": "product_showcase",
+      "visual_style": "commercial_product",
+      "product_category": "tattoo_cartridges",
+      "camera": {
+        "shot_type": "commercial product shot",
+        "camera_angle": "commercial product shot",
+        "focus_style": "sharp focus",
+        "lens_feeling": "clean professional lens",
+        "depth_of_field": "deep depth of field"
+      },
+      "lighting": {
+        "lighting_style": "commercial product lighting",
+        "contrast_level": "unknown",
+        "shadow_density": "unknown",
+        "lighting_direction": "unknown",
+        "temperature_feeling": "unknown"
+      },
+      "composition": {
+        "framing_style": "tight framing",
+        "subject_focus": "tight framing",
+        "negative_space": "minimal negative space",
+        "balance_style": "symmetrical balance"
+      },
+      "materials": {
+        "skin_texture": "unknown",
+        "glove_texture": "unknown",
+        "ink_reflection": "unknown",
+        "plastic_reflection": "unknown",
+        "metal_reflection": "chrome metallic reflection"
+      },
+      "product_scene": {
+        "product_position": "row layout",
+        "background_style": "pure white seamless",
+        "surface_type": "pure white seamless",
+        "material_behavior": "transparent plastic clarity",
+        "camera_style": "commercial product shot",
+        "composition_style": "symmetrical balance",
+        "desk_surface": "clinical white laminate",
+        "desk_cover": "no cover",
+        "tool_layout": "organized tool row",
+        "contamination_level": "clean organized setup",
+        "workflow_state": "product photography"
+      },
+      "lighting_fine": {
+        "light_direction": "overhead + front fill",
+        "light_hardness": "soft (diffused, large source)",
+        "light_count": "multi-light studio (4+)",
+        "contrast_level": "medium contrast",
+        "temperature_feeling": "neutral (5000K)"
+      },
+      "position_fine": {
+        "product_angle": "45° three-quarter",
+        "distance": "medium (30-50cm)",
+        "framing": "tight",
+        "perspective": "eye-level (0°)"
+      },
+      "material_fine": {
+        "specular_intensity": "moderately specular (semi-gloss)",
+        "surface_roughness": "polished smooth",
+        "material_category": "plastic (transparent)"
+      },
+      "camera_fine": {
+        "focal_length_equivalent": "standard (35-70mm)",
+        "aperture_feeling": "narrow (f/8-11)",
+        "camera_movement_style": "locked down (tripod)"
+      },
+      "composition_fine": {
+        "visual_weight_distribution": "center-weighted",
+        "depth_construction": "two-plane (product + surface)",
+        "negative_space_ratio": "minimal (<20% empty)"
+      },
+      "background_fine": {
+        "background_material": "seamless white (paper/vinyl)",
+        "background_depth": "infinite (seamless)"
+      },
+      "spatial_realism": {
+        "foreground_obstruction": "unknown",
+        "partial_visibility": "unknown",
+        "cropped_objects": "unknown",
+        "depth_layering": "unknown",
+        "focus_falloff": "unknown"
+      },
+      "tattoo_authenticity": {
+        "commercial_feeling_score": 9,
+        "studio_authenticity_score": 2
+      },
+      "social_media": {
+        "hook_strength": 7,
+        "retention_potential": 6,
+        "viral_potential": 4,
+        "conversion_potential": 8
+      },
+      "needle_detail": {
+        "needle_type": "RL",
+        "needle_gauge": "10",
+        "needle_count": "3",
+        "needle_taper": "LT",
+        "cartridge_color": "translucent_blue",
+        "membrane_type": "clear_thin",
+        "connection_type": "screw_long",
+        "packaging_format": "individual_blister",
+        "brand_prediction": "cheyenne",
+        "flow_channel_visible": "yes_tight_gap",
+        "internal_taper_visible": "steep_angle"
+      },
+      "style_keywords": [
+        "commercial polished",
+        "bright clean",
+        "studio professional",
+        "clean minimalist",
+        "high end commercial"
+      ],
+      "generation_ready": {
+        "image_prompt_keywords": [
+          "commercial product shot",
+          "tattoo cartridges",
+          "translucent blue plastic",
+          "row layout",
+          "pure white seamless background",
+          "overhead + front fill lighting",
+          "sharp focus",
+          "deep depth of field",
+          "symmetrical balance",
+          "clean organized setup",
+          "product photography",
+          "high end commercial style"
+        ]
+      }
+    }
+  },
+  "oem-odm-permanent-makeup-needles-high-quality-disposable-tattoo-cartridge-needles_211.jpg": {
+    "status": "ok",
+    "analysis": {
+      "content_id": "",
+      "platform": "",
+      "content_type": "product_showcase",
+      "visual_style": "commercial_product",
+      "product_category": "tattoo_cartridges",
+      "camera": {
+        "shot_type": "commercial product shot",
+        "camera_angle": "commercial product shot",
+        "focus_style": "sharp focus",
+        "lens_feeling": "clean professional lens",
+        "depth_of_field": "deep depth of field"
+      },
+      "lighting": {
+        "lighting_style": "commercial product lighting",
+        "contrast_level": "unknown",
+        "shadow_density": "unknown",
+        "lighting_direction": "unknown",
+        "temperature_feeling": "unknown"
+      },
+      "composition": {
+        "framing_style": "tight framing",
+        "subject_focus": "subject isolation",
+        "negative_space": "minimal negative space",
+        "balance_style": "symmetrical balance"
+      },
+      "materials": {
+        "skin_texture": "unknown",
+        "glove_texture": "unknown",
+        "ink_reflection": "unknown",
+        "plastic_reflection": "unknown",
+        "metal_reflection": "chrome metallic reflection"
+      },
+      "product_scene": {
+        "product_position": "floating 45 degree",
+        "background_style": "pure white seamless",
+        "surface_type": "pure white seamless",
+        "material_behavior": "transparent plastic clarity",
+        "camera_style": "commercial product shot",
+        "composition_style": "center composition",
+        "desk_surface": "unknown",
+        "desk_cover": "unknown",
+        "tool_layout": "unknown",
+        "contamination_level": "unknown",
+        "workflow_state": "product photography"
+      },
+      "lighting_fine": {
+        "light_direction": "overhead + front fill",
+        "light_hardness": "soft (diffused, large source)",
+        "light_count": "multi-light studio (4+)",
+        "contrast_level": "medium contrast",
+        "temperature_feeling": "neutral (5000K)"
+      },
+      "position_fine": {
+        "product_angle": "45° three-quarter",
+        "distance": "medium (30-50cm)",
+        "framing": "tight",
+        "perspective": "eye-level (0°)"
+      },
+      "material_fine": {
+        "specular_intensity": "moderately specular (semi-gloss)",
+        "surface_roughness": "polished smooth",
+        "material_category": "plastic (transparent)"
+      },
+      "camera_fine": {
+        "focal_length_equivalent": "standard (35-70mm)",
+        "aperture_feeling": "narrow (f/8-11)",
+        "camera_movement_style": "locked down (tripod)"
+      },
+      "composition_fine": {
+        "visual_weight_distribution": "center-weighted",
+        "depth_construction": "single-plane (flat)",
+        "negative_space_ratio": "minimal (<20% empty)"
+      },
+      "background_fine": {
+        "background_material": "seamless white (paper/vinyl)",
+        "background_depth": "infinite (seamless)"
+      },
+      "spatial_realism": {
+        "foreground_obstruction": "unknown",
+        "partial_visibility": "unknown",
+        "cropped_objects": "unknown",
+        "depth_layering": "unknown",
+        "focus_falloff": "unknown"
+      },
+      "tattoo_authenticity": {
+        "commercial_feeling_score": 9,
+        "studio_authenticity_score": 1
+      },
+      "social_media": {
+        "hook_strength": 7,
+        "retention_potential": 6,
+        "viral_potential": 4,
+        "conversion_potential": 8
+      },
+      "needle_detail": {
+        "needle_type": "unknown",
+        "needle_gauge": "unknown",
+        "needle_count": "unknown",
+        "needle_taper": "unknown",
+        "cartridge_color": "clear",
+        "membrane_type": "unknown",
+        "connection_type": "unknown",
+        "packaging_format": "unknown",
+        "brand_prediction": "unknown",
+        "flow_channel_visible": "yes_moderate_gap",
+        "internal_taper_visible": "steep_angle"
+      },
+      "style_keywords": [
+        "commercial polished",
+        "clinical clean",
+        "studio professional",
+        "high end commercial",
+        "precision detailed"
+      ],
+      "generation_ready": {
+        "image_prompt_keywords": [
+          "commercial product shot",
+          "tattoo cartridge",
+          "transparent plastic",
+          "floating 45 degree",
+          "pure white seamless background",
+          "sharp focus",
+          "deep depth of field",
+          "overhead + front fill lighting",
+          "neutral color temperature",
+          "medium contrast",
+          "symmetrical balance",
+          "center composition",
+          "minimal negative space",
+          "clean professional lens",
+          "locked down tripod",
+          "product photography",
+          "high end commercial"
+        ]
+      }
+    }
+  }
+}

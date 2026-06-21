@@ -1,0 +1,69 @@
+[
+  {
+    "id": "A_1779615159187",
+    "account": "A",
+    "platform": "instagram",
+    "contentType": "flash_design",
+    "sourceImage": "F:\\inkflow app\\InkFlow_Project\\inkflow_harvests\\data\\product_images\\peach-thickened-version-of-the-tattoo-hand-bracket-tattoo-arm-bracket-tattoo-triangle-bracket-base-tattoo-handrail_160.jpg",
+    "outputImage": "F:\\inkflow app\\InkFlow_Project\\inkflow_harvests\\output\\content\\A_flash_design_1779615159187.png",
+    "caption": "Minimalist flash for your next piece 🖤 Save to your collection\n\n#tattooflash #minimaltattoo #flashart",
+    "hashtags": [
+      "#tattooflash",
+      "#minimaltattoo",
+      "#flashart"
+    ],
+    "scheduledAt": "2026-05-25T02:00:00.000Z",
+    "status": "ready",
+    "createdAt": "2026-05-24T09:32:48.001Z"
+  },
+  {
+    "id": "A_1779671668434",
+    "account": "A",
+    "platform": "instagram",
+    "contentType": "flash_design",
+    "sourceImage": "F:\\inkflow app\\InkFlow_Project\\inkflow_harvests\\data\\product_images\\peach-extended-tip-2024-newest-image-reversal-model-revolutionary-tattoo-needle_190.jpg",
+    "outputImage": "F:\\inkflow app\\InkFlow_Project\\inkflow_harvests\\output\\content\\A_flash_design_1779671668434.png",
+    "caption": "Minimalist flash for your next piece 🖤 Save for inspiration\n\n#tattooflash #tattoodesign #inkinspo",
+    "hashtags": [
+      "#tattooflash",
+      "#tattoodesign",
+      "#inkinspo"
+    ],
+    "scheduledAt": "2026-05-26T02:00:00.000Z",
+    "status": "ready",
+    "createdAt": "2026-05-25T01:14:35.002Z"
+  },
+  {
+    "id": "D_1779671675053",
+    "account": "D",
+    "platform": "instagram",
+    "contentType": "product_spotlight",
+    "sourceImage": "F:\\inkflow app\\InkFlow_Project\\inkflow_harvests\\data\\product_images\\peach-removable-tattoo-trolley-case-embroidery-toolbox-nail-storage-box-tattoo-artist-travel-luggage_157.jpg",
+    "outputImage": "F:\\inkflow app\\InkFlow_Project\\inkflow_harvests\\output\\content\\D_product_spotlight_1779671675053.png",
+    "caption": "Elevate your tattooing craft with the PEACH removable tattoo trolley case — built for the artist who demands precision and portability. 🛠️ From organizing needles to pigments, this embroidery toolbox nail storage box redefines efficiency. Your travel-ready studio, perfected. 🖤\n\n#TattooSupply #ArtistEssentials #MobileStudio",
+    "hashtags": [
+      "#TattooSupply",
+      "#ArtistEssentials",
+      "#MobileStudio"
+    ],
+    "scheduledAt": "2026-05-26T02:00:00.000Z",
+    "status": "ready",
+    "createdAt": "2026-05-25T01:14:41.814Z"
+  },
+  {
+    "image": "data/generated_samples/peach_instagram_ready.png",
+    "caption": "PEACH Tattoo Cartridge\n\nPrecision meets comfort.\n\nMicro tip design for smooth,\neffortless lining and shading.\nPeach pink shell · Silver connector\nAvailable in all standard needle configurations.",
+    "hashtags": [
+      "peachtattoo",
+      "tattoocartridge",
+      "tattooneedle",
+      "tattoosupply",
+      "tattooartist",
+      "cartridge",
+      "tattootips",
+      "peachcartridge"
+    ],
+    "status": "ready",
+    "created_at": "2026-06-01"
+  }
+]

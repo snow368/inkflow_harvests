@@ -1,0 +1,436 @@
+{
+  "kwadron/rp10.jpg": {
+    "product": "tattoo ink",
+    "body_colors": [
+      "yellow",
+      "black",
+      "silver"
+    ],
+    "image_tone": "cool",
+    "background": "blue gradient",
+    "bg_color_tone": "vibrant blue",
+    "color_relationship": "The yellow ink bottle contrasts with the cool blue background, creating a dynamic visual focus.",
+    "composition": "macro",
+    "lighting": "studio lighting, evenly lit with soft shadows",
+    "vibe": "clean"
+  },
+  "kwadron/rp12.jpg": {
+    "product": "UNISTAR INK",
+    "body_colors": [
+      "black",
+      "white"
+    ],
+    "image_tone": "cool",
+    "background": "solid teal blue",
+    "bg_color_tone": "cool",
+    "color_relationship": "The black and white product labels create strong contrast against the cool-toned background, making the product stand out while maintaining a cohesive, modern aesthetic.",
+    "composition": "asymmetrical",
+    "lighting": "soft, directional lighting creating subtle shadows and highlights on the bottles, enhancing their three-dimensionality.",
+    "vibe": "clean"
+  },
+  "kwadron/rp18.jpg": {
+    "product": "Kwadron vaporizer pens",
+    "body_colors": [
+      "black",
+      "gold"
+    ],
+    "image_tone": "warm",
+    "background": "dark textured wooden surface",
+    "bg_color_tone": "dark brown",
+    "color_relationship": "The black product bodies contrast with the warm gold accents and the dark background, creating a rich, luxurious visual harmony.",
+    "composition": "asymmetrical",
+    "lighting": "soft directional lighting highlighting the metallic sheen and creating dramatic shadows.",
+    "vibe": "luxury"
+  },
+  "fkirons/rp2.jpg": {
+    "product": "FKIRONS Limited Edition device",
+    "body_colors": [
+      "black",
+      "orange",
+      "blue"
+    ],
+    "image_tone": "cool",
+    "background": "solid blue gradient",
+    "bg_color_tone": "deep blue",
+    "color_relationship": "product's black and orange contrast against the cool blue background, creating a bold and modern look",
+    "composition": "centered",
+    "lighting": "studio lighting with soft shadows",
+    "vibe": "luxury"
+  },
+  "fkirons/rp5.jpg": {
+    "product": "FKIRONS Limited Edition personal massager",
+    "body_colors": [
+      "silver",
+      "pink",
+      "black"
+    ],
+    "image_tone": "cool",
+    "background": "solid gradient background",
+    "bg_color_tone": "deep magenta to purple",
+    "color_relationship": "The silver and pink of the product stand out against the dark magenta background, creating a bold, high-contrast visual that emphasizes the product's modern and luxurious feel.",
+    "composition": "centered",
+    "lighting": "studio lighting with soft shadows, highlighting the product's metallic texture and contours.",
+    "vibe": "luxury"
+  },
+  "fkirons/rp8.jpg": {
+    "product": "vape devices",
+    "body_colors": [
+      "silver",
+      "black",
+      "pink",
+      "purple",
+      "orange",
+      "blue"
+    ],
+    "image_tone": "cool",
+    "background": "dark gradient",
+    "bg_color_tone": "dark gray",
+    "color_relationship": "product colors contrast with the dark background to create visual pop",
+    "composition": "asymmetrical",
+    "lighting": "studio lighting with highlights and shadows",
+    "vibe": "luxury"
+  },
+  "fkirons/rp15.jpg": {
+    "product": "Flux Max Fourth Collection light and shadow tools",
+    "body_colors": [
+      "black",
+      "silver"
+    ],
+    "image_tone": "neutral",
+    "background": "solid dark gray background",
+    "bg_color_tone": "dark neutral",
+    "color_relationship": "The black and silver product colors contrast sharply with the dark gray background, creating a bold, high-contrast look that emphasizes the product's industrial and modern design.",
+    "composition": "centered",
+    "lighting": "even studio lighting with subtle reflection on metallic surfaces",
+    "vibe": "edgy"
+  },
+  "cheyenne_tattooequipment/rp5.jpg": {
+    "product": "grip tape",
+    "body_colors": [
+      "black"
+    ],
+    "image_tone": "warm",
+    "background": "gradient of dark orange to black",
+    "bg_color_tone": "warm orange",
+    "color_relationship": "black product contrasts sharply against warm orange background, enhancing visual focus",
+    "composition": "centered",
+    "lighting": "soft directional lighting from behind, casting subtle rim light on product",
+    "vibe": "luxury"
+  },
+  "bigwasp.official/rp1.jpg": {
+    "product": "Finger Ledge Cartridge Needles",
+    "body_colors": [
+      "orange",
+      "black",
+      "transparent"
+    ],
+    "image_tone": "warm",
+    "background": "dark gradient with geometric black planes",
+    "bg_color_tone": "dark neutral",
+    "color_relationship": "The vibrant orange product contrasts sharply with the dark neutral background, creating a high-contrast, edgy look.",
+    "composition": "asymmetrical",
+    "lighting": "studio lighting with directional focus on the product",
+    "vibe": "edgy"
+  },
+  "bigwasp.official/rp2.jpg": {
+    "product": "tattoo machine needles",
+    "body_colors": [
+      "orange",
+      "black",
+      "clear"
+    ],
+    "image_tone": "cool",
+    "background": "dark reflective surface with gradient",
+    "bg_color_tone": "dark gray to black",
+    "color_relationship": "high contrast between orange product and dark background creates visual pop",
+    "composition": "asymmetrical",
+    "lighting": "studio lighting with sharp shadows and highlights",
+    "vibe": "edgy"
+  },
+  "blackclaw/rp3.jpg": {
+    "product": "motorcycle helmet",
+    "body_colors": [
+      "black",
+      "red",
+      "orange",
+      "yellow",
+      "blue",
+      "white"
+    ],
+    "image_tone": "warm",
+    "background": "out of focus person and interior setting",
+    "bg_color_tone": "neutral",
+    "color_relationship": "Product's vibrant colors contrast with the neutral background, drawing attention to the helmet.",
+    "composition": "centered",
+    "lighting": "soft, diffused indoor lighting",
+    "vibe": "edgy"
+  },
+  "eternalink/rp8.jpg": {
+    "product": "Chicago Villain Arts Tattoo Festival",
+    "body_colors": [
+      "red",
+      "black",
+      "white",
+      "gold"
+    ],
+    "image_tone": "warm",
+    "background": "a color wheel system with various tattoo ink shades, overlaid with a red background and tattoo art",
+    "bg_color_tone": "vibrant red",
+    "color_relationship": "The product colors contrast and complement the warm red background, creating a bold and edgy visual style appropriate for a tattoo festival.",
+    "composition": "asymmetrical",
+    "lighting": "even and graphic, with high contrast and graphic elements",
+    "vibe": "edgy"
+  },
+  "eternalink/rp15.jpg": {
+    "product": "tattoo ink",
+    "body_colors": [
+      "green",
+      "orange",
+      "yellow",
+      "teal"
+    ],
+    "image_tone": "warm",
+    "background": "stained-glass window design with Halloween motif",
+    "bg_color_tone": "dark green and brown",
+    "color_relationship": "The vibrant, warm-toned product colors contrast with the dark, cool-toned background to create visual pop and thematic alignment with Halloween.",
+    "composition": "centered",
+    "lighting": "even studio lighting",
+    "vibe": "edgy"
+  },
+  "dragonhawkofficial/rp1.jpg": {
+    "product": "MAST laser pointer",
+    "body_colors": [
+      "black",
+      "blue",
+      "purple"
+    ],
+    "image_tone": "cool",
+    "background": "mecha robots in a dynamic battle scene",
+    "bg_color_tone": "dark blue and purple with glowing highlights",
+    "color_relationship": "product colors complement and contrast with the futuristic, metallic, and glowing tones of the background robots",
+    "composition": "asymmetrical",
+    "lighting": "high-contrast, dramatic lighting with glowing accents",
+    "vibe": "edgy"
+  },
+  "dragonhawkofficial/rp2.jpg": {
+    "product": "FOLD PRO tattoo machine",
+    "body_colors": [
+      "green",
+      "black"
+    ],
+    "image_tone": "cool",
+    "background": "green dragon/dragon silhouette with green energy effects",
+    "bg_color_tone": "dark green with glowing green accents",
+    "color_relationship": "product's green and black color scheme matches and contrasts with the dark green background, creating a high-energy, futuristic vibe",
+    "composition": "centered",
+    "lighting": "high contrast with bright green highlights and dark shadows",
+    "vibe": "edgy"
+  },
+  "dragonhawkofficial/rp5.jpg": {
+    "product": "Dragonhawk tattoo machine",
+    "body_colors": [
+      "black",
+      "green",
+      "blue"
+    ],
+    "image_tone": "cool",
+    "background": "dark green, abstract, glowing energy swirls",
+    "bg_color_tone": "dark green with neon highlights",
+    "color_relationship": "the black product body contrasts sharply with the glowing green and blue background, enhancing the futuristic and high-tech vibe",
+    "composition": "asymmetrical",
+    "lighting": "dramatic neon lighting with glowing effects highlighting the internal motor and digital display",
+    "vibe": "edgy"
+  },
+  "dragonhawkofficial/rp8.jpg": {
+    "product": "tattoo machine",
+    "body_colors": [
+      "green",
+      "black"
+    ],
+    "image_tone": "cool",
+    "background": "dark gradient background with a reflective surface",
+    "bg_color_tone": "dark blue to black gradient",
+    "color_relationship": "The vibrant green product contrasts sharply with the dark background, creating a high-contrast, tech-focused aesthetic.",
+    "composition": "centered",
+    "lighting": "studio lighting with dramatic highlights and shadows, emphasizing product contours and glossy finish",
+    "vibe": "luxury"
+  },
+  "inkjecta/rp1.jpg": {
+    "product": "tattoo machine",
+    "body_colors": [
+      "black",
+      "clear",
+      "metallic silver"
+    ],
+    "image_tone": "warm",
+    "background": "white background with black and orange gradient text",
+    "bg_color_tone": "neutral",
+    "color_relationship": "The black and metallic colors of the machine contrast sharply with the white background, while the warm orange gradient text adds visual warmth and draws attention to the product.",
+    "composition": "asymmetrical",
+    "lighting": "studio lighting with high contrast, highlighting the machine's details and textures",
+    "vibe": "edgy"
+  },
+  "inkjecta/rp2.jpg": {
+    "product": "Universal Battery",
+    "body_colors": [
+      "black",
+      "gold",
+      "white"
+    ],
+    "image_tone": "warm",
+    "background": "light gray with orange splatter marks",
+    "bg_color_tone": "neutral with warm accents",
+    "color_relationship": "The black product contrasts sharply with the light background, while the orange splatter adds warmth and energy, complementing the product's industrial aesthetic.",
+    "composition": "asymmetrical",
+    "lighting": "clean, studio lighting with soft shadows emphasizing product details",
+    "vibe": "edgy"
+  },
+  "inkjecta/rp5.jpg": {
+    "product": "Universal Battery",
+    "body_colors": [
+      "black",
+      "gold",
+      "white"
+    ],
+    "image_tone": "warm",
+    "background": "white with orange splatter texture",
+    "bg_color_tone": "light with warm orange accents",
+    "color_relationship": "The black product contrasts sharply with the light background, while the orange splatters complement the gold accents on the product, creating a bold and edgy visual.",
+    "composition": "asymmetrical",
+    "lighting": "soft and even, highlighting product details without harsh shadows",
+    "vibe": "edgy"
+  },
+  "inkjecta/rp8.jpg": {
+    "product": "tattoo machine",
+    "body_colors": [
+      "black",
+      "clear/translucent",
+      "metallic silver"
+    ],
+    "image_tone": "warm",
+    "background": "white with a black bottom band containing text",
+    "bg_color_tone": "neutral",
+    "color_relationship": "The black and metallic parts of the tattoo machine contrast strongly against the white background, while the warm orange gradient in the text adds vibrancy. The black band at the bottom grounds the composition.",
+    "composition": "asymmetrical",
+    "lighting": "studio lighting with sharp shadows, highlighting textures and metallic surfaces",
+    "vibe": "edgy"
+  },
+  "inkjecta/rp10.jpg": {
+    "product": "Wireless Tattoo Machine",
+    "body_colors": [
+      "black",
+      "silver",
+      "gold"
+    ],
+    "image_tone": "cool",
+    "background": "dark, cosmic scene with purple and blue nebulae and mountains",
+    "bg_color_tone": "deep purple and blue",
+    "color_relationship": "The black product contrasts sharply with the vibrant cool-toned background, creating a modern and high-tech feel.",
+    "composition": "asymmetrical",
+    "lighting": "studio lighting with bright highlights on product and glowing effects in background",
+    "vibe": "edgy"
+  },
+  "inkjecta/rp12.jpg": {
+    "product": "Tattoo machine",
+    "body_colors": [
+      "white",
+      "black",
+      "gray"
+    ],
+    "image_tone": "cool",
+    "background": "solid white",
+    "bg_color_tone": "neutral",
+    "color_relationship": "The product's white and black colors contrast sharply with the neutral white background, creating a clean, high-contrast look that emphasizes the product¡¯s sleek design.",
+    "composition": "asymmetrical",
+    "lighting": "studio lighting with soft shadows to highlight product contours and details",
+    "vibe": "clean"
+  },
+  "inkjecta/rp15.jpg": {
+    "product": "microphone",
+    "body_colors": [
+      "black",
+      "silver",
+      "gold"
+    ],
+    "image_tone": "neutral",
+    "background": "blurry black surface with a hint of white and blue at the edges",
+    "bg_color_tone": "cool",
+    "color_relationship": "The black product body contrasts against the cool-toned background, drawing focus to the metallic accents while maintaining a minimalist aesthetic.",
+    "composition": "macro",
+    "lighting": "soft, directional lighting highlighting metallic surfaces and creating subtle shadows for depth",
+    "vibe": "clean"
+  },
+  "cnctattoo/rp5.jpg": {
+    "product": "vape device",
+    "body_colors": [
+      "black",
+      "gold",
+      "green accent"
+    ],
+    "image_tone": "warm",
+    "background": "dark blue velvet fabric with faint technical blueprint overlay",
+    "bg_color_tone": "cool",
+    "color_relationship": "product's black and gold tones contrast with the cool background, creating a luxurious and premium feel",
+    "composition": "centered",
+    "lighting": "soft spotlighting on the product with ambient glow from the display and accent light",
+    "vibe": "luxury"
+  },
+  "tatsoul/rp8.jpg": {
+    "product": "Jet Black Bed Sheets",
+    "body_colors": [
+      "black",
+      "gray"
+    ],
+    "image_tone": "cool",
+    "background": "dark wooden wall and black leather chairs",
+    "bg_color_tone": "dark brown and black",
+    "color_relationship": "The product's black and gray tones harmonize with the dark background, creating a cohesive, moody aesthetic.",
+    "composition": "centered",
+    "lighting": "soft, directional lighting with subtle shadows",
+    "vibe": "luxury"
+  },
+  "tatsoul/rp15.jpg": {
+    "product": "tattoo machine and accessories",
+    "body_colors": [
+      "teal",
+      "black"
+    ],
+    "image_tone": "cool",
+    "background": "dark textured surface resembling wood or stone",
+    "bg_color_tone": "dark gray",
+    "color_relationship": "the teal product color contrasts sharply with the dark gray background, creating a bold, modern look against the cool tone",
+    "composition": "asymmetrical",
+    "lighting": "soft directional lighting highlighting the products",
+    "vibe": "edgy"
+  },
+  "tatsoul/rp20.jpg": {
+    "product": "Nocturnal Ink Line by Bishop Rotary",
+    "body_colors": [
+      "black",
+      "white",
+      "grey"
+    ],
+    "image_tone": "cool",
+    "background": "dark textured surface with dark wall",
+    "bg_color_tone": "dark charcoal",
+    "color_relationship": "high contrast monochromatic palette emphasizing black and white with grey as accent",
+    "composition": "centered",
+    "lighting": "directional spotlight from above",
+    "vibe": "luxury"
+  },
+  "tatsoul/rp25.jpg": {
+    "product": "Tattoo Derm Film",
+    "body_colors": [
+      "black",
+      "white",
+      "gold"
+    ],
+    "image_tone": "cool",
+    "background": "dark, minimalist surface with black gloves and product packaging",
+    "bg_color_tone": "black",
+    "color_relationship": "high contrast between the black background and white/gold product elements emphasizes luxury and premium quality",
+    "composition": "centered",
+    "lighting": "high contrast, directional spotlight highlights the product and creates deep shadows",
+    "vibe": "luxury"
+  }
+}
