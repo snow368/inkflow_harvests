@@ -138,7 +138,7 @@ function AccountSetupSection() {
       if (firstDate) params.set('firstUsedAt', firstDate);
       if (vpsName) params.set('vpsName', vpsName);
       if (proxyIp) params.set('proxyIp', proxyIp);
-      const res = await fetch('/api/automation/bot-account/set?' + params.toString());
+      const res = await fetch('https://harvests-cloud-api-production.inkflowapp.workers.dev/api/automation/bot-account/set?' + params.toString());
       const data = await res.json();
       if (data.ok) {
         toast.success(`${botId} 已设置`);
