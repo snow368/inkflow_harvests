@@ -772,15 +772,18 @@ app.get('/api/admin/stats', async (c) => {
 // ============ BOT ACCOUNT CONFIG (write to Neon, read D1 dashboard) ============
 
 app.put('/api/automation/bot-account', async (c) => {
-  const { botId, firstUsedAt, dailyTaskLimit } = await c.req.json();
+  const { botId, igHandle, firstUsedAt, dailyTaskLimit } = await c.req.json();
   if (!botId) return c.json({ error: 'botId required' }, 400);
   try {
     const sets: string[] = [];
+    if (igHandle !== undefined) sets.push(`ig_handle='${igHandle.replace(/'/g, "''")}'`);
     if (firstUsedAt !== undefined) sets.push(`first_used_at='${firstUsedAt}'`);
     if (dailyTaskLimit !== undefined) sets.push(`daily_task_limit=${Number(dailyTaskLimit)}`);
     if (!sets.length) return c.json({ error: 'no fields to update' }, 400);
+    // Upsert: create bot_account row if not exists
     await neonQuery(c.env.NEON_DATABASE_URL,
-      `UPDATE bot_accounts SET ${sets.join(', ')} WHERE bot_id='${botId}'`);
+      `INSERT INTO bot_accounts (bot_id, ig_handle, first_used_at) VALUES ('${botId}', ${igHandle ? `'${igHandle.replace(/'/g, "''")}'` : 'NULL'}, ${firstUsedAt ? `'${firstUsedAt}'` : 'NULL'})
+       ON CONFLICT (bot_id) DO UPDATE SET ${sets.join(', ')}`);
     return c.json({ ok: true });
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e) }, 500);

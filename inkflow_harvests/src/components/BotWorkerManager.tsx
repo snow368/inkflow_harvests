@@ -108,6 +108,7 @@ const STAGES = ['new', 'transition', 'growing', 'stable', 'mature'];
 function AccountSetupSection() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [botId, setBotId] = useState('bot_ig_01');
+  const [igHandle, setIgHandle] = useState('');
   const [firstDate, setFirstDate] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -130,14 +131,17 @@ function AccountSetupSection() {
     if (!botId || !firstDate) return;
     setSaving(true);
     try {
+      const body: Record<string, any> = { botId, firstUsedAt: firstDate };
+      if (igHandle) body.igHandle = igHandle;
       const res = await fetch('/api/automation/bot-account', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ botId, firstUsedAt: firstDate }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (data.ok) {
         toast.success(`${botId} 已设置`);
+        setIgHandle('');
         fetchAccounts();
       } else {
         toast.error('保存失败', { description: data.error });
@@ -159,12 +163,17 @@ function AccountSetupSection() {
 
       {/* Edit form */}
       <div className="flex items-end gap-3 mb-5 flex-wrap">
-        <div className="flex-1 min-w-[140px]">
+        <div className="flex-1 min-w-[120px]">
           <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 block">Bot ID</label>
           <input type="text" value={botId} onChange={e => setBotId(e.target.value)}
             className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs text-white font-medium focus:outline-none focus:border-zinc-500" />
         </div>
-        <div className="flex-1 min-w-[140px]">
+        <div className="flex-1 min-w-[120px]">
+          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 block">IG 号</label>
+          <input type="text" value={igHandle} onChange={e => setIgHandle(e.target.value)} placeholder="例: rhyssnkoi"
+            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs text-white font-medium focus:outline-none focus:border-zinc-500" />
+        </div>
+        <div className="flex-1 min-w-[120px]">
           <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 block">首次启用日期</label>
           <input type="date" value={firstDate} onChange={e => setFirstDate(e.target.value)}
             className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs text-white font-medium focus:outline-none focus:border-zinc-500" />
