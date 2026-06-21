@@ -144,7 +144,7 @@ function AccountSetupSection() {
       if (data.ok) {
         toast.success(`${botId} 已设置`);
         setIgHandle(''); setVpsName(''); setProxyIp('');
-        fetchAccounts();
+        if (data.accounts) setAccounts(data.accounts);
       } else {
         toast.error('保存失败', { description: data.error });
       }

@@ -790,7 +790,17 @@ app.get('/api/automation/bot-account', async (c) => {
     await c.env.DB.prepare(`INSERT INTO bot_accounts (account_id, ig_handle, first_used_at, vps_name, proxy) VALUES (?, ?, ?, ?, ?)`)
       .bind(botId, c.req.query('igHandle') || null, c.req.query('firstUsedAt') || null,
             c.req.query('vpsName') || null, c.req.query('proxyIp') || null).run();
-    return c.json({ ok: true });
+    // Return all accounts so frontend can update table directly
+    const all = await c.env.DB.prepare('SELECT account_id, ig_handle, stage, daily_task_limit, speed_factor, first_used_at, vps_name, proxy FROM bot_accounts').all();
+    return c.json({
+      ok: true,
+      accounts: (all.results || []).map((a: any) => ({
+        accountId: a.account_id, igHandle: a.ig_handle, stage: a.stage,
+        dailyLimit: a.daily_task_limit, speed: a.speed_factor,
+        firstUsedAt: a.first_used_at || null,
+        vpsName: a.vps_name || null, proxy: a.proxy || null,
+      })),
+    });
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e) }, 500);
   }
