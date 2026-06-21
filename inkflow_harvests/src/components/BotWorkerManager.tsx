@@ -106,7 +106,7 @@ const saveAccounts = (accounts: AccountEntry[]) => {
 
 // ── Bot Account Setup (IG handle + first_used_at) ──
 const STAGES = ['new', 'transition', 'growing', 'stable', 'mature'];
-function AccountSetupSection() {
+function AccountSetupSection({ onViewLog }: { onViewLog?: (id: string) => void }) {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [botId, setBotId] = useState('bot_ig_01');
   const [igHandle, setIgHandle] = useState('');
@@ -242,7 +242,7 @@ function AccountSetupSection() {
               const autoStage = calcStage(days);
               const autoLimit = calcLimit(days);
               const stage = a.stage || autoStage;
-              const limit = a.dailyLimit && a.dailyLimit !== autoLimit ? a.dailyLimit : autoLimit;
+              const limit = autoLimit; // 永远按天数自动算，覆盖看 bot_accounts.daily_task_limit
               return (
                 <tr key={a.accountId} className="border-t border-zinc-800/50 text-zinc-300 font-medium group">
                   <td className="py-2 pr-3">{a.accountId}</td>
@@ -260,7 +260,8 @@ function AccountSetupSection() {
                       : 'bg-rose-500/10 text-rose-400')}>{stage}</span>
                   </td>
                   <td className="py-2 pr-3">{limit}/天</td>
-                  <td className="py-2 pr-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <td className="py-2 pr-3 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                    <button onClick={() => onViewLog?.(a.accountId)} className="text-[10px] font-bold text-cyan-500 hover:text-cyan-400 mr-2">历程</button>
                     <button onClick={() => startEdit(a)} className="text-[10px] font-bold text-zinc-500 hover:text-white mr-2">编辑</button>
                     <button onClick={() => handleDelete(a.accountId)} className="text-[10px] font-bold text-red-500 hover:text-red-400">删除</button>
                   </td>
@@ -294,19 +295,28 @@ function BehaviorLogSection() {
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ botId: filterBot, limit: '100' });
+      const botId = document.getElementById('behavior-logs')?.dataset?.filterBot || filterBot;
+      if (botId && botId !== filterBot) setFilterBot(botId);
+      const params = new URLSearchParams({ botId, limit: '100' });
       if (filterEvent) params.set('event', filterEvent);
-      const res = await fetch(`/api/automation/behavior-logs?${params}`);
+      const res = await apiFetch('/api/automation/behavior-logs?' + params.toString());
       const data = await res.json();
       if (data?.logs) setLogs(data.logs);
     } catch {}
     setLoading(false);
   }, [filterBot, filterEvent]);
 
+  useEffect(() => {
+    const el = document.getElementById('behavior-logs');
+    if (el?.dataset?.filterBot && el.dataset.filterBot !== filterBot) {
+      setFilterBot(el.dataset.filterBot);
+    }
+  }, []);
+
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+    <motion.div id="behavior-logs" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
       className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6">
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
@@ -601,7 +611,10 @@ export default function BotWorkerManager() {
       </div>
 
       {/* Bot Accounts */}
-      <AccountSetupSection />
+      <AccountSetupSection onViewLog={(id) => {
+        const el = document.getElementById('behavior-logs');
+        if (el) { el.scrollIntoView({ behavior: 'smooth' }); el.dataset.filterBot = id; }
+      }} />
 
       {/* Behavior Logs */}
       <BehaviorLogSection />
