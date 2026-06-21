@@ -777,7 +777,12 @@ app.get('/api/automation/bot-account', async (c) => {
   const botId = c.req.query('botId');
   if (!botId) return c.json({ error: 'botId required' }, 400);
   try {
-    // Write to D1 (fast, no Neon dependency)
+    // Ensure table exists
+    await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_accounts (
+      account_id TEXT PRIMARY KEY, ig_handle TEXT, stage TEXT DEFAULT 'new',
+      daily_task_limit INTEGER DEFAULT 5, speed_factor REAL DEFAULT 2.5,
+      first_used_at TEXT, vps_name TEXT, proxy TEXT
+    )`).run();
     try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN vps_name TEXT').run(); } catch {}
     try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN proxy TEXT').run(); } catch {}
     try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN first_used_at TEXT').run(); } catch {}

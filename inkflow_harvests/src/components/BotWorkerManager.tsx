@@ -117,7 +117,7 @@ function AccountSetupSection() {
 
   const fetchAccounts = useCallback(async () => {
     try {
-      const res = await fetch('/api/automation/dashboard');
+      const res = await apiFetch('/api/automation/dashboard');
       const data = await res.json();
       if (data?.accounts) setAccounts(data.accounts);
     } catch {}
