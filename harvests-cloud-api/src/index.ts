@@ -58,6 +58,8 @@ async function verifyToken(token: string): Promise<UserInfo | null> {
 const PUBLIC_PATHS = new Set([
   '/api/shopify/webhook/orders-create',
   '/api/fulfillment/shopify/callback',
+  '/api/automation/bot-account/set',
+  '/api/automation/behavior-logs',
 ])
 
 app.use('/api/*', async (c, next) => {
