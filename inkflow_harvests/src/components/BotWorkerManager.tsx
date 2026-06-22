@@ -8,7 +8,8 @@ import {
   MessageSquare, Zap, Activity, Clock, Settings, Globe, Monitor,
   ChevronDown, ChevronRight, RefreshCw, Cpu, Plus, Trash2,
   PlayCircle, StopCircle, User, Shield, Wifi,
-  Brain, Target, BarChart3, TrendingUp, MessageCircle, ListTodo
+  Brain, Target, BarChart3, TrendingUp, MessageCircle, ListTodo,
+  ExternalLink, PlusCircle, X
 } from 'lucide-react';
 
 type BotConfig = {
@@ -372,6 +373,104 @@ function BehaviorLogSection() {
   );
 }
 
+// ── Noise Sites Configuration (rest-time browsing) ──
+const DEFAULT_SITES = [
+  'https://www.cnn.com',
+  'https://www.nydailynews.com',
+  'https://www.youtube.com',
+];
+function NoiseSitesSection() {
+  const [sites, setSites] = useState<string[]>([]);
+  const [newUrl, setNewUrl] = useState('');
+  const [saving, setSaving] = useState(false);
+  const botId = 'bot_ig_01';
+
+  const fetchSites = useCallback(async () => {
+    try {
+      const res = await apiFetch(`/api/bot/noise-sites?botId=${botId}`);
+      const data = await res.json();
+      if (data?.sites) setSites(data.sites);
+      else setSites(DEFAULT_SITES);
+    } catch { setSites(DEFAULT_SITES); }
+  }, []);
+
+  useEffect(() => { fetchSites(); }, [fetchSites]);
+
+  const addSite = () => {
+    const url = newUrl.trim();
+    if (!url) return;
+    if (!url.startsWith('https://')) { toast.error('请输入完整 URL（https://...）'); return; }
+    if (sites.includes(url)) { toast.error('该站点已存在'); return; }
+    setSites(prev => [...prev, url]);
+    setNewUrl('');
+  };
+
+  const removeSite = (url: string) => {
+    setSites(prev => prev.filter(s => s !== url));
+  };
+
+  const saveSites = async () => {
+    if (sites.length === 0) { toast.error('至少保留一个站点'); return; }
+    setSaving(true);
+    try {
+      const res = await apiFetch('/api/bot/noise-sites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botId, sites }),
+      });
+      const data = await res.json();
+      if (data.ok) toast.success('噪音站点已更新（bot 每 5 分钟自动刷新）');
+      else toast.error('保存失败', { description: data.error });
+    } catch (e: any) {
+      toast.error('保存失败', { description: e.message });
+    }
+    setSaving(false);
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+      className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6">
+      <div className="flex items-center gap-3 mb-5">
+        <ExternalLink className="w-5 h-5 text-amber-500" />
+        <h4 className="font-black text-sm text-white">噪音站点配置</h4>
+        <span className="text-[10px] font-bold text-zinc-500">休息时 bot 跳转这些站点模拟真人</span>
+      </div>
+
+      {/* Site list */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {sites.map((url) => (
+          <div key={url} className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800/80 border border-zinc-700 rounded-xl group">
+            <span className="text-[11px] text-zinc-300 font-medium truncate max-w-[200px]">{url}</span>
+            <button onClick={() => removeSite(url)} className="text-zinc-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Add new */}
+      <div className="flex gap-2 mb-4">
+        <input type="text" value={newUrl} onChange={e => setNewUrl(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && addSite()}
+          placeholder="https://www.espn.com"
+          className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs text-white font-medium focus:outline-none focus:border-zinc-500 placeholder:text-zinc-600" />
+        <button onClick={addSite} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs font-bold rounded-xl transition-colors flex items-center gap-1">
+          <PlusCircle className="w-3.5 h-3.5" /> 添加
+        </button>
+      </div>
+
+      {/* Save */}
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] text-zinc-600">修改后 Bot Worker 自动同步，无需重启</p>
+        <button onClick={saveSites} disabled={saving}
+          className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-colors">
+          {saving ? '保存中…' : '保存配置'}
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
 export default function BotWorkerManager() {
   const [functions, setFunctions] = useState<BotFunction[]>([]);
   const [workers, setWorkers] = useState<BotWorker[]>([]);
@@ -618,6 +717,9 @@ export default function BotWorkerManager() {
 
       {/* Behavior Logs */}
       <BehaviorLogSection />
+
+      {/* Noise Sites Config */}
+      <NoiseSitesSection />
 
       {/* Bot Intelligence: Learning Status & DM Pipeline */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
