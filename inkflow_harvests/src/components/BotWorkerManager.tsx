@@ -285,8 +285,9 @@ const EVENT_COLORS: Record<string, string> = {
   media_opened_total: 'text-green-400', human_break_start: 'text-amber-400',
   fresh_profile: 'text-rose-400', task_done: 'text-emerald-400', task_failed: 'text-red-400',
   action_blocked: 'text-red-500 font-bold', rate_limited: 'text-orange-500 font-bold',
+  comment_posted: 'text-purple-400', comment_failed: 'text-orange-400',
 };
-const LOG_EVENTS = ['', 'open_profile', 'open_post', 'browse_selection', 'human_break_start', 'task_done', 'task_failed', 'action_blocked', 'rate_limited', 'fresh_profile', 'media_opened_total'];
+const LOG_EVENTS = ['', 'open_profile', 'open_post', 'browse_selection', 'human_break_start', 'task_done', 'task_failed', 'action_blocked', 'rate_limited', 'fresh_profile', 'media_opened_total', 'comment_posted', 'comment_failed'];
 function BehaviorLogSection() {
   const [logs, setLogs] = useState<any[]>([]);
   const [filterBot, setFilterBot] = useState('bot_ig_01');
@@ -358,6 +359,7 @@ function BehaviorLogSection() {
             </span>
             <span className="text-[10px] text-zinc-500 font-medium truncate min-w-0">
               {log.handle ? `@${log.handle}` : ''}
+              {log.text ? ` "${log.text.slice(0, 60)}${log.text.length > 60 ? '…' : ''}"` : ''}
               {log.mode ? ` [${log.mode}]` : ''}
               {log.reason ? ` ${log.reason}` : ''}
               {log.watchMs ? ` ${Math.round(log.watchMs/1000)}s` : ''}
