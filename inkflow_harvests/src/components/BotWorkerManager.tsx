@@ -491,7 +491,7 @@ export default function BotWorkerManager() {
       const [fnRes, wRes, learnRes, dmStatsRes, neonRes] = await Promise.all([
         fetch('/api/bot/functions'),
         fetch('/api/bot/workers'),
-        fetch('/api/bot/learn/status'),
+        apiFetch('/api/bot/learn/status'),
         fetch('/api/marketing/tasks/stats'),
         fetch('/api/automation/neon-tasks?limit=50').catch(() => null),
       ]);
