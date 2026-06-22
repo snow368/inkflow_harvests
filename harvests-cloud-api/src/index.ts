@@ -1020,6 +1020,13 @@ app.get('/api/automation/poll', async (c) => {
   const now = Date.now();
   const dedupWindow = now - 7 * 24 * 60 * 60 * 1000;
   try {
+    // Recycle expired leases so tasks don't get stuck
+    await neonQuery(connStr,
+      `UPDATE automation_tasks SET status = 'pending', leased_by = NULL, lease_until = NULL, updated_at = $1
+       WHERE status = 'leased' AND lease_until IS NOT NULL AND lease_until < $1`,
+      [now]
+    ).catch(() => {});
+
     // Atomic: SELECT pending + UPDATE to leased + RETURN data, one query
     const rows = await neonQuery(connStr,
       `UPDATE automation_tasks SET status = 'leased', leased_by = $1, lease_until = $2, updated_at = $3
@@ -1070,6 +1077,16 @@ app.post('/api/automation/report', async (c) => {
   } catch (e: any) {
     console.error('[report] Neon error:', e?.message || e);
   }
+  // Update D1 daily stats so frontend dashboard sees real-time data
+  const day = new Date().toISOString().slice(0, 10);
+  await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS daily_task_stats (
+    day TEXT NOT NULL, status TEXT NOT NULL, cnt INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, status)
+  )`).catch(() => {});
+  await c.env.DB.prepare(
+    `INSERT INTO daily_task_stats (day, status, cnt) VALUES (?, ?, 1)
+     ON CONFLICT(day, status) DO UPDATE SET cnt = cnt + 1`
+  ).bind(day, status === 'done' ? 'done' : 'failed').run().catch(() => {});
   return c.json({ ok: true, commandId, status });
 });
 
