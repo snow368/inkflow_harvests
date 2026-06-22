@@ -5,21 +5,31 @@ import { createRemoteJWKSet, jwtVerify } from 'jose'
 type UserInfo = { uid: string; email?: string }
 
 // Neon HTTP query helper — uses Neon SQL-over-HTTP API with Basic auth
-async function neonQuery(connStr: string, query: string): Promise<any[]> {
+async function neonQuery(connStr: string, query: string, params?: any[]): Promise<any[]> {
   if (!connStr) throw new Error('NEON_DATABASE_URL not configured');
-  // Parse connection string: postgresql://user:pass@host/db?...
   const m = connStr.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^/]+)\/neondb/);
   if (!m) throw new Error('Invalid Neon URL format');
   const [, user, pass, host] = m;
   const basic = btoa(`${user}:${pass}`);
+  const body: any = { query };
+  if (params && params.length > 0) body.params = params;
   const resp = await fetch(`https://${host}/v2/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${basic}` },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify(body),
   });
   if (!resp.ok) { const t = await resp.text(); throw new Error(`Neon ${resp.status}: ${t.slice(0,200)}`); }
   const data: any = await resp.json();
   return data.rows || data;
+}
+
+// Bot token verification — shared between bot endpoints
+const BOT_SECRET = 'vps-bot-secret-2024';
+function checkBotToken(c: any): boolean {
+  const auth = c.req.header('Authorization') || '';
+  if (auth === `Bearer ${BOT_SECRET}`) return true;
+  if (c.req.query('token') === BOT_SECRET) return true;
+  return false;
 }
 
 type Bindings = {
@@ -61,6 +71,10 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/bot-account',
   '/api/automation/bot-account/delete',
   '/api/automation/behavior-logs',
+  '/api/bot/register',
+  '/api/bot/heartbeat',
+  '/api/automation/poll',
+  '/api/automation/report',
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -962,6 +976,101 @@ app.get('/api/automation/behavior-logs', async (c) => {
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e) }, 500);
   }
+});
+
+// ============ BOT TASK ENDPOINTS (cloud-native, replaces local server 3000) ============
+// These use bot token auth (Bearer or ?token=) and read/write Neon automation_tasks directly.
+
+app.post('/api/bot/register', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  const { botId, host, version, meta } = await c.req.json();
+  if (!botId) return c.json({ error: 'botId required' }, 400);
+  await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_instances (
+    bot_id TEXT PRIMARY KEY, host TEXT, version TEXT, status TEXT DEFAULT 'online',
+    registered_at INTEGER, last_heartbeat INTEGER, meta TEXT
+  )`).run();
+  try { await c.env.DB.prepare('ALTER TABLE bot_instances ADD COLUMN meta TEXT').run(); } catch {}
+  const now = Date.now();
+  await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,host,version,status,registered_at,last_heartbeat,meta)
+    VALUES (?,?,?,'online',?,?,?) ON CONFLICT(bot_id) DO UPDATE SET
+    host=excluded.host, version=excluded.version, status='online', last_heartbeat=excluded.last_heartbeat, meta=excluded.meta
+  `).bind(botId, host||'', version||'', now, now, meta ? JSON.stringify(meta) : null).run();
+  return c.json({ ok: true, botId, online: true, staleMs: 0 });
+});
+
+app.post('/api/bot/heartbeat', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  const { botId, host, version } = await c.req.json();
+  if (!botId) return c.json({ error: 'botId required' }, 400);
+  const now = Date.now();
+  await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,host,version,status,registered_at,last_heartbeat)
+    VALUES (?,?,?,'online',?,?) ON CONFLICT(bot_id) DO UPDATE SET
+    status='online', last_heartbeat=excluded.last_heartbeat, host=excluded.host, version=excluded.version
+  `).bind(botId, host||'', version||'', now, now).run();
+  return c.json({ ok: true, botId, ts: now });
+});
+
+app.get('/api/automation/poll', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  const botId = c.req.query('botId') || '';
+  const limit = Math.min(10, Math.max(1, Number(c.req.query('limit')) || 1));
+  if (!botId) return c.json({ error: 'botId required' }, 400);
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
+  const now = Date.now();
+  const dedupWindow = now - 7 * 24 * 60 * 60 * 1000;
+  try {
+    // Atomic: SELECT pending + UPDATE to leased + RETURN data, one query
+    const rows = await neonQuery(connStr,
+      `UPDATE automation_tasks SET status = 'leased', leased_by = $1, lease_until = $2, updated_at = $3
+       WHERE id IN (
+         SELECT id FROM automation_tasks
+         WHERE status = 'pending' AND run_at <= $4
+           AND (payload->>'artistHandle' IS NULL
+             OR NOT EXISTS (
+               SELECT 1 FROM automation_tasks d
+               WHERE d.status = 'done' AND d.updated_at > $5
+                 AND d.payload->>'artistHandle' = automation_tasks.payload->>'artistHandle'
+             ))
+         ORDER BY run_at ASC LIMIT $6
+       )
+       RETURNING id, payload::text`,
+      [botId, now + 120_000, now, now, dedupWindow, limit]
+    );
+    const commands = (rows || []).map((r: any) => {
+      let payload: any = {};
+      try { payload = JSON.parse(r.payload || '{}'); } catch {}
+      return { ...payload, id: r.id };
+    });
+    // Also update bot heartbeat (keep alive)
+    await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,status,registered_at,last_heartbeat)
+      VALUES (?,'online',?,?) ON CONFLICT(bot_id) DO UPDATE SET status='online', last_heartbeat=excluded.last_heartbeat
+    `).bind(botId, now, now).catch(() => {});
+    return c.json({ ok: true, commands });
+  } catch (e: any) {
+    console.error('[poll] Neon error:', e?.message || e);
+    return c.json({ ok: true, commands: [] }); // graceful degradation
+  }
+});
+
+app.post('/api/automation/report', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  const { botId, commandId, status, reason } = await c.req.json();
+  if (!botId || !commandId) return c.json({ error: 'botId and commandId required' }, 400);
+  if (status !== 'done' && status !== 'failed') return c.json({ error: 'status must be done or failed' }, 400);
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
+  const now = Date.now();
+  try {
+    await neonQuery(connStr,
+      `UPDATE automation_tasks SET status = $1, lease_until = NULL, leased_by = NULL, error_reason = $2, updated_at = $3
+       WHERE id = $4 AND leased_by = $5 AND status IN ('leased','running')`,
+      [status, status === 'failed' ? (reason || 'unknown') : null, now, commandId, botId]
+    );
+  } catch (e: any) {
+    console.error('[report] Neon error:', e?.message || e);
+  }
+  return c.json({ ok: true, commandId, status });
 });
 
 export default app
