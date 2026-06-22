@@ -871,39 +871,42 @@ app.post('/api/automation/sync', async (c) => {
 // ============ DASHBOARD (read from D1) ============
 
 app.get('/api/automation/dashboard', async (c) => {
-  try {
-    // Counts
-    const summary = await c.env.DB.prepare('SELECT status, COUNT(*) as cnt FROM automation_tasks GROUP BY status').all();
-    const counts: Record<string, number> = { pending: 0, leased: 0, done: 0, failed: 0 };
-    for (const r of (summary.results || []) as any) counts[r.status] = Number(r.cnt || 0);
+  // Each query independently — missing tables don't cascade
+  let counts: Record<string, number> = { pending: 0, leased: 0, done: 0, failed: 0 };
+  let byDay: Record<string, any> = {};
+  let accountsList: any[] = [];
 
-    // Daily
+  try {
+    const summary = await c.env.DB.prepare('SELECT status, COUNT(*) as cnt FROM automation_tasks GROUP BY status').all();
+    for (const r of (summary.results || []) as any) counts[r.status] = Number(r.cnt || 0);
+  } catch {}
+
+  try {
     const daily = await c.env.DB.prepare('SELECT day, status, cnt FROM daily_task_stats ORDER BY day DESC LIMIT 56').all();
-    const byDay: Record<string, any> = {};
     for (const r of (daily.results || []) as any) {
       if (!byDay[r.day]) byDay[r.day] = { day: r.day, pending: 0, leased: 0, done: 0, failed: 0, total: 0 };
       byDay[r.day][r.status] = Number(r.cnt || 0);
       byDay[r.day].total += Number(r.cnt || 0);
     }
+  } catch {}
 
-    // Accounts
+  try {
     const accounts = await c.env.DB.prepare('SELECT account_id, ig_handle, stage, daily_task_limit, speed_factor, first_used_at, vps_name, proxy FROM bot_accounts').all();
+    accountsList = (accounts.results || []).map((a: any) => ({
+      accountId: a.account_id, igHandle: a.ig_handle, stage: a.stage,
+      dailyLimit: a.daily_task_limit, speed: a.speed_factor,
+      firstUsedAt: a.first_used_at || null,
+      vpsName: a.vps_name || null, proxy: a.proxy || null,
+    }));
+  } catch {}
 
-    return c.json({
-      ok: true,
-      total: Object.values(counts).reduce((a: number, b: number) => a + b, 0),
-      counts,
-      days: Object.values(byDay).sort((a: any, b: any) => String(b.day).localeCompare(String(a.day))),
-      accounts: (accounts.results || []).map((a: any) => ({
-        accountId: a.account_id, igHandle: a.ig_handle, stage: a.stage,
-        dailyLimit: a.daily_task_limit, speed: a.speed_factor,
-        firstUsedAt: a.first_used_at || null,
-        vpsName: a.vps_name || null, proxy: a.proxy || null,
-      })),
-    });
-  } catch (e: any) {
-    return c.json({ ok: false, error: String(e?.message || e) }, 500);
-  }
+  return c.json({
+    ok: true,
+    total: Object.values(counts).reduce((a: number, b: number) => a + b, 0),
+    counts,
+    days: Object.values(byDay).sort((a: any, b: any) => String(b.day).localeCompare(String(a.day))),
+    accounts: accountsList,
+  });
 });
 
 // Also expose legacy path for the frontend
