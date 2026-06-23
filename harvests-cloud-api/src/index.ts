@@ -1071,7 +1071,8 @@ app.get('/api/automation/state-progress', async (c) => {
 
     // 1. Total tasks per state from D1
     let artists: any[] = [];
-    const rows = await c.env.DB.prepare(`
+    try {
+      const rows = await c.env.DB.prepare(`
       SELECT json_extract(payload, '$.state') as state, COUNT(*) as total
       FROM bot_tasks WHERE payload IS NOT NULL
       GROUP BY json_extract(payload, '$.state')
@@ -1079,6 +1080,9 @@ app.get('/api/automation/state-progress', async (c) => {
     artists = (rows.results || []).map((r: any) => ({
       state: r.state || 'UNKNOWN', total: Number(r.total || 0),
     }));
+  } catch (e1: any) {
+    return c.json({ ok: false, error: 'D1: ' + String(e1?.message || e1).slice(0, 120) }, 500);
+  }
 
     // 2. Done/failed per state from D1
     let doneRows: any[] = [];
