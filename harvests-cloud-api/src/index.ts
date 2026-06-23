@@ -1040,6 +1040,39 @@ app.post('/api/bot/heartbeat', async (c) => {
   return c.json({ ok: true, botId, ts: now });
 });
 
+// Ensure bot tables exist in D1
+async function ensureBotTables(db: D1Database) {
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS bot_tasks (
+    id TEXT PRIMARY KEY, payload TEXT, status TEXT DEFAULT 'pending',
+    run_at INTEGER, lease_until INTEGER, leased_by TEXT,
+    attempts INTEGER DEFAULT 0, max_attempts INTEGER DEFAULT 3,
+    error_reason TEXT, created_at INTEGER, updated_at INTEGER
+  )`).run(); } catch {}
+  for (const col of ['run_at','lease_until','leased_by','attempts','max_attempts','error_reason','updated_at']) {
+    try { await db.prepare(`ALTER TABLE bot_tasks ADD COLUMN ${col} INTEGER`).run(); } catch {}
+  }
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS bot_instances (
+    bot_id TEXT PRIMARY KEY, host TEXT, version TEXT, status TEXT DEFAULT 'online',
+    registered_at INTEGER, last_heartbeat INTEGER, meta TEXT
+  )`).run(); } catch {}
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS bot_config (
+    bot_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT, updated_at INTEGER,
+    PRIMARY KEY (bot_id, key)
+  )`).run(); } catch {}
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS bot_profile_adjustments (
+    bot_id TEXT PRIMARY KEY, adjustments_json TEXT, analysis_json TEXT,
+    confidence REAL DEFAULT 0, analyzed_at INTEGER, updated_at INTEGER
+  )`).run(); } catch {}
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS bot_observations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, bot_id TEXT, command_id TEXT,
+    mode TEXT, summary_json TEXT, profile_facts_json TEXT, created_at INTEGER
+  )`).run(); } catch {}
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS daily_task_stats (
+    day TEXT NOT NULL, status TEXT NOT NULL, cnt INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, status)
+  )`).run(); } catch {}
+}
+
 app.get('/api/automation/neon-tasks', async (c) => {
   await ensureBotTables(c.env.DB);
   const limit = Math.min(200, Math.max(1, Number(c.req.query('limit')) || 50));
