@@ -1084,13 +1084,24 @@ app.get('/api/automation/state-progress', async (c) => {
     let doneRows: any[] = [];
     try {
       doneRows = await neonQuery(connStr, `
-        SELECT payload->>'state' as state,
-          COUNT(DISTINCT payload->>'artistId') as visited
+        SELECT (payload::json->>'state') as state,
+          COUNT(DISTINCT (payload::json->>'artistId')) as visited
         FROM automation_tasks
         WHERE status = 'done'
-        GROUP BY payload->>'state'
+        GROUP BY (payload::json->>'state')
       `);
-    } catch {}
+    } catch (e2: any) {
+      // fallback: try legacy JSON query syntax
+      try {
+        doneRows = await neonQuery(connStr, `
+          SELECT payload->>'state' as state,
+            COUNT(DISTINCT payload->>'artistId') as visited
+          FROM automation_tasks
+          WHERE status = 'done'
+          GROUP BY payload->>'state'
+        `);
+      } catch {}
+    }
 
     // 3. Compute daily rate (last 7 days avg from Neon)
     const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
