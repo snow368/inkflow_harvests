@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
@@ -288,38 +288,63 @@ const EVENT_COLORS: Record<string, string> = {
   comment_posted: 'text-purple-400', comment_failed: 'text-orange-400',
 };
 const LOG_EVENTS = ['', 'open_profile', 'open_post', 'browse_selection', 'human_break_start', 'task_done', 'task_failed', 'action_blocked', 'rate_limited', 'fresh_profile', 'media_opened_total', 'comment_posted', 'comment_failed'];
-function BehaviorLogSection() {
+function BehaviorLogSection({ searchBotId, onSearchDone }: { searchBotId?: string | null; onSearchDone?: () => void }) {
   const [logs, setLogs] = useState<any[]>([]);
+  const [botIds, setBotIds] = useState<string[]>([]);
   const [filterBot, setFilterBot] = useState('bot_ig_01');
   const [filterEvent, setFilterEvent] = useState('');
   const [loading, setLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [customBotId, setCustomBotId] = useState('');
+  const offsetRef = useRef(0);
+  const LIMIT = 100;
 
-  const fetchLogs = useCallback(async () => {
+  // Fetch available bot IDs for dropdown
+  useEffect(() => {
+    apiFetch('/api/automation/behavior-bots').then(res => {
+      if (!res.ok) throw new Error();
+      return res.json();
+    }).then(data => {
+      if (data?.bots?.length) setBotIds(data.bots);
+    }).catch(() => { /* fallback: keep static options */ });
+  }, []);
+
+  // When parent requests search by bot ID (from "历程" button)
+  useEffect(() => {
+    if (searchBotId && searchBotId !== filterBot) {
+      setFilterBot(searchBotId);
+      onSearchDone?.();
+    }
+  }, [searchBotId]);
+
+  const fetchLogs = useCallback(async (append = false) => {
     setLoading(true);
     try {
-      const botId = document.getElementById('behavior-logs')?.dataset?.filterBot || filterBot;
-      if (botId && botId !== filterBot) setFilterBot(botId);
-      const params = new URLSearchParams({ botId, limit: '100' });
+      const curOffset = append ? offsetRef.current : 0;
+      const effectiveBotId = (filterBot === '' && customBotId.trim())
+        ? customBotId.trim()
+        : (filterBot || 'bot_ig_01');
+      const params = new URLSearchParams({ botId: effectiveBotId, limit: String(LIMIT), offset: String(curOffset) });
       if (filterEvent) params.set('event', filterEvent);
       const res = await apiFetch('/api/automation/behavior-logs?' + params.toString());
       const data = await res.json();
-      if (data?.logs) setLogs(data.logs);
-    } catch {}
+      if (data?.logs) {
+        setLogs(prev => append ? [...prev, ...data.logs] : data.logs);
+        setHasMore(data.logs.length >= LIMIT);
+        offsetRef.current = curOffset + data.logs.length;
+      } else {
+        if (!append) setLogs([]);
+      }
+    } catch { if (!append) setLogs([]); }
     setLoading(false);
+  }, [filterBot, filterEvent, customBotId]);
+
+  // Re-fetch when filterBot or filterEvent changes
+  useEffect(() => {
+    offsetRef.current = 0;
+    setHasMore(true);
+    fetchLogs(false);
   }, [filterBot, filterEvent]);
-
-  useEffect(() => {
-    const el = document.getElementById('behavior-logs');
-    if (el?.dataset?.filterBot && el.dataset.filterBot !== filterBot) {
-      setFilterBot(el.dataset.filterBot);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchLogs();
-    const interval = setInterval(fetchLogs, 8000); // 每 8s 自动刷新
-    return () => clearInterval(interval);
-  }, [fetchLogs]);
 
   return (
     <motion.div id="behavior-logs" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
@@ -330,19 +355,31 @@ function BehaviorLogSection() {
           <h4 className="font-black text-sm text-white">行为日志</h4>
           <span className="text-[10px] font-bold text-zinc-500">{logs.length} 条</span>
         </div>
-        <button onClick={fetchLogs} disabled={loading} className="text-[10px] font-bold text-zinc-500 hover:text-zinc-300 transition-colors">
+        <button onClick={() => { offsetRef.current = 0; setHasMore(true); fetchLogs(false); }} disabled={loading}
+          className="text-[10px] font-bold text-zinc-500 hover:text-zinc-300 transition-colors">
           {loading ? '加载中…' : '刷新'}
         </button>
       </div>
 
       {/* Filters */}
       <div className="flex gap-3 mb-4 flex-wrap">
-        <div className="w-28">
+        <div className="w-36">
           <select value={filterBot} onChange={e => setFilterBot(e.target.value)}
             className="w-full px-2.5 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-[11px] text-zinc-300 font-medium focus:outline-none">
-            <option value="bot_ig_01">bot_ig_01</option>
+            {botIds.length > 0
+              ? botIds.map(id => <option key={id} value={id}>{id}</option>)
+              : <option value="bot_ig_01">bot_ig_01</option>
+            }
+            <option value="">__自定义__</option>
           </select>
         </div>
+        {filterBot === '' && (
+          <div className="w-36">
+            <input type="text" value={customBotId} onChange={e => setCustomBotId(e.target.value)}
+              placeholder="输入 Bot ID..."
+              className="w-full px-2.5 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-[11px] text-zinc-300 font-medium focus:outline-none" />
+          </div>
+        )}
         <div className="w-36">
           <select value={filterEvent} onChange={e => setFilterEvent(e.target.value)}
             className="w-full px-2.5 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-[11px] text-zinc-300 font-medium focus:outline-none">
@@ -371,10 +408,23 @@ function BehaviorLogSection() {
             </span>
           </div>
         ))}
-        {logs.length === 0 && (
+        {logs.length === 0 && !loading && (
           <div className="py-6 text-center text-xs text-zinc-600 font-medium">暂无日志</div>
         )}
+        {loading && (
+          <div className="py-4 text-center text-xs text-zinc-500">加载中...</div>
+        )}
       </div>
+
+      {/* Load more */}
+      {hasMore && !loading && logs.length > 0 && (
+        <div className="mt-4 text-center">
+          <button onClick={() => fetchLogs(true)}
+            className="px-4 py-1.5 text-[11px] font-bold text-zinc-400 bg-zinc-800/50 hover:bg-zinc-800 rounded-xl transition-colors">
+            加载更多
+          </button>
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -489,6 +539,7 @@ export default function BotWorkerManager() {
   const [learnProfiles, setLearnProfiles] = useState<any[]>([]);
   const [dmTaskCount, setDmTaskCount] = useState(0);
   const [neonTasks, setNeonTasks] = useState<any[]>([]);
+  const [behaviorSearchId, setBehaviorSearchId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -497,7 +548,7 @@ export default function BotWorkerManager() {
         fetch('/api/bot/workers'),
         apiFetch('/api/bot/learn/status'),
         fetch('/api/marketing/tasks/stats'),
-        apiFetch('/api/automation/neon-tasks?limit=50').catch(() => null),
+        fetch('/api/automation/neon-tasks?limit=50').catch(() => null),
       ]);
       if (fnRes.ok) {
         const fnData = await fnRes.json();
@@ -717,12 +768,14 @@ export default function BotWorkerManager() {
 
       {/* Bot Accounts */}
       <AccountSetupSection onViewLog={(id) => {
-        const el = document.getElementById('behavior-logs');
-        if (el) { el.scrollIntoView({ behavior: 'smooth' }); el.dataset.filterBot = id; }
+        setBehaviorSearchId(id);
+        setTimeout(() => {
+          document.getElementById('behavior-logs')?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
       }} />
 
       {/* Behavior Logs */}
-      <BehaviorLogSection />
+      <BehaviorLogSection searchBotId={behaviorSearchId} onSearchDone={() => setBehaviorSearchId(null)} />
 
       {/* Noise Sites Config */}
       <NoiseSitesSection />
@@ -810,7 +863,7 @@ export default function BotWorkerManager() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <ListTodo className="w-5 h-5 text-cyan-500" />
-            <h4 className="text-sm font-bold text-white">Bot 任务队列</h4>
+            <h4 className="text-sm font-bold text-white">Bot 任务队列 (Neon)</h4>
           </div>
           <div className="flex items-center gap-2 text-xs text-zinc-500">
             <span className={`px-2 py-0.5 rounded-full font-medium ${
