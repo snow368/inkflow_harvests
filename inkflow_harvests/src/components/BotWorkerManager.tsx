@@ -429,6 +429,110 @@ function BehaviorLogSection({ searchBotId, onSearchDone }: { searchBotId?: strin
   );
 }
 
+// ── State Progress — per-state coverage ──
+function StateProgressSection() {
+  const [progress, setProgress] = useState<any[]>([]);
+  const [dailyRate, setDailyRate] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetch = async () => {
+      try {
+        const res = await apiFetch('/api/automation/state-progress');
+        const data = await res.json();
+        if (data?.progress) setProgress(data.progress);
+        if (data?.dailyRate) setDailyRate(data.dailyRate);
+      } catch {}
+      setLoading(false);
+    };
+    fetch();
+    const interval = setInterval(fetch, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (loading) return null;
+
+  const done = progress.filter(p => p.pct >= 100);
+  const active = progress.filter(p => p.pct > 0 && p.pct < 100);
+  const waiting = progress.filter(p => p.pct === 0);
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+      className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6 mb-6">
+      <div className="flex items-center gap-3 mb-5">
+        <Globe className="w-5 h-5 text-emerald-500" />
+        <h4 className="font-black text-sm text-white">各州覆盖进度</h4>
+        <span className="text-[10px] font-bold text-zinc-500">
+          {done.length} 已完成 • {active.length} 进行中 • {waiting.length} 未开始
+        </span>
+      </div>
+
+      {dailyRate > 0 && (
+        <p className="text-[10px] text-zinc-500 mb-4 font-medium">
+          日均完成 {dailyRate} 家店
+        </p>
+      )}
+
+      <div className="space-y-2">
+        {done.map(s => (
+          <div key={s.state} className="flex items-center gap-3 p-2 rounded-xl bg-zinc-900/30">
+            <span className="w-8 h-8 rounded-lg bg-green-500/10 border border-green-500/20 flex items-center justify-center text-[10px] font-black text-green-500">✓</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white">{s.state}</span>
+                <span className="text-[10px] font-bold text-green-500">{s.visited}/{s.total}</span>
+              </div>
+              <div className="mt-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div className="h-full bg-green-500 rounded-full" style={{ width: '100%' }} />
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {active.map(s => (
+          <div key={s.state} className="flex items-center gap-3 p-2 rounded-xl bg-zinc-900/30">
+            <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black ${
+              s.pct > 50 ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+              : s.pct > 20 ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+              : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'
+            }`}>{s.pct}%</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white">{s.state}</span>
+                <span className="text-[10px] text-zinc-400">{s.visited}/{s.total}</span>
+              </div>
+              <div className="mt-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-500" style={{
+                  width: `${s.pct}%`,
+                  background: s.pct > 50 ? '#10b981' : s.pct > 20 ? '#f59e0b' : '#3b82f6'
+                }} />
+              </div>
+              {s.daysLeft && (
+                <p className="text-[9px] text-zinc-500 mt-0.5 font-medium">预计剩 {s.daysLeft} 天</p>
+              )}
+            </div>
+          </div>
+        ))}
+
+        {waiting.map(s => (
+          <div key={s.state} className="flex items-center gap-3 p-2 rounded-xl bg-zinc-900/30 opacity-50">
+            <span className="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700/30 flex items-center justify-center text-[10px] font-black text-zinc-500">—</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-zinc-400">{s.state}</span>
+                <span className="text-[10px] text-zinc-600">{s.total} 家店待开始</span>
+              </div>
+              <div className="mt-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div className="h-full bg-zinc-700/50 rounded-full" style={{ width: '0%' }} />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
 // ── Noise Sites Configuration (rest-time browsing) ──
 const DEFAULT_SITES = [
   'https://www.cnn.com',
@@ -858,12 +962,15 @@ export default function BotWorkerManager() {
         </div>
       </div>
 
-      {/* Bot Task Queue — tasks from Neon automation_tasks */}
+      {/* State Progress */}
+      <StateProgressSection />
+
+      {/* Bot Task Queue — tasks from D1 */}
       <div className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <ListTodo className="w-5 h-5 text-cyan-500" />
-            <h4 className="text-sm font-bold text-white">Bot 任务队列 (Neon)</h4>
+            <h4 className="text-sm font-bold text-white">Bot 任务队列</h4>
           </div>
           <div className="flex items-center gap-2 text-xs text-zinc-500">
             <span className={`px-2 py-0.5 rounded-full font-medium ${
