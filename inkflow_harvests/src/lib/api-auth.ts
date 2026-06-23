@@ -1,6 +1,6 @@
 import { auth } from './firebase';
 
-const API_BASE = 'https://harvests-cloud-api-production.inkflowapp.workers.dev';
+const API_BASE = 'https://harvests-cloud-api.inkflowapp.workers.dev';
 
 let cachedToken: string | null = null;
 let tokenPromise: Promise<string | null> | null = null;
