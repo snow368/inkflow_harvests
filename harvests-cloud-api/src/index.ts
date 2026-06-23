@@ -1040,6 +1040,83 @@ app.post('/api/bot/heartbeat', async (c) => {
   return c.json({ ok: true, botId, ts: now });
 });
 
+app.get('/api/automation/neon-tasks', async (c) => {
+  await ensureBotTables(c.env.DB);
+  const limit = Math.min(200, Math.max(1, Number(c.req.query('limit')) || 50));
+  const status = c.req.query('status') || '';
+  try {
+    let sql = 'SELECT id, status, leased_by as leasedBy, payload, created_at, updated_at, error_reason FROM bot_tasks';
+    const binds: any[] = [];
+    const wheres: string[] = [];
+    if (status) { wheres.push('status=?'); binds.push(status); }
+    if (wheres.length) sql += ' WHERE ' + wheres.join(' AND ');
+    sql += ' ORDER BY created_at DESC LIMIT ?';
+    binds.push(limit);
+    const rows = await c.env.DB.prepare(sql).bind(...binds).all();
+    const tasks = (rows.results || []).map((t: any) => {
+      let payload: any = {};
+      try { payload = JSON.parse(t.payload || '{}'); } catch {}
+      return { id: t.id, status: t.status, leasedBy: t.leasedBy || null, payload, createdAt: t.created_at, updatedAt: t.updated_at, errorReason: t.error_reason || null };
+    });
+    return c.json({ ok: true, total: tasks.length, tasks });
+  } catch (e: any) {
+    return c.json({ ok: false, tasks: [], error: String(e?.message || e) }, 500);
+  }
+});
+
+// State progress — shows each state's coverage + estimated completion
+app.get('/api/automation/state-progress', async (c) => {
+  try {
+    const connStr = c.env.NEON_DATABASE_URL;
+    if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
+
+    const artists = await neonQuery(connStr, `
+      SELECT state, COUNT(*) as total
+      FROM artists
+      WHERE ig_handle IS NOT NULL AND ig_handle != ''
+        AND (status IS NULL OR status != 'excluded')
+      GROUP BY state
+      ORDER BY state
+    `);
+
+    await ensureBotTables(c.env.DB);
+    let doneTasks: any = { results: [] };
+    try {
+      doneTasks = await c.env.DB.prepare(`
+        SELECT json_extract(payload, '$.state') as state,
+          COUNT(DISTINCT json_extract(payload, '$.artistId')) as visited
+        FROM bot_tasks
+        WHERE status IN ('done','failed')
+        GROUP BY state
+      `).all();
+    } catch {}
+
+    const weekAgo = Date.now() - 7 * 86400000;
+    let recentCount = 0;
+    try {
+      const row = await c.env.DB.prepare(
+        "SELECT COUNT(*) as cnt FROM bot_tasks WHERE status='done' AND updated_at>=?"
+      ).bind(weekAgo).first() as any;
+      recentCount = row?.cnt || 0;
+    } catch {}
+    const dailyRate = Math.max(1, Math.round(recentCount / 7));
+
+    const progress = (artists || []).map((a: any) => {
+      const state = a.state || 'UNKNOWN';
+      const doneRow = (doneTasks.results || []).find((r: any) => r.state === state);
+      const total = Number(a.total || 0);
+      const visited = Number(doneRow?.visited || 0);
+      const pct = total > 0 ? Math.round(visited / total * 100) : 0;
+      const remaining = total - visited;
+      const daysLeft = dailyRate > 0 ? Math.ceil(remaining / dailyRate) : null;
+      return { state, total, visited, pct, remaining, daysLeft };
+    });
+
+    return c.json({ ok: true, progress, dailyRate });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 300) }, 500);
+  }
+});
 app.get('/api/automation/poll', async (c) => {
   if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
   const botId = c.req.query('botId') || '';
