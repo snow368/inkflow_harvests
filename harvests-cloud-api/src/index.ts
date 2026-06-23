@@ -100,6 +100,7 @@ const PUBLIC_PATHS = new Set([
   '/api/bot/learn/analyze',
   '/api/bot/learn/status',
   '/api/bot/observe',
+  '/api/automation/neon-tasks',
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -1270,6 +1271,31 @@ app.get('/api/tasks/count', async (c) => {
   if (botId) { q += ` AND json_extract(payload,'$.botId')=?`; binds.push(botId); }
   const row = await c.env.DB.prepare(q).bind(...binds).first() as any;
   return c.json({ ok: true, todayCount: row?.cnt || 0 });
+});
+
+// GET /api/automation/neon-tasks — list tasks from D1 (replaces VPS Neon read)
+app.get('/api/automation/neon-tasks', async (c) => {
+  await ensureBotTables(c.env.DB);
+  const limit = Math.min(200, Math.max(1, Number(c.req.query('limit')) || 50));
+  const status = c.req.query('status') || '';
+  try {
+    let sql = 'SELECT id, status, leased_by as leasedBy, payload, created_at, updated_at, error_reason FROM bot_tasks';
+    const binds: any[] = [];
+    const wheres: string[] = [];
+    if (status) { wheres.push('status=?'); binds.push(status); }
+    if (wheres.length) sql += ' WHERE ' + wheres.join(' AND ');
+    sql += ' ORDER BY created_at DESC LIMIT ?';
+    binds.push(limit);
+    const rows = await c.env.DB.prepare(sql).bind(...binds).all();
+    const tasks = (rows.results || []).map((t: any) => {
+      let payload: any = {};
+      try { payload = JSON.parse(t.payload || '{}'); } catch {}
+      return { id: t.id, status: t.status, leasedBy: t.leasedBy || null, payload, createdAt: t.created_at, updatedAt: t.updated_at, errorReason: t.error_reason || null };
+    });
+    return c.json({ ok: true, total: tasks.length, tasks });
+  } catch (e: any) {
+    return c.json({ ok: false, tasks: [], error: String(e?.message || e) }, 500);
+  }
 });
 
 app.get('/api/automation/poll', async (c) => {

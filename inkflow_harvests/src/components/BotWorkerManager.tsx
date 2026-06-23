@@ -493,7 +493,7 @@ export default function BotWorkerManager() {
         fetch('/api/bot/workers'),
         apiFetch('/api/bot/learn/status'),
         fetch('/api/marketing/tasks/stats'),
-        fetch('/api/automation/neon-tasks?limit=50').catch(() => null),
+        apiFetch('/api/automation/neon-tasks?limit=50').catch(() => null),
       ]);
       if (fnRes.ok) {
         const fnData = await fnRes.json();
@@ -806,7 +806,7 @@ export default function BotWorkerManager() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <ListTodo className="w-5 h-5 text-cyan-500" />
-            <h4 className="text-sm font-bold text-white">Bot 任务队列 (Neon)</h4>
+            <h4 className="text-sm font-bold text-white">Bot 任务队列</h4>
           </div>
           <div className="flex items-center gap-2 text-xs text-zinc-500">
             <span className={`px-2 py-0.5 rounded-full font-medium ${
