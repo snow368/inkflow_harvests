@@ -315,7 +315,11 @@ function BehaviorLogSection() {
     }
   }, []);
 
-  useEffect(() => { fetchLogs(); }, [fetchLogs]);
+  useEffect(() => {
+    fetchLogs();
+    const interval = setInterval(fetchLogs, 8000); // 每 8s 自动刷新
+    return () => clearInterval(interval);
+  }, [fetchLogs]);
 
   return (
     <motion.div id="behavior-logs" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
