@@ -1070,6 +1070,7 @@ app.get('/api/automation/state-progress', async (c) => {
     const connStr = c.env.NEON_DATABASE_URL;
     if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
 
+    // 1. Get total counts per state from Neon
     const artists = await neonQuery(connStr, `
       SELECT state, COUNT(*) as total
       FROM artists
@@ -1079,31 +1080,35 @@ app.get('/api/automation/state-progress', async (c) => {
       ORDER BY state
     `);
 
-    await ensureBotTables(c.env.DB);
-    let doneTasks: any = { results: [] };
+    // 2. Get visited counts from Neon automation_tasks (where bot reports done)
+    let doneRows: any[] = [];
     try {
-      doneTasks = await c.env.DB.prepare(`
-        SELECT json_extract(payload, '$.state') as state,
-          COUNT(DISTINCT json_extract(payload, '$.artistId')) as visited
-        FROM bot_tasks
-        WHERE status IN ('done','failed')
-        GROUP BY state
-      `).all();
+      doneRows = await neonQuery(connStr, `
+        SELECT payload->>'state' as state,
+          COUNT(DISTINCT payload->>'artistId') as visited
+        FROM automation_tasks
+        WHERE status = 'done'
+        GROUP BY payload->>'state'
+      `);
     } catch {}
 
-    const weekAgo = Date.now() - 7 * 86400000;
+    // 3. Compute daily rate (last 7 days avg from Neon)
+    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
     let recentCount = 0;
     try {
-      const row = await c.env.DB.prepare(
-        "SELECT COUNT(*) as cnt FROM bot_tasks WHERE status='done' AND updated_at>=?"
-      ).bind(weekAgo).first() as any;
-      recentCount = row?.cnt || 0;
+      const recent = await neonQuery(connStr,
+        `SELECT COUNT(*) as cnt FROM automation_tasks
+         WHERE status='done' AND DATE(updated_at / 1000, 'unixepoch') >= $1`,
+        [weekAgo]
+      );
+      recentCount = Number(recent?.[0]?.cnt || 0);
     } catch {}
     const dailyRate = Math.max(1, Math.round(recentCount / 7));
 
+    // 4. Merge
     const progress = (artists || []).map((a: any) => {
       const state = a.state || 'UNKNOWN';
-      const doneRow = (doneTasks.results || []).find((r: any) => r.state === state);
+      const doneRow = (doneRows || []).find((r: any) => r.state === state);
       const total = Number(a.total || 0);
       const visited = Number(doneRow?.visited || 0);
       const pct = total > 0 ? Math.round(visited / total * 100) : 0;
