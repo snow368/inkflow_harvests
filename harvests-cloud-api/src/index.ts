@@ -1064,52 +1064,44 @@ app.get('/api/automation/neon-tasks', async (c) => {
   }
 });
 
-// State progress — shows each state's coverage + estimated completion
+// State progress — per-state coverage from D1 (no Neon dependency)
 app.get('/api/automation/state-progress', async (c) => {
   try {
-    const connStr = c.env.NEON_DATABASE_URL;
-    if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
+    await ensureBotTables(c.env.DB);
 
-    // 1. Get total counts per state from Neon
-    const artists = await neonQuery(connStr, `
-      SELECT state, COUNT(*) as total
-      FROM artists
-      WHERE ig_handle IS NOT NULL AND ig_handle != ''
-        AND (status IS NULL OR status != 'excluded')
-      GROUP BY state
-      ORDER BY state
-    `);
+    // 1. Total tasks per state from D1
+    let artists: any[] = [];
+    const rows = await c.env.DB.prepare(`
+      SELECT json_extract(payload, '$.state') as state, COUNT(*) as total
+      FROM bot_tasks WHERE payload IS NOT NULL
+      GROUP BY json_extract(payload, '$.state')
+    `).all();
+    artists = (rows.results || []).map((r: any) => ({
+      state: r.state || 'UNKNOWN', total: Number(r.total || 0),
+    }));
 
-    // 2. Get visited counts from Neon automation_tasks
+    // 2. Done/failed per state from D1
     let doneRows: any[] = [];
     try {
-      doneRows = await neonQuery(connStr, `
-        SELECT COUNT(*) as visited
-        FROM automation_tasks
-        WHERE status = 'done'
-      `);
-      // Try state breakdown, fall back to total-only
-      try {
-        doneRows = await neonQuery(connStr, `
-          SELECT COALESCE(NULLIF(payload::json->>'state', ''), 'UNKNOWN') as state,
-            COUNT(*) as visited
-          FROM automation_tasks
-          WHERE status = 'done' AND payload IS NOT NULL AND payload != ''
-          GROUP BY payload::json->>'state'
-        `);
-      } catch {}
+      const done = await c.env.DB.prepare(`
+        SELECT json_extract(payload, '$.state') as state,
+          COUNT(DISTINCT json_extract(payload, '$.artistId')) as visited
+        FROM bot_tasks WHERE status IN ('done','failed') AND payload IS NOT NULL
+        GROUP BY json_extract(payload, '$.state')
+      `).all();
+      doneRows = (done.results || []).map((r: any) => ({
+        state: r.state || 'UNKNOWN', visited: Number(r.visited || 0),
+      }));
     } catch {}
 
-    // 3. Compute daily rate (last 7 days avg from Neon)
-    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    // 3. Daily rate (last 7 days)
+    const weekAgo = Date.now() - 7 * 86400000;
     let recentCount = 0;
     try {
-      const recent = await neonQuery(connStr,
-        `SELECT COUNT(*) as cnt FROM automation_tasks
-         WHERE status='done' AND DATE(updated_at / 1000, 'unixepoch') >= $1`,
-        [weekAgo]
-      );
-      recentCount = Number(recent?.[0]?.cnt || 0);
+      const row = await c.env.DB.prepare(
+        "SELECT COUNT(*) as cnt FROM bot_tasks WHERE status='done' AND updated_at>=?"
+      ).bind(weekAgo).first() as any;
+      recentCount = row?.cnt || 0;
     } catch {}
     const dailyRate = Math.max(1, Math.round(recentCount / 7));
 
