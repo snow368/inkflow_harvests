@@ -49,6 +49,25 @@ app.use('/*', cors())
 // Health check — no DB dependency
 app.get('/_health', (c) => c.json({ ok: true, time: Date.now() }))
 
+// Diagnostic: show Neon task counts (bot token auth) — short path for narrow CMD
+app.get('/t', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
+  try {
+    // Simple connectivity test
+    const resp = await fetch('https://ep-patient-hill-antvzk6p.c-6.us-east-1.aws.neon.tech/v2/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Basic ' + btoa('neondb_owner:npg_recAJm30vOWR') },
+      body: JSON.stringify({ query: 'SELECT 1 as ok' }),
+    });
+    const txt = await resp.text();
+    return c.json({ ok: resp.ok, status: resp.status, body: txt.slice(0, 300) });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 300) });
+  }
+});
+
 // ── Firebase JWT verification ──
 const FIREBASE_PROJECT_ID = 'harvests-3b238'
 const JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'
@@ -75,6 +94,12 @@ const PUBLIC_PATHS = new Set([
   '/api/bot/heartbeat',
   '/api/automation/poll',
   '/api/automation/report',
+  '/api/tasks/create',
+  '/api/tasks/count',
+  '/api/bot/noise-sites',
+  '/api/bot/learn/analyze',
+  '/api/bot/learn/status',
+  '/api/bot/observe',
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -948,6 +973,9 @@ app.post('/api/automation/behavior-logs', async (c) => {
     for (const row of logs) {
       await stmt.bind(row.ts, row.botId || 'unknown', row.event, JSON.stringify(row)).run();
     }
+    // Archive: delete logs older than 7 days (keep D1 lean)
+    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+    await c.env.DB.prepare("DELETE FROM bot_behavior_logs WHERE ts < ?").bind(weekAgo).run().catch(() => {});
     return c.json({ ok: true, count: logs.length });
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e) }, 500);
@@ -978,24 +1006,220 @@ app.get('/api/automation/behavior-logs', async (c) => {
   }
 });
 
-// ============ BOT TASK ENDPOINTS (cloud-native, replaces local server 3000) ============
-// These use bot token auth (Bearer or ?token=) and read/write Neon automation_tasks directly.
+// ============ BOT TASK ENDPOINTS (cloud-native, uses D1 directly) ============
+// Tasks live in D1 bot_tasks (not Neon). Scheduler writes via POST /api/tasks/create.
+
+// Ensure bot_tasks + bot_instances tables exist
+async function ensureBotTables(db: D1Database) {
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS bot_tasks (
+    id TEXT PRIMARY KEY, payload TEXT, status TEXT DEFAULT 'pending',
+    run_at INTEGER, lease_until INTEGER, leased_by TEXT,
+    attempts INTEGER DEFAULT 0, max_attempts INTEGER DEFAULT 3,
+    error_reason TEXT, created_at INTEGER, updated_at INTEGER
+  )`).run(); } catch {}
+  // Add columns that might be missing from earlier table version
+  for (const col of ['run_at','lease_until','leased_by','attempts','max_attempts','error_reason','updated_at']) {
+    try { await db.prepare(`ALTER TABLE bot_tasks ADD COLUMN ${col} INTEGER`).run(); } catch {}
+  }
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS bot_instances (
+    bot_id TEXT PRIMARY KEY, host TEXT, version TEXT, status TEXT DEFAULT 'online',
+    registered_at INTEGER, last_heartbeat INTEGER, meta TEXT
+  )`).run(); } catch {}
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS bot_config (
+    bot_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT, updated_at INTEGER,
+    PRIMARY KEY (bot_id, key)
+  )`).run(); } catch {}
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS bot_profile_adjustments (
+    bot_id TEXT PRIMARY KEY, adjustments_json TEXT, analysis_json TEXT,
+    confidence REAL DEFAULT 0, analyzed_at INTEGER, updated_at INTEGER
+  )`).run(); } catch {}
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS bot_observations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, bot_id TEXT, command_id TEXT,
+    mode TEXT, summary_json TEXT, profile_facts_json TEXT, created_at INTEGER
+  )`).run(); } catch {}
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS daily_task_stats (
+    day TEXT NOT NULL, status TEXT NOT NULL, cnt INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, status)
+  )`).run(); } catch {}
+}
 
 app.post('/api/bot/register', async (c) => {
   if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
   const { botId, host, version, meta } = await c.req.json();
   if (!botId) return c.json({ error: 'botId required' }, 400);
-  await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_instances (
-    bot_id TEXT PRIMARY KEY, host TEXT, version TEXT, status TEXT DEFAULT 'online',
-    registered_at INTEGER, last_heartbeat INTEGER, meta TEXT
-  )`).run();
-  try { await c.env.DB.prepare('ALTER TABLE bot_instances ADD COLUMN meta TEXT').run(); } catch {}
+  await ensureBotTables(c.env.DB);
   const now = Date.now();
   await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,host,version,status,registered_at,last_heartbeat,meta)
     VALUES (?,?,?,'online',?,?,?) ON CONFLICT(bot_id) DO UPDATE SET
     host=excluded.host, version=excluded.version, status='online', last_heartbeat=excluded.last_heartbeat, meta=excluded.meta
   `).bind(botId, host||'', version||'', now, now, meta ? JSON.stringify(meta) : null).run();
   return c.json({ ok: true, botId, online: true, staleMs: 0 });
+});
+
+// Auth helper: accepts bot token OR Firebase JWT (for frontend users)
+async function anyAuth(c: any): Promise<boolean> {
+  if (checkBotToken(c)) return true;
+  const auth = c.req.header('Authorization') || '';
+  if (auth.startsWith('Bearer ') && auth.slice(7) !== BOT_SECRET) {
+    const user = await verifyToken(auth.slice(7));
+    return !!user;
+  }
+  return false;
+}
+
+// Get noise sites config for a bot
+app.get('/api/bot/noise-sites', async (c) => {
+  if (!await anyAuth(c)) return c.json({ error: 'Unauthorized' }, 401);
+  const botId = c.req.query('botId') || '';
+  if (!botId) return c.json({ error: 'botId required' }, 400);
+  await ensureBotTables(c.env.DB);
+  const row = await c.env.DB.prepare(
+    `SELECT value FROM bot_config WHERE bot_id=? AND key='noise_sites'`
+  ).bind(botId).first() as any;
+  const sites = row?.value ? JSON.parse(row.value) : ['https://www.cnn.com', 'https://www.nydailynews.com', 'https://www.youtube.com'];
+  return c.json({ ok: true, botId, sites });
+});
+
+// Save noise sites config for a bot
+app.post('/api/bot/noise-sites', async (c) => {
+  if (!await anyAuth(c)) return c.json({ error: 'Unauthorized' }, 401);
+  const { botId, sites } = await c.req.json();
+  if (!botId) return c.json({ error: 'botId required' }, 400);
+  if (!Array.isArray(sites) || sites.length === 0) return c.json({ error: 'sites array required' }, 400);
+  await ensureBotTables(c.env.DB);
+  await c.env.DB.prepare(
+    `INSERT INTO bot_config (bot_id, key, value, updated_at) VALUES (?, 'noise_sites', ?, ?)
+     ON CONFLICT(bot_id, key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`
+  ).bind(botId, JSON.stringify(sites), Date.now()).run();
+  return c.json({ ok: true, botId, sites });
+});
+
+// ============ BOT LEARNING SYSTEM (cloud-native, reads D1 behavior logs) ============
+
+app.post('/api/bot/learn/analyze', async (c) => {
+  if (!await anyAuth(c)) return c.json({ error: 'Unauthorized' }, 401);
+  const { botId } = await c.req.json();
+  if (!botId) return c.json({ error: 'botId required' }, 400);
+  await ensureBotTables(c.env.DB);
+  const now = Date.now();
+  const since = now - 7 * 24 * 60 * 60 * 1000;
+
+  // Read behavior logs from D1 as data source
+  let logs: any[] = [];
+  try {
+    const result = await c.env.DB.prepare(
+      `SELECT * FROM bot_behavior_logs WHERE bot_id=? AND ts>? ORDER BY id ASC`
+    ).bind(botId, new Date(since).toISOString()).all();
+    logs = (result.results || []).map((r: any) => {
+      let d: any = {};
+      try { d = JSON.parse(r.data || '{}'); } catch {}
+      return { ...d, id: r.id, ts: r.ts, event: r.event };
+    });
+  } catch {}
+
+  if (logs.length < 5) {
+    return c.json({ ok: true, botId, message: 'insufficient data (need ≥5 log entries)', found: logs.length });
+  }
+
+  // Compute behavior metrics from logs
+  const totalLogs = logs.length;
+  let totalLikes = 0, totalComments = 0, totalFollows = 0;
+  let browseLikeCount = 0, browseOnlyCount = 0;
+  const hourlyDistribution: Record<number, number> = {};
+  const intervalMsList: number[] = [];
+
+  for (let i = 0; i < logs.length; i++) {
+    const log = logs[i];
+    const hour = new Date(log.ts).getHours();
+    hourlyDistribution[hour] = (hourlyDistribution[hour] || 0) + 1;
+
+    if (i > 0 && logs[i-1]?.ts) {
+      intervalMsList.push(new Date(log.ts).getTime() - new Date(logs[i-1].ts).getTime());
+    }
+
+    if (log.event === 'comment_posted') totalComments++;
+    if (log.event === 'like_done') totalLikes++;
+    if (log.event === 'follow_done') totalFollows++;
+    if (log.mode === 'browse_like') browseLikeCount++;
+    else if (log.mode === 'browse_only') browseOnlyCount++;
+  }
+
+  const avgIntervalMs = intervalMsList.length > 0 ? intervalMsList.reduce((a, b) => a + b, 0) / intervalMsList.length : 0;
+  const avgIntervalMin = Math.round(avgIntervalMs / 60000);
+  const peakHours = Object.entries(hourlyDistribution)
+    .sort(([, a], [, b]) => b - a).slice(0, 3)
+    .map(([h]) => `${h}:00`).join(',');
+  const avgLikesPerTask = browseLikeCount > 0 ? +(totalLikes / browseLikeCount).toFixed(2) : 0;
+  const commentRatio = browseLikeCount > 0 ? +(totalComments / browseLikeCount).toFixed(2) : 0;
+
+  // Compute adjustments
+  const adjustments: Record<string, any> = {};
+  const reason: string[] = [];
+
+  if (avgLikesPerTask < 0.5 && browseLikeCount > 0) {
+    adjustments['likeStrategy'] = 'sparse';
+    reason.push(`avg_likes_${avgLikesPerTask}_low_→_sparse`);
+  } else if (avgLikesPerTask > 3 && browseLikeCount > 5) {
+    adjustments['likeStrategy'] = 'generous';
+    reason.push(`avg_likes_${avgLikesPerTask}_high_→_generous`);
+  }
+
+  if (commentRatio > 0.3) {
+    adjustments['commentStyle'] = 'casual_praise';
+    reason.push(`comment_ratio_${commentRatio}_→_enable_comment`);
+  } else if (commentRatio < 0.05 && browseLikeCount > 10) {
+    adjustments['commentStyle'] = 'silent';
+    reason.push(`comment_ratio_${commentRatio}_→_silent`);
+  }
+
+  if (avgIntervalMin < 2) {
+    adjustments['riskProfile'] = 'cautious';
+    reason.push(`interval_${avgIntervalMin}min_fast_→_cautious`);
+  } else if (avgIntervalMin > 20) {
+    adjustments['riskProfile'] = 'aggressive';
+    reason.push(`interval_${avgIntervalMin}min_slow_→_aggressive`);
+  }
+
+  const confidence = Math.min(100, Math.round((logs.length / 50) * 100));
+  const analysis = {
+    totalLogs, avgIntervalMin, avgLikesPerTask, commentRatio,
+    peakHours, totalComments, totalLikes, hourlyDistribution,
+    adjustments, reason,
+  };
+
+  // Save to D1
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO bot_profile_adjustments (bot_id, adjustments_json, analysis_json, confidence, analyzed_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(bot_id) DO UPDATE SET
+         adjustments_json=excluded.adjustments_json, analysis_json=excluded.analysis_json,
+         confidence=excluded.confidence, analyzed_at=excluded.analyzed_at, updated_at=excluded.updated_at`
+    ).bind(botId, JSON.stringify(adjustments), JSON.stringify(analysis), confidence, now, now).run();
+  } catch {}
+
+  return c.json({ ok: true, botId, confidence, adjustments, analysis });
+});
+
+app.get('/api/bot/learn/status', async (c) => {
+  if (!await anyAuth(c)) return c.json({ error: 'Unauthorized' }, 401);
+  await ensureBotTables(c.env.DB);
+  try {
+    const rows = await c.env.DB.prepare(
+      `SELECT * FROM bot_profile_adjustments ORDER BY updated_at DESC`
+    ).all();
+    const profiles = (rows.results || []).map((b: any) => ({
+      botId: b.bot_id,
+      adjustments: (() => { try { return JSON.parse(b.adjustments_json); } catch { return {}; } })(),
+      analysis: (() => { try { return JSON.parse(b.analysis_json); } catch { return {}; } })(),
+      confidence: b.confidence,
+      analyzedAt: b.analyzed_at,
+      updatedAt: b.updated_at,
+    }));
+    return c.json({ ok: true, total: profiles.length, profiles });
+  } catch (e: any) {
+    return c.json({ ok: true, total: 0, profiles: [] });
+  }
 });
 
 app.post('/api/bot/heartbeat', async (c) => {
@@ -1010,53 +1234,96 @@ app.post('/api/bot/heartbeat', async (c) => {
   return c.json({ ok: true, botId, ts: now });
 });
 
+// Scheduler writes new tasks here (replaces direct Neon write)
+app.post('/api/tasks/create', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  try {
+    await ensureBotTables(c.env.DB);
+    const { tasks } = await c.req.json();
+    if (!Array.isArray(tasks) || !tasks.length) return c.json({ error: 'tasks array required' }, 400);
+    const now = Date.now();
+    let created = 0;
+    const stmt = c.env.DB.prepare(`INSERT OR IGNORE INTO bot_tasks (id,payload,status,run_at,attempts,max_attempts,created_at,updated_at)
+      VALUES (?,?,'pending',?,0,3,?,?)`);
+    for (const t of tasks) {
+      if (!t.id) continue;
+      const runAt = t.runAt || t.run_at || now;
+      const payload = typeof t.payload === 'string' ? t.payload : JSON.stringify(t.payload || {});
+      const r = await stmt.bind(t.id, payload, runAt, now, now).run();
+      if (r.meta.changes > 0) created++;
+    }
+    return c.json({ ok: true, created });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 300) }, 500);
+  }
+});
+
+// Scheduler reads today's task count for quota
+app.get('/api/tasks/count', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  const botId = c.req.query('botId') || '';
+  await ensureBotTables(c.env.DB);
+  const startOfDay = new Date().setHours(0,0,0,0);
+  const endOfDay = startOfDay + 86_400_000;
+  let q = `SELECT COUNT(*) as cnt FROM bot_tasks WHERE created_at>=? AND created_at<? AND status IN ('pending','done','leased')`;
+  const binds: any[] = [startOfDay, endOfDay];
+  if (botId) { q += ` AND json_extract(payload,'$.botId')=?`; binds.push(botId); }
+  const row = await c.env.DB.prepare(q).bind(...binds).first() as any;
+  return c.json({ ok: true, todayCount: row?.cnt || 0 });
+});
+
 app.get('/api/automation/poll', async (c) => {
   if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
   const botId = c.req.query('botId') || '';
   const limit = Math.min(10, Math.max(1, Number(c.req.query('limit')) || 1));
   if (!botId) return c.json({ error: 'botId required' }, 400);
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
   const now = Date.now();
   const dedupWindow = now - 7 * 24 * 60 * 60 * 1000;
+  await ensureBotTables(c.env.DB);
   try {
-    // Recycle expired leases so tasks don't get stuck
-    await neonQuery(connStr,
-      `UPDATE automation_tasks SET status = 'pending', leased_by = NULL, lease_until = NULL, updated_at = $1
-       WHERE status = 'leased' AND lease_until IS NOT NULL AND lease_until < $1`,
-      [now]
-    ).catch(() => {});
+    // Recycle expired leases
+    try { await c.env.DB.prepare(
+      `UPDATE bot_tasks SET status='pending', leased_by=NULL, lease_until=NULL, updated_at=?
+       WHERE status='leased' AND lease_until IS NOT NULL AND lease_until<?`
+    ).bind(now, now).run(); } catch {}
 
-    // Atomic: SELECT pending + UPDATE to leased + RETURN data, one query
-    const rows = await neonQuery(connStr,
-      `UPDATE automation_tasks SET status = 'leased', leased_by = $1, lease_until = $2, updated_at = $3
-       WHERE id IN (
-         SELECT id FROM automation_tasks
-         WHERE status = 'pending' AND run_at <= $4
-           AND (payload->>'artistHandle' IS NULL
-             OR NOT EXISTS (
-               SELECT 1 FROM automation_tasks d
-               WHERE d.status = 'done' AND d.updated_at > $5
-                 AND d.payload->>'artistHandle' = automation_tasks.payload->>'artistHandle'
-             ))
-         ORDER BY run_at ASC LIMIT $6
-       )
-       RETURNING id, payload::text`,
-      [botId, now + 120_000, now, now, dedupWindow, limit]
-    );
-    const commands = (rows || []).map((r: any) => {
-      let payload: any = {};
-      try { payload = JSON.parse(r.payload || '{}'); } catch {}
-      return { ...payload, id: r.id };
-    });
-    // Also update bot heartbeat (keep alive)
-    await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,status,registered_at,last_heartbeat)
+    // Step 1: Find candidate IDs
+    let candidates: any = { results: [] };
+    try { candidates = await c.env.DB.prepare(
+      `SELECT id FROM bot_tasks WHERE status='pending' AND run_at<=?
+       ORDER BY run_at ASC LIMIT ?`
+    ).bind(now, limit).all(); } catch {}
+    const ids = (candidates.results || []).map((r: any) => r.id);
+
+    let commands: any[] = [];
+    if (ids.length > 0) {
+      const ph = ids.map(() => '?').join(',');
+      // Step 2: Lease them
+      try { await c.env.DB.prepare(
+        `UPDATE bot_tasks SET status='leased', leased_by=?, lease_until=?, updated_at=?
+         WHERE id IN (${ph}) AND status='pending'`
+      ).bind(botId, now + 120_000, now, ...ids).run(); } catch {}
+
+      // Step 3: Fetch leased
+      let leased: any = { results: [] };
+      try { leased = await c.env.DB.prepare(
+        `SELECT id, payload FROM bot_tasks WHERE id IN (${ph}) AND status='leased'`
+      ).bind(...ids).all(); } catch {}
+      commands = (leased.results || []).map((r: any) => {
+        let payload: any = {};
+        try { payload = JSON.parse(r.payload || '{}'); } catch {}
+        return { ...payload, id: r.id };
+      });
+    }
+
+    // Update heartbeat
+    try { await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,status,registered_at,last_heartbeat)
       VALUES (?,'online',?,?) ON CONFLICT(bot_id) DO UPDATE SET status='online', last_heartbeat=excluded.last_heartbeat
-    `).bind(botId, now, now).catch(() => {});
-    return c.json({ ok: true, commands });
+    `).bind(botId, now, now).run(); } catch {}
+
+    return c.json({ ok: true, commands, debug: { ids, pendingCount: (candidates.results || []).length } });
   } catch (e: any) {
-    console.error('[poll] Neon error:', e?.message || e);
-    return c.json({ ok: true, commands: [] }); // graceful degradation
+    return c.json({ ok: true, commands: [], error: String(e?.message || e).slice(0, 200) });
   }
 });
 
@@ -1065,29 +1332,117 @@ app.post('/api/automation/report', async (c) => {
   const { botId, commandId, status, reason } = await c.req.json();
   if (!botId || !commandId) return c.json({ error: 'botId and commandId required' }, 400);
   if (status !== 'done' && status !== 'failed') return c.json({ error: 'status must be done or failed' }, 400);
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
   const now = Date.now();
+  await ensureBotTables(c.env.DB);
   try {
-    await neonQuery(connStr,
-      `UPDATE automation_tasks SET status = $1, lease_until = NULL, leased_by = NULL, error_reason = $2, updated_at = $3
-       WHERE id = $4 AND leased_by = $5 AND status IN ('leased','running')`,
-      [status, status === 'failed' ? (reason || 'unknown') : null, now, commandId, botId]
-    );
+    await c.env.DB.prepare(
+      `UPDATE bot_tasks SET status=?, lease_until=NULL, leased_by=NULL, error_reason=?, updated_at=?
+       WHERE id=? AND leased_by=? AND status IN ('leased','running')`
+    ).bind(status, status === 'failed' ? (reason || 'unknown') : null, now, commandId, botId).run();
   } catch (e: any) {
-    console.error('[report] Neon error:', e?.message || e);
+    console.error('[report] D1 error:', e?.message || e);
   }
-  // Update D1 daily stats so frontend dashboard sees real-time data
-  const day = new Date().toISOString().slice(0, 10);
-  await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS daily_task_stats (
-    day TEXT NOT NULL, status TEXT NOT NULL, cnt INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (day, status)
-  )`).catch(() => {});
-  await c.env.DB.prepare(
-    `INSERT INTO daily_task_stats (day, status, cnt) VALUES (?, ?, 1)
-     ON CONFLICT(day, status) DO UPDATE SET cnt = cnt + 1`
-  ).bind(day, status === 'done' ? 'done' : 'failed').run().catch(() => {});
+  // Update daily stats for frontend dashboard
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    await c.env.DB.prepare(
+      `INSERT INTO daily_task_stats (day, status, cnt) VALUES (?, ?, 1)
+       ON CONFLICT(day, status) DO UPDATE SET cnt = cnt + 1`
+    ).bind(day, status === 'done' ? 'done' : 'failed').run();
+  } catch {}
   return c.json({ ok: true, commandId, status });
 });
+
+// Observation reports from bot worker — store in D1 for learning
+app.post('/api/bot/observe', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  const body = await c.req.json();
+  await ensureBotTables(c.env.DB);
+  const now = Date.now();
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO bot_observations (bot_id, command_id, mode, summary_json, profile_facts_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).bind(body.botId || '', body.commandId || '', body.mode || '',
+      JSON.stringify(body.summary || {}), JSON.stringify(body.profileFacts || {}), now).run();
+  } catch {}
+  return c.json({ ok: true });
+});
+
+// ── Scheduled handler — replaces VPS ig-scheduler ──
+// Runs every 5 minutes via Cloudflare Cron Triggers
+export async function scheduled(_event: any, env: Bindings, _ctx: any) {
+  const connStr = env.NEON_DATABASE_URL;
+  if (!connStr) { console.error('[scheduler] NEON_DATABASE_URL not configured'); return; }
+
+  const BOT_ID = 'bot_ig_01';
+  const TARGET_STATE = (env as any).SCHEDULER_STATE || 'OR';
+  const DAILY_LIMIT = Number((env as any).SCHEDULER_DAILY_LIMIT) || 50;
+  const BATCH_SIZE = 10;
+
+  try {
+    // Check daily quota
+    const startOfDay = new Date().setHours(0,0,0,0);
+    const endOfDay = startOfDay + 86_400_000;
+    const countRow = await env.DB.prepare(
+      `SELECT COUNT(*) as cnt FROM bot_tasks WHERE created_at>=? AND created_at<? AND json_extract(payload,'$.botId')=?`
+    ).bind(startOfDay, endOfDay, BOT_ID).first() as any;
+    const todayCount = countRow?.cnt || 0;
+    if (todayCount >= DAILY_LIMIT) {
+      console.log(`[scheduler] daily limit reached (${todayCount}/${DAILY_LIMIT}), skip`);
+      return;
+    }
+
+    const remaining = DAILY_LIMIT - todayCount;
+
+    // Read artists from Neon
+    const artists = await neonQuery(connStr, `
+      SELECT handle, city, state, category, name, email, phone, website, about,
+             ig_handle, instagram_url, google_photos, google_rating, google_reviews,
+             google_maps_url, source, status
+      FROM artists
+      WHERE handle IS NOT NULL AND handle != ''
+        AND (status IS NULL OR status != 'excluded')
+        AND ig_handle IS NOT NULL AND ig_handle != ''
+        AND (state IS NULL OR state = ?)
+      ORDER BY random()
+      LIMIT ?
+    `, [TARGET_STATE === 'ALL' ? null : TARGET_STATE, Math.min(BATCH_SIZE, remaining)]);
+
+    if (!artists?.length) {
+      console.log('[scheduler] no artists found');
+      return;
+    }
+
+    // Create tasks in D1
+    const now = Date.now();
+    const stmt = env.DB.prepare(
+      `INSERT OR IGNORE INTO bot_tasks (id,payload,status,run_at,attempts,max_attempts,created_at,updated_at)
+       VALUES (?,?,'pending',?,0,3,?,?)`
+    );
+    let created = 0;
+    for (const a of artists) {
+      const id = `ig_scheduled_${a.handle}_${now}_${Math.random().toString(36).slice(2, 6)}`;
+      const payload = JSON.stringify({
+        type: 'ig_scheduled',
+        handle: a.handle || a.ig_handle,
+        artistId: a.handle,
+        artistName: a.name || null,
+        city: a.city || null,
+        state: a.state || null,
+        igHandle: a.ig_handle || null,
+        instagramUrl: a.instagram_url || null,
+        category: a.category || null,
+        botId: BOT_ID,
+        accountStage: 'transition',
+      });
+      const r = await stmt.bind(id, payload, now, now, now).run();
+      if (r.meta.changes > 0) created++;
+    }
+    console.log(`[scheduler] created ${created}/${artists.length} tasks for ${BOT_ID} (today=${todayCount}/${DAILY_LIMIT})`);
+  } catch (e: any) {
+    console.error('[scheduler] error:', e?.message || e);
+  }
+}
 
 export default app

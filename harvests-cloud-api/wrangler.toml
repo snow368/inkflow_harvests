@@ -9,6 +9,11 @@ binding = "DB"
 database_name = "harvests-db"
 database_id = "97b5e650-01a7-4796-a301-b7fe3017bf2a"
 
+[triggers]
+crons = ["*/5 * * * *"]
+
 [vars]
 # NEON_DATABASE_URL must be set via `npx wrangler secret put NEON_DATABASE_URL`
-# It's the connection string for Neon cloud DB (holds automation_tasks)
+# It's the connection string for Neon cloud DB (holds artists table)
+# SCHEDULER_STATE = "OR"     (optional, override target state via `vars`)
+# SCHEDULER_DAILY_LIMIT = 50 (optional, override via `vars`)
