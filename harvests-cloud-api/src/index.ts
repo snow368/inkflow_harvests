@@ -1370,23 +1370,24 @@ app.post('/api/bot/observe', async (c) => {
 });
 
 // ── Scheduled handler — replaces VPS ig-scheduler ──
-// Runs every 5 minutes via Cloudflare Cron Triggers
+// Creates tasks into a bot-agnostic pool. Any bot can claim any task via lease.
+// For multi-bot: just deploy another bot-worker with different BOT_ID.
 export async function scheduled(_event: any, env: Bindings, _ctx: any) {
   const connStr = env.NEON_DATABASE_URL;
   if (!connStr) { console.error('[scheduler] NEON_DATABASE_URL not configured'); return; }
 
-  const BOT_ID = 'bot_ig_01';
-  const TARGET_STATE = (env as any).SCHEDULER_STATE || 'OR';
-  const DAILY_LIMIT = Number((env as any).SCHEDULER_DAILY_LIMIT) || 50;
+  // Scheduler config — tune via wrangler.toml [vars]
+  const TARGET_STATE = ((env as any).SCHEDULER_STATE || 'OR').trim().toUpperCase();
+  const DAILY_LIMIT = Number((env as any).SCHEDULER_DAILY_LIMIT) || 100;  // global pool cap
   const BATCH_SIZE = 10;
 
   try {
-    // Check daily quota
+    // Global daily quota — count ALL tasks created today, any bot
     const startOfDay = new Date().setHours(0,0,0,0);
     const endOfDay = startOfDay + 86_400_000;
     const countRow = await env.DB.prepare(
-      `SELECT COUNT(*) as cnt FROM bot_tasks WHERE created_at>=? AND created_at<? AND json_extract(payload,'$.botId')=?`
-    ).bind(startOfDay, endOfDay, BOT_ID).first() as any;
+      'SELECT COUNT(*) as cnt FROM bot_tasks WHERE created_at>=? AND created_at<?'
+    ).bind(startOfDay, endOfDay).first() as any;
     const todayCount = countRow?.cnt || 0;
     if (todayCount >= DAILY_LIMIT) {
       console.log(`[scheduler] daily limit reached (${todayCount}/${DAILY_LIMIT}), skip`);
@@ -1395,7 +1396,7 @@ export async function scheduled(_event: any, env: Bindings, _ctx: any) {
 
     const remaining = DAILY_LIMIT - todayCount;
 
-    // Read artists from Neon
+    // Read artists from Neon — no botId, tasks go into shared pool
     const artists = await neonQuery(connStr, `
       SELECT handle, city, state, category, name, email, phone, website, about,
              ig_handle, instagram_url, google_photos, google_rating, google_reviews,
@@ -1414,7 +1415,7 @@ export async function scheduled(_event: any, env: Bindings, _ctx: any) {
       return;
     }
 
-    // Create tasks in D1
+    // Create tasks in D1 — payload has NO botId, any bot can claim
     const now = Date.now();
     const stmt = env.DB.prepare(
       `INSERT OR IGNORE INTO bot_tasks (id,payload,status,run_at,attempts,max_attempts,created_at,updated_at)
@@ -1433,13 +1434,11 @@ export async function scheduled(_event: any, env: Bindings, _ctx: any) {
         igHandle: a.ig_handle || null,
         instagramUrl: a.instagram_url || null,
         category: a.category || null,
-        botId: BOT_ID,
-        accountStage: 'transition',
       });
       const r = await stmt.bind(id, payload, now, now, now).run();
       if (r.meta.changes > 0) created++;
     }
-    console.log(`[scheduler] created ${created}/${artists.length} tasks for ${BOT_ID} (today=${todayCount}/${DAILY_LIMIT})`);
+    console.log(`[scheduler] created ${created}/${artists.length} tasks (state=${TARGET_STATE}, today=${todayCount}/${DAILY_LIMIT})`);
   } catch (e: any) {
     console.error('[scheduler] error:', e?.message || e);
   }
