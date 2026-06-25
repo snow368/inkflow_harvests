@@ -4384,6 +4384,15 @@ async function startServer() {
           now
         );
 
+      // 同步到云 API → Neon
+      try {
+        fetch('https://harvests-api.inkflowapp.workers.dev/api/automation/observations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ botId, artistHandle, mode }),
+        }).catch(() => {});
+      } catch {}
+
       // Store relationship graph edges
       const relationships = req.body?.relationships;
       if (relationships && typeof relationships.sourceIgUserId === 'string') {
