@@ -18,7 +18,7 @@ const host = m[3];
 
 function neonQuery(query, params) {
   return new Promise((ok, fail) => {
-    const body = JSON.stringify({query, params: params || []});
+    const body = JSON.stringify(params?.length ? {query, params} : {query});
     const req = https.request({hostname:host, path:'/v2/query', method:'POST', headers:{'Content-Type':'application/json','Authorization':`Basic ${basic}`,'Content-Length':Buffer.byteLength(body)}}, r => { let d=''; r.on('data',c=>d+=c); r.on('end',()=>r.statusCode<300?ok(JSON.parse(d)):fail(new Error(d.slice(0,200)))); });
     req.write(body); req.end();
   });
