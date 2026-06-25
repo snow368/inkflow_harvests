@@ -25,8 +25,14 @@ function neonQuery(query, params) {
 }
 
 (async () => {
+  // 测试连接
+  try {
+    const test = await neonQuery('SELECT 1 as ok');
+    console.log('Neon 连接成功');
+  } catch (e) { console.error('Neon 连接失败:', e.message); process.exit(1); }
+
   // 建表
-  try { await neonQuery('CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)'); } catch {}
+  try { await neonQuery('CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)'); console.log('表已就绪'); } catch (e) { console.error('建表失败:', e.message); process.exit(1); }
   try { await neonQuery('CREATE INDEX IF NOT EXISTS idx_bot_obs_created_at ON bot_observations(created_at DESC)'); } catch {}
 
   // 逐条插入
