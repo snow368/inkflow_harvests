@@ -17,9 +17,10 @@ const sql = neon(NEON_URL);
   try { await sql`SELECT 1`; console.log('Neon 连接成功'); }
   catch (e) { console.error('Neon 连接失败:', e.message); process.exit(1); }
 
-  // 建表
-  try { await sql`CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)`; console.log('表已就绪'); }
-  catch (e) { console.error('建表失败:', e.message); process.exit(1); }
+  // 建表 + 清空旧数据
+  try { await sql`CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)`; } catch (e) { console.error('建表失败:', e.message); process.exit(1); }
+  try { await sql`DELETE FROM bot_observations`; console.log('旧数据已清空'); } catch {}
+  console.log('开始同步...');
 
   // 逐条插入
   let synced = 0, errors = 0;
