@@ -7,7 +7,7 @@ type UserInfo = { uid: string; email?: string }
 // Neon HTTP query helper — uses Neon SQL-over-HTTP API with Basic auth
 async function neonQuery(connStr: string, query: string, params?: any[]): Promise<any[]> {
   if (!connStr) throw new Error('NEON_DATABASE_URL not configured');
-  const m = connStr.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^/]+)\/neondb/);
+  const m = connStr.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^/]+)\/([^?]+)/);
   if (!m) throw new Error('Invalid Neon URL format');
   const [, user, pass, host] = m;
   const basic = btoa(`${user}:${pass}`);
@@ -91,6 +91,10 @@ const PUBLIC_PATHS = new Set([
   '/api/bot/heartbeat',
   '/api/automation/poll',
   '/api/automation/report',
+  '/api/automation/artists',
+  '/api/automation/observations',
+  '/api/automation/neon-test',
+  '/api/automation/tasks/create-from-artists',
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -1064,9 +1068,10 @@ async function ensureBotTables(db: D1Database) {
     confidence REAL DEFAULT 0, analyzed_at INTEGER, updated_at INTEGER
   )`).run(); } catch {}
   try { await db.prepare(`CREATE TABLE IF NOT EXISTS bot_observations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, bot_id TEXT, command_id TEXT,
+    id INTEGER PRIMARY KEY AUTOINCREMENT, bot_id TEXT, command_id TEXT, artist_handle TEXT,
     mode TEXT, summary_json TEXT, profile_facts_json TEXT, created_at INTEGER
   )`).run(); } catch {}
+  try { await db.prepare(`ALTER TABLE bot_observations ADD COLUMN artist_handle TEXT`).run(); } catch {}
   try { await db.prepare(`CREATE TABLE IF NOT EXISTS daily_task_stats (
     day TEXT NOT NULL, status TEXT NOT NULL, cnt INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (day, status)
@@ -1237,6 +1242,187 @@ app.post('/api/automation/report', async (c) => {
      ON CONFLICT(day, status) DO UPDATE SET cnt = cnt + 1`
   ).bind(day, status === 'done' ? 'done' : 'failed').run().catch(() => {});
   return c.json({ ok: true, commandId, status });
+});
+
+// ===== 快速检查 Neon 连接 =====
+app.get('/api/automation/neon-test', async (c) => {
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ ok: false, error: 'NEON_DATABASE_URL not set', hint: 'use wrangler secret put NEON_DATABASE_URL' });
+  // 测试正则解析
+  const m = connStr.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^/]+)\/([^?]+)/);
+  if (!m) return c.json({ ok: false, error: 'URL regex no match', url: connStr.slice(0, 50) + '...' });
+  try {
+    const basic = btoa(`${m[1]}:${m[2]}`);
+    const resp = await fetch(`https://${m[3]}/v2/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${basic}` },
+      body: JSON.stringify({ query: "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name" }),
+    });
+    const text = await resp.text();
+    if (!resp.ok) return c.json({ ok: false, error: `Neon ${resp.status}`, detail: text.slice(0, 300) });
+    const data = JSON.parse(text);
+    const tables = (data.rows || data || []).map((t: any) => t.table_name);
+    const countResp = await fetch(`https://${m[3]}/v2/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${basic}` },
+      body: JSON.stringify({ query: "SELECT COUNT(*) as cnt FROM artists" }),
+    });
+    const countData = await countResp.json();
+    const cnt = (countData.rows || [])[0]?.cnt || 0;
+    return c.json({ ok: true, tables, artistCount: cnt, user: m[1], host: m[3] });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message, stack: e.stack?.slice(0, 500) });
+  }
+});
+
+// ===== 快速检查 Neon 连接 =====
+app.get('/api/automation/neon-check', async (c) => {
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ ok: false, error: 'NEON_DATABASE_URL not set' });
+  try {
+    const tables = await neonQuery(connStr, "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name");
+    const artistCount = await neonQuery(connStr, "SELECT COUNT(*) as cnt FROM artists");
+    return c.json({ ok: true, tables: tables.map((t: any) => t.table_name), artistCount: artistCount[0]?.cnt || 0 });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message });
+  }
+});
+
+// ===== 采集数据：读写 Neon =====
+async function ensureObservationsTable(connStr: string) {
+  try { await neonQuery(connStr, `CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)`); } catch {}
+  try { await neonQuery(connStr, `CREATE INDEX IF NOT EXISTS idx_bot_obs_created_at ON bot_observations(created_at DESC)`); } catch {}
+}
+
+app.get('/api/automation/observations', async (c) => {
+  const limit = Math.min(50, Math.max(1, Number(c.req.query('limit')) || 20));
+  // 先试 VPS Express（有完整数据）
+  try {
+    const vps = await fetch(`http://163.245.212.169:3000/api/bot/observations?limit=${limit}`, { signal: AbortSignal.timeout(3000) });
+    if (vps.ok) {
+      const data = await vps.json() as any;
+      const items = (data.observations || []).map((o: any) => ({ id: o.id, bot_id: o.botId, artist_handle: o.artistHandle || '', mode: o.mode, created_at: o.createdAt }));
+      return c.json({ ok: true, items });
+    }
+  } catch {}
+  // Fallback: Neon
+  try {
+    const connStr = c.env.NEON_DATABASE_URL;
+    if (!connStr) return c.json({ ok: false, error: 'NEON not configured', items: [] }, 500);
+    await ensureObservationsTable(connStr);
+    const rows = await neonQuery(connStr,
+      `SELECT id, bot_id, COALESCE(artist_handle, '') as artist_handle, mode, created_at FROM bot_observations ORDER BY created_at DESC LIMIT $1`, [limit]
+    );
+    return c.json({ ok: true, items: rows || [] });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message, items: [] }, 500);
+  }
+});
+
+// Bot worker 上报观测数据到 Neon（也支持批量 {items:[...]}）
+app.post('/api/automation/observations', async (c) => {
+  try {
+    const body = await c.req.json();
+    const connStr = c.env.NEON_DATABASE_URL;
+    if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
+    await ensureObservationsTable(connStr);
+    // 批量同步
+    if (body.items && Array.isArray(body.items)) {
+      let synced = 0;
+      for (const o of body.items) {
+        const botId = String(o.botId || o.bot_id || '').trim();
+        const ah = String(o.artistHandle || o.artist_handle || '').replace(/^@/, '').trim();
+        const mode = String(o.mode || '').trim();
+        const ts = Number(o.createdAt || o.created_at || Date.now());
+        if (!botId || !mode) continue;
+        await neonQuery(connStr, `INSERT INTO bot_observations (bot_id, artist_handle, mode, created_at) VALUES ($1, $2, $3, $4)`, [botId, ah || null, mode, ts]);
+        synced++;
+      }
+      return c.json({ ok: true, synced });
+    }
+    // 单条上报
+    const botId = String(body.botId || body.bot_id || '').trim();
+    const artistHandle = String(body.artistHandle || body.artist_handle || '').replace(/^@/, '').trim();
+    const mode = String(body.mode || '').trim();
+    if (!botId || !mode) return c.json({ error: 'botId and mode required' }, 400);
+    await neonQuery(connStr, `INSERT INTO bot_observations (bot_id, artist_handle, mode, created_at) VALUES ($1, $2, $3, $4)`, [botId, artistHandle || null, mode, Date.now()]);
+    return c.json({ ok: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+// 删除旧的 sync 端点（已合并到 POST /observations）
+// app.post('/api/automation/observations/sync', ...) 已移除
+
+// ===== 数据看板：查询 Neon artists 表 =====
+app.get('/api/automation/artists', async (c) => {
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
+  try {
+    const state = (c.req.query('state') || '').toUpperCase();
+    const search = c.req.query('search') || '';
+    const page = Math.max(1, parseInt(c.req.query('page') || '1'));
+    const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '50')));
+
+    let where = "WHERE ig_handle IS NOT NULL AND ig_handle != ''";
+    const params: any[] = [];
+    let idx = 1;
+    if (state) { where += ` AND import_region = $${idx++}`; params.push(state); }
+    if (search) { where += ` AND (shop_name ILIKE $${idx} OR ig_handle ILIKE $${idx} OR city ILIKE $${idx})`; params.push(`%${search}%`); idx++; }
+
+    const countResult = await neonQuery(connStr, `SELECT COUNT(*) as cnt FROM artists ${where}`, params);
+    const total = countResult[0]?.cnt || 0;
+    const offset = (page - 1) * limit;
+    const rows = await neonQuery(connStr,
+      `SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating FROM artists ${where} ORDER BY shop_name ASC LIMIT $${idx} OFFSET $${idx+1}`,
+      [...params, limit, offset]
+    );
+    return c.json({ ok: true, items: rows || [], total, page, limit, pages: Math.ceil(total / limit) });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message }, 500);
+  }
+});
+
+// ===== 从 artists 创建任务 =====
+app.post('/api/automation/tasks/create-from-artists', async (c) => {
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
+  try {
+    const { artistIds, taskType = 'ig_browse' } = await c.req.json();
+    if (!artistIds?.length) return c.json({ error: 'artistIds required' }, 400);
+    const ts = Date.now();
+    const dedupWindow = ts - 7 * 24 * 60 * 60 * 1000;
+    let created = 0, skipped = 0;
+
+    for (const id of artistIds) {
+      const artist = await neonQuery(connStr,
+        `SELECT id, shop_name, ig_handle, city, state FROM artists WHERE id = $1`, [id]
+      );
+      if (!artist?.[0]) continue;
+      const a = artist[0];
+
+      // 检查7天内是否已有此 artist 的任务
+      const existing = await neonQuery(connStr,
+        `SELECT id FROM automation_tasks WHERE payload->>'artistHandle' = $1 AND updated_at > $2 LIMIT 1`,
+        [a.ig_handle || a.shop_name, dedupWindow]
+      );
+      if (existing?.length > 0) { skipped++; continue; }
+
+      await neonQuery(connStr,
+        `INSERT INTO automation_tasks (id, status, payload, run_at, created_at, updated_at)
+         VALUES ($1, 'pending', $2, $3, $4, $4)`,
+        [
+          `manual_${ts}_${id}`,
+          JSON.stringify({ artistHandle: a.ig_handle || '', shopName: a.shop_name || '', city: a.city || '', state: a.state || '' }),
+          ts, ts
+        ]
+      );
+      created++;
+    }
+    return c.json({ ok: true, created, skipped, total: artistIds.length });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message }, 500);
+  }
 });
 
 export default app
