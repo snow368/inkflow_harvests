@@ -7,29 +7,25 @@ const envText = fs.readFileSync('.env', 'utf8');
 const NEON_URL = envText.split('\n').find(l => l.startsWith('NEON_DATABASE_URL='))?.split('=').slice(1).join('=');
 if (!NEON_URL) { console.error('NEON_DATABASE_URL not found'); process.exit(1); }
 
-const rows = db.prepare("SELECT bot_id, COALESCE(artist_handle,'') as ah, mode, created_at FROM bot_observations ORDER BY id DESC LIMIT 5000").all();
+const rows = db.prepare("SELECT bot_id, COALESCE(artist_handle,'') as ah, mode, created_at, COALESCE(summary_json,'{}') as sj, COALESCE(profile_facts_json,'{}') as pf FROM bot_observations ORDER BY id DESC LIMIT 5000").all();
 console.log(`读取 ${rows.length} 条观测数据`);
 
 const sql = neon(NEON_URL);
 
 (async () => {
-  // 测试连接
   try { await sql`SELECT 1`; console.log('Neon 连接成功'); }
   catch (e) { console.error('Neon 连接失败:', e.message); process.exit(1); }
 
-  // 建表 + 清空旧数据
-  try { await sql`CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)`; } catch (e) { console.error('建表失败:', e.message); process.exit(1); }
-  try { await sql`DELETE FROM bot_observations`; console.log('旧数据已清空'); } catch {}
-  console.log('开始同步...');
+  try { await sql`DROP TABLE IF EXISTS bot_observations`; } catch {}
+  try { await sql`CREATE TABLE bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, summary_json TEXT DEFAULT '{}', profile_facts_json TEXT DEFAULT '{}', created_at BIGINT NOT NULL)`; console.log('表已重建'); } catch (e) { console.error('建表失败:', e.message); process.exit(1); }
 
-  // 逐条插入
   let synced = 0, errors = 0;
   for (const r of rows) {
     try {
-      await sql`INSERT INTO bot_observations (bot_id, artist_handle, mode, created_at) VALUES (${r.bot_id}, ${r.ah||null}, ${r.mode}, ${r.created_at})`;
+      await sql`INSERT INTO bot_observations (bot_id, artist_handle, mode, summary_json, profile_facts_json, created_at) VALUES (${r.bot_id}, ${r.ah||null}, ${r.mode}, ${r.sj||'{}'}, ${r.pf||'{}'}, ${r.created_at})`;
       synced++;
     } catch (e) { errors++; if (errors===1) console.log('错误示例:', r.bot_id, e.message.slice(0,100)); }
-    if ((synced + errors) % 200 === 0) console.log(`进度: ${synced}/${rows.length}`);
+    if ((synced + errors) % 100 === 0) console.log(`进度: ${synced}/${rows.length}`);
   }
   console.log(`同步完成! ${synced} 成功, ${errors} 失败`);
 })().catch(e => console.error('脚本失败:', e.message));

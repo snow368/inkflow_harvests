@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
+import { neon } from '@neondatabase/serverless'
 
 type UserInfo = { uid: string; email?: string }
 
@@ -64,6 +65,7 @@ app.use('/*', cors())
 
 // Health check — no DB dependency
 app.get('/_health', (c) => c.json({ ok: true, time: Date.now() }))
+app.get('/_ver', (c) => c.json({ ver: 'final-v2', time: Date.now() }))
 
 // ── Firebase JWT verification ──
 const FIREBASE_PROJECT_ID = 'harvests-3b238'
@@ -95,6 +97,7 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/observations',
   '/api/automation/neon-test',
   '/api/automation/tasks/create-from-artists',
+  '/api/automation/tasks/inject',
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -1294,33 +1297,35 @@ async function ensureObservationsTable(connStr: string) {
   try { await neonQuery(connStr, `CREATE INDEX IF NOT EXISTS idx_bot_obs_created_at ON bot_observations(created_at DESC)`); } catch {}
 }
 
-app.get('/api/automation/observations', async (c) => {
-  const limit = Math.min(50, Math.max(1, Number(c.req.query('limit')) || 20));
-  // 先试 VPS Express（有完整数据）
-  try {
-    const vps = await fetch(`http://163.245.212.169:3000/api/bot/observations?limit=${limit}`, { signal: AbortSignal.timeout(3000) });
-    if (vps.ok) {
-      const data = await vps.json() as any;
-      const items = (data.observations || []).map((o: any) => ({ id: o.id, bot_id: o.botId, artist_handle: o.artistHandle || '', mode: o.mode, created_at: o.createdAt }));
-      return c.json({ ok: true, items });
-    }
-  } catch {}
-  // Fallback: Neon
-  try {
-    const connStr = c.env.NEON_DATABASE_URL;
-    if (!connStr) return c.json({ ok: false, error: 'NEON not configured', items: [] }, 500);
-    await ensureObservationsTable(connStr);
-    const rows = await neonQuery(connStr,
-      `SELECT id, bot_id, COALESCE(artist_handle, '') as artist_handle, mode, created_at FROM bot_observations ORDER BY created_at DESC LIMIT $1`, [limit]
-    );
-    return c.json({ ok: true, items: rows || [] });
-  } catch (e: any) {
-    return c.json({ ok: false, error: e.message, items: [] }, 500);
-  }
-});
 
 // Bot worker 上报观测数据到 Neon（也支持批量 {items:[...]}）
-app.post('/api/automation/observations', async (c) => {
+app.all('/api/automation/observations', async (c) => {
+  if (c.req.method === 'GET') {
+    const limit = Math.min(50, Math.max(1, Number(c.req.query('limit')) || 20));
+    // 先试试 VPS Express（有完整数据含 summary_json / profile_facts_json）
+    try {
+      const vps = await fetch(`http://163.245.212.169:3000/api/bot/observations?limit=${limit}`, { signal: AbortSignal.timeout(3000) });
+      if (vps.ok) {
+        const data = await vps.json() as any;
+        const items = (data.observations || []).map((o: any) => ({
+          bot_id: o.botId, artist_handle: o.artistHandle || '', mode: o.mode,
+          summary_json: JSON.stringify(o.summary || {}), profile_facts_json: JSON.stringify(o.profileFacts || {}),
+          created_at: o.createdAt
+        }));
+        return c.json({ ok: true, items });
+      }
+    } catch {}
+    // Fallback: Neon
+    try {
+      const connStr = c.env.NEON_DATABASE_URL;
+      if (!connStr) return c.json({ ok: false, error: 'NEON not configured', items: [] }, 500);
+      const sql = neon(connStr);
+      await sql`CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)`;
+      const obsRes = await sql`SELECT id, bot_id, COALESCE(artist_handle, '') as artist_handle, mode, COALESCE(summary_json, '{}') as summary_json, COALESCE(profile_facts_json, '{}') as profile_facts_json, created_at FROM bot_observations ORDER BY created_at DESC LIMIT ${limit}`;
+      const rows = obsRes?.rows || (Array.isArray(obsRes) ? obsRes : []);
+      return c.json({ ok: true, items: rows });
+    } catch (e: any) { return c.json({ ok: false, error: e.message, items: [] }, 500); }
+  }
   try {
     const body = await c.req.json();
     const connStr = c.env.NEON_DATABASE_URL;
@@ -1363,20 +1368,23 @@ app.get('/api/automation/artists', async (c) => {
     const search = c.req.query('search') || '';
     const page = Math.max(1, parseInt(c.req.query('page') || '1'));
     const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '50')));
-
-    let where = "WHERE ig_handle IS NOT NULL AND ig_handle != ''";
-    const params: any[] = [];
-    let idx = 1;
-    if (state) { where += ` AND import_region = $${idx++}`; params.push(state); }
-    if (search) { where += ` AND (shop_name ILIKE $${idx} OR ig_handle ILIKE $${idx} OR city ILIKE $${idx})`; params.push(`%${search}%`); idx++; }
-
-    const countResult = await neonQuery(connStr, `SELECT COUNT(*) as cnt FROM artists ${where}`, params);
-    const total = countResult[0]?.cnt || 0;
     const offset = (page - 1) * limit;
-    const rows = await neonQuery(connStr,
-      `SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating FROM artists ${where} ORDER BY shop_name ASC LIMIT $${idx} OFFSET $${idx+1}`,
-      [...params, limit, offset]
-    );
+
+    const sql = neon(connStr);
+    // 简化：先用模板语法查全部，后续可加客户端筛选
+    const countRows = await sql`SELECT COUNT(*) as cnt FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != ''`;
+    const total = Number(countRows?.[0]?.cnt || countRows?.rows?.[0]?.cnt || 0);
+    let dataRes;
+    if (state && search) {
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} AND (shop_name ILIKE ${'%'+search+'%'} OR ig_handle ILIKE ${'%'+search+'%'} OR city ILIKE ${'%'+search+'%'}) ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+    } else if (state) {
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+    } else if (search) {
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND (shop_name ILIKE ${'%'+search+'%'} OR ig_handle ILIKE ${'%'+search+'%'} OR city ILIKE ${'%'+search+'%'}) ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+    } else {
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+    }
+    const rows = dataRes?.rows || (Array.isArray(dataRes) ? dataRes : []);
     return c.json({ ok: true, items: rows || [], total, page, limit, pages: Math.ceil(total / limit) });
   } catch (e: any) {
     return c.json({ ok: false, error: e.message }, 500);
@@ -1420,6 +1428,37 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
       created++;
     }
     return c.json({ ok: true, created, skipped, total: artistIds.length });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message }, 500);
+  }
+});
+
+// ===== 从 artist handle 注入任务到 bot =====
+app.post('/api/automation/tasks/inject', async (c) => {
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
+  try {
+    const { artistHandles, taskType = 'ig_browse', botId = '' } = await c.req.json();
+    if (!artistHandles?.length) return c.json({ error: 'artistHandles required' }, 400);
+    const ts = Date.now();
+    const dedupWindow = ts - 7 * 24 * 60 * 60 * 1000;
+    const sql = neon(connStr);
+    let created = 0, skipped = 0;
+
+    for (const handle of artistHandles) {
+      const h = String(handle || '').replace(/^@/, '').trim().toLowerCase();
+      if (!h) continue;
+
+      // 查重：7天内是否有此 handle 的任务
+      const existing = await sql`SELECT id FROM automation_tasks WHERE payload->>'artistHandle' = ${h} AND updated_at > ${dedupWindow} LIMIT 1`;
+      if (existing?.rows?.length || existing?.length) { skipped++; continue; }
+
+      const leasedBy = botId || null;
+      await sql`INSERT INTO automation_tasks (id, status, payload, run_at, leased_by, created_at, updated_at)
+        VALUES (${`inject_${ts}_${h}`}, 'pending', ${JSON.stringify({ artistHandle: h, targetBot: botId })}, ${ts}, ${leasedBy}, ${ts}, ${ts})`;
+      created++;
+    }
+    return c.json({ ok: true, created, skipped, total: artistHandles.length });
   } catch (e: any) {
     return c.json({ ok: false, error: e.message }, 500);
   }
