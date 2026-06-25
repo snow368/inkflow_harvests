@@ -19,7 +19,7 @@ const host = m[3];
 function neonQuery(query, params) {
   return new Promise((ok, fail) => {
     const body = JSON.stringify({query, params: params || []});
-    const req = https.request({hostname:host, path:'/v2/query', method:'POST', headers:{'Content-Type':'application/json','Authorization':`Basic ${basic}`,'Content-Length':Buffer.byteLength(body)}}, r => { let d=''; r.on('data',c=>d+=c); r.on('end',()=>r.statusCode<300?ok(JSON.parse(d)):fail(d)); });
+    const req = https.request({hostname:host, path:'/v2/query', method:'POST', headers:{'Content-Type':'application/json','Authorization':`Basic ${basic}`,'Content-Length':Buffer.byteLength(body)}}, r => { let d=''; r.on('data',c=>d+=c); r.on('end',()=>r.statusCode<300?ok(JSON.parse(d)):fail(new Error(d.slice(0,200)))); });
     req.write(body); req.end();
   });
 }
@@ -35,7 +35,7 @@ function neonQuery(query, params) {
     try {
       await neonQuery('INSERT INTO bot_observations (bot_id, artist_handle, mode, created_at) VALUES ($1, $2, $3, $4)', [r.bot_id, r.ah||null, r.mode, r.created_at]);
       synced++;
-    } catch (e) { errors++; }
+    } catch (e) { errors++; if (errors === 1) console.log('错误示例:', r.bot_id, e.message || e); }
     if ((synced + errors) % 200 === 0) console.log(`进度: ${synced} 成功, ${errors} 失败 / ${rows.length}`);
   }
   console.log(`同步完成! ${synced} 成功, ${errors} 失败`);
