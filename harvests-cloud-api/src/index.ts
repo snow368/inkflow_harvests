@@ -949,18 +949,9 @@ app.get('/api/automation/dashboard', async (c) => {
   });
 });
 
-// Frontend DataDashboard: task counts summary (VPS Express + Neon fallback)
+// Frontend DataDashboard: task counts summary (Neon only)
 app.get('/api/automation/task-counts', async (c) => {
   let counts: Record<string, number> = { pending: 0, leased: 0, done: 0, failed: 0 };
-  // Try VPS Express first (has real task data in SQLite)
-  try {
-    const vps = await fetch(`http://163.245.212.169:3000/api/bot/status-counts`, { signal: AbortSignal.timeout(3000) });
-    if (vps.ok) {
-      const d = await vps.json() as any;
-      if (d?.counts) return c.json({ ok: true, source: 'vps', counts: d.counts });
-    }
-  } catch {}
-  // Fallback: Neon automation_tasks (use neonQuery helper, works in Workers)
   try {
     const connStr = c.env.NEON_DATABASE_URL;
     if (connStr) {
@@ -976,7 +967,7 @@ app.get('/api/automation/task-counts', async (c) => {
       }
     }
   } catch {}
-  return c.json({ ok: true, source: counts.pending || counts.leased || counts.done || counts.failed ? 'neon' : 'empty', counts });
+  return c.json({ ok: true, counts });
 });
 
 // Debug: check VPS + Neon raw data
