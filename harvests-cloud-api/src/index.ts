@@ -1537,18 +1537,32 @@ app.post('/api/automation/task-list/sync', async (c) => {
   try {
     const { tasks } = await c.req.json();
     if (!Array.isArray(tasks) || !tasks.length) return c.json({ error: 'tasks array required' }, 400);
+    // 确保 D1 表存在且有需要的列
+    try { await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS automation_tasks (id TEXT PRIMARY KEY, payload TEXT, status TEXT, created_at INTEGER, updated_at INTEGER)`).run(); } catch {}
+    try { await c.env.DB.prepare(`ALTER TABLE automation_tasks ADD COLUMN payload TEXT`).run(); } catch {}
+    try { await c.env.DB.prepare(`ALTER TABLE automation_tasks ADD COLUMN updated_at INTEGER`).run(); } catch {}
     let inserted = 0, skipped = 0;
+    let firstError = '';
     for (const t of tasks) {
       if (!t.id || !t.status) { skipped++; continue; }
       try {
+        // Use as TEXT id to avoid type mismatch
+        const id = String(t.id);
+        const payload = typeof t.payload === 'string' ? t.payload : JSON.stringify(t.payload || {});
+        const status = String(t.status);
+        const created = Math.floor(Number(t.created_at || Date.now()));
+        const updated = Math.floor(Number(t.updated_at || Date.now()));
         await c.env.DB.prepare(
           `INSERT OR REPLACE INTO automation_tasks (id, payload, status, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?)`
-        ).bind(t.id, t.payload || '{}', t.status, Number(t.created_at || Date.now()), Number(t.updated_at || Date.now())).run();
+        ).bind(id, payload, status, created, updated).run();
         inserted++;
-      } catch { skipped++; }
+      } catch (e: any) {
+        skipped++;
+        if (!firstError) firstError = String(e?.message || e).slice(0, 200);
+      }
     }
-    return c.json({ ok: true, inserted, skipped, total: tasks.length });
+    return c.json({ ok: true, inserted, skipped, total: tasks.length, firstError });
   } catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
 });
 
