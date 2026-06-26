@@ -101,6 +101,7 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/task-list',
   '/api/automation/task-counts',
   '/api/automation/task-counts-debug',
+  '/api/automation/task-list/sync',
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -1527,6 +1528,28 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
   } catch (e: any) {
     return c.json({ ok: false, error: e.message }, 500);
   }
+});
+
+// ===== 从 VPS 同步任务数据到 D1 =====
+app.post('/api/automation/task-list/sync', async (c) => {
+  const auth = c.req.header('Authorization') || '';
+  if (auth !== 'Bearer vps-bot-secret-2024') return c.json({ error: 'unauthorized' }, 401);
+  try {
+    const { tasks } = await c.req.json();
+    if (!Array.isArray(tasks) || !tasks.length) return c.json({ error: 'tasks array required' }, 400);
+    let inserted = 0, skipped = 0;
+    for (const t of tasks) {
+      if (!t.id || !t.status) { skipped++; continue; }
+      try {
+        await c.env.DB.prepare(
+          `INSERT OR REPLACE INTO automation_tasks (id, payload, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?)`
+        ).bind(t.id, t.payload || '{}', t.status, Number(t.created_at || Date.now()), Number(t.updated_at || Date.now())).run();
+        inserted++;
+      } catch { skipped++; }
+    }
+    return c.json({ ok: true, inserted, skipped, total: tasks.length });
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
 });
 
 // ===== 从 artist handle 注入任务到 bot =====

@@ -2396,6 +2396,36 @@ async function startServer() {
       res.json({ status: 'ok', message: 'HarvestsAI Server is running' });
     });
 
+    // Sync VPS tasks to Cloudflare D1 (for per-row status matching)
+    app.get('/api/bot/tasks/sync-to-d1', async (req, res) => {
+      try {
+        const rows = deepScanDb.prepare('SELECT id, payload, status, created_at, updated_at FROM automation_tasks').all() as any[];
+        if (!rows.length) return res.json({ ok: true, message: 'no tasks to sync' });
+        const resp = await fetch('https://harvests-api.inkflowapp.workers.dev/api/automation/task-list/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer vps-bot-secret-2024' },
+          body: JSON.stringify({ tasks: rows }),
+        });
+        const data = await resp.json();
+        res.json({ ok: true, synced: data.inserted || 0, skipped: data.skipped || 0, total: rows.length, response: data });
+      } catch (e: any) { res.status(500).json({ error: e.message }); }
+    });
+
+    // Sync VPS task counts to Cloudflare D1 (one-shot)
+    app.post('/api/bot/status-counts/sync', (req, res) => {
+      try {
+        const rows = deepScanDb.prepare('SELECT status, COUNT(*) as cnt FROM automation_tasks GROUP BY status').all() as any[];
+        const counts = { pending: 0, leased: 0, done: 0, failed: 0 };
+        for (const r of rows) { if (r.status in counts) counts[r.status as keyof typeof counts] = Number(r.cnt || 0); }
+        const day = new Date().toISOString().slice(0, 10);
+        const entries = Object.entries(counts).filter(([, c]) => c > 0).map(([s, c]) => `('${day}','${s}',${c})`).join(',');
+        if (entries) {
+          const sql = `INSERT INTO daily_task_stats (day, status, cnt) VALUES ${entries} ON CONFLICT(day,status) DO UPDATE SET cnt = excluded.cnt`;
+          res.json({ ok: true, counts, sql });
+        } else res.json({ ok: true, counts, message: 'no data to sync' });
+      } catch (e: any) { res.status(500).json({ error: e.message }); }
+    });
+
     // DataDashboard: return task status counts from SQLite
     app.get('/api/bot/status-counts', (req, res) => {
       try {
