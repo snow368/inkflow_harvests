@@ -1489,7 +1489,7 @@ app.get('/api/automation/artists', async (c) => {
   }
 });
 
-// ===== 从 artists 创建任务（全部用 neon WebSQL） =====
+// ===== 从 artists 创建任务（批量查询避免 subrequest 上限） =====
 app.post('/api/automation/tasks/create-from-artists', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
@@ -1498,25 +1498,29 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
     if (!artistIds?.length) return c.json({ error: 'artistIds required' }, 400);
     const ts = Date.now();
     const dedupWindow = ts - 7 * 24 * 60 * 60 * 1000;
-    let created = 0, skipped = 0;
 
     const sql = neon(connStr);
     // 确保表存在
     await sql`CREATE TABLE IF NOT EXISTS automation_tasks (id TEXT PRIMARY KEY, payload TEXT, status TEXT, run_at BIGINT, lease_until BIGINT, leased_by TEXT, attempts INT DEFAULT 0, max_attempts INT DEFAULT 3, error_reason TEXT, created_at BIGINT, updated_at BIGINT)`.catch(() => {});
 
-    for (const id of artistIds) {
-      const artistRows = await sql`SELECT id, shop_name, ig_handle, city, state FROM artists WHERE id = ${Number(id)}`;
-      const artistList = artistRows?.rows || (Array.isArray(artistRows) ? artistRows : []);
-      if (!artistList.length) continue;
-      const a = artistList[0];
+    // 批量查询所有 artist（1次）
+    const ids = artistIds.map((i: any) => Number(i)).filter((n: number) => n > 0);
+    if (!ids.length) return c.json({ ok: false, error: 'no valid ids' }, 400);
+    const artistRows = await sql`SELECT id, shop_name, ig_handle, city, state FROM artists WHERE id = ANY(${ids})`;
+    const artists = artistRows?.rows || (Array.isArray(artistRows) ? artistRows : []);
+    if (!artists.length) return c.json({ ok: false, error: 'no artists found' }, 404);
 
-      // 检查7天内是否已有此 artist 的任务
-      const exRows = await sql`SELECT id FROM automation_tasks WHERE payload->>'artistHandle' = ${a.ig_handle || a.shop_name} AND updated_at > ${dedupWindow} LIMIT 1`;
-      const existing = exRows?.rows || (Array.isArray(exRows) ? exRows : []);
-      if (existing.length > 0) { skipped++; continue; }
+    // 批量查已有任务（1次）
+    const handles = artists.map((a: any) => a.ig_handle || a.shop_name).filter(Boolean);
+    const existingRows = handles.length ? await sql`SELECT id FROM automation_tasks WHERE payload->>'artistHandle' = ANY(${handles}) AND updated_at > ${dedupWindow}` : null;
+    const existingSet = new Set(((existingRows?.rows || []) as any[]).map((r: any) => r.artistHandle || ''));
 
+    let created = 0, skipped = 0;
+    for (const a of artists) {
+      const h = a.ig_handle || a.shop_name || '';
+      if (existingSet.has(h)) { skipped++; continue; }
       await sql`INSERT INTO automation_tasks (id, status, payload, run_at, created_at, updated_at)
-         VALUES (${'task_' + a.ig_handle + '_' + ts}, 'pending', ${JSON.stringify({ artistHandle: a.ig_handle, shopName: a.shop_name, taskType })}, ${ts}, ${ts}, ${ts})`;
+         VALUES (${'task_' + h + '_' + ts}, 'pending', ${JSON.stringify({ artistHandle: h, shopName: a.shop_name, taskType })}, ${ts}, ${ts}, ${ts})`;
       created++;
     }
     return c.json({ ok: true, created, skipped, total: artistIds.length });
