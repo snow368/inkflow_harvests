@@ -949,9 +949,23 @@ app.get('/api/automation/dashboard', async (c) => {
   });
 });
 
-// Frontend DataDashboard: task counts summary (Neon only)
+// Frontend DataDashboard: task counts summary (Neon tasks + D1 daily stats)
 app.get('/api/automation/task-counts', async (c) => {
   let counts: Record<string, number> = { pending: 0, leased: 0, done: 0, failed: 0 };
+  // D1 daily_task_stats (historical sync from VPS)
+  try {
+    const stats = await c.env.DB.prepare(
+      `SELECT status, SUM(cnt) as total FROM daily_task_stats GROUP BY status`
+    ).all();
+    for (const r of (stats.results || []) as any) {
+      const total = Number(r.total || 0);
+      if (r.status === 'pending') counts.pending += total;
+      else if (r.status === 'leased' || r.status === 'running') counts.leased += total;
+      else if (r.status === 'done') counts.done += total;
+      else if (r.status === 'failed') counts.failed += total;
+    }
+  } catch {}
+  // Neon automation_tasks (real-time tasks from bot workers)
   try {
     const connStr = c.env.NEON_DATABASE_URL;
     if (connStr) {
@@ -960,10 +974,10 @@ app.get('/api/automation/task-counts', async (c) => {
       );
       for (const r of (rows || [])) {
         const cnt = Number(r.cnt || 0);
-        if (r.status === 'pending') counts.pending = cnt;
+        if (r.status === 'pending') counts.pending += cnt;
         else if (r.status === 'leased' || r.status === 'running') counts.leased += cnt;
-        else if (r.status === 'done') counts.done = cnt;
-        else if (r.status === 'failed') counts.failed = cnt;
+        else if (r.status === 'done') counts.done += cnt;
+        else if (r.status === 'failed') counts.failed += cnt;
       }
     }
   } catch {}
