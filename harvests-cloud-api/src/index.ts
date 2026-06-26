@@ -979,14 +979,14 @@ app.get('/api/automation/task-counts', async (c) => {
       }
     }
   } catch {}
-  // Neon automation_tasks (real-time tasks from bot workers)
+  // Neon automation_tasks (use neon WebSQL, not HTTP API)
   try {
     const connStr = c.env.NEON_DATABASE_URL;
     if (connStr) {
-      const rows = await neonQuery(connStr,
-        `SELECT status, COUNT(*) as cnt FROM automation_tasks GROUP BY status`
-      );
-      for (const r of (rows || [])) {
+      const sql = neon(connStr);
+      const rows = await sql`SELECT status, COUNT(*)::int as cnt FROM automation_tasks GROUP BY status`;
+      const results = rows?.rows || (Array.isArray(rows) ? rows : []);
+      for (const r of results) {
         const cnt = Number(r.cnt || 0);
         if (r.status === 'pending') counts.pending += cnt;
         else if (r.status === 'leased' || r.status === 'running') counts.leased += cnt;
@@ -998,9 +998,9 @@ app.get('/api/automation/task-counts', async (c) => {
   return c.json({ ok: true, counts });
 });
 
-// Debug: check VPS + Neon raw data
+// Debug: check VPS + Neon + D1 raw data
 app.get('/api/automation/task-counts-debug', async (c) => {
-  const result: any = { vps: null, neon: null, error: null };
+  const result: any = { vps: null, neon: null, d1: null, error: null };
   try {
     const vps = await fetch(`http://163.245.212.169:3000/api/dashboard/status-counts`, { signal: AbortSignal.timeout(3000) });
     if (vps.ok) result.vps = await vps.json();
@@ -1013,6 +1013,10 @@ app.get('/api/automation/task-counts-debug', async (c) => {
     );
     else result.neon = 'NEON not configured';
   } catch (e: any) { result.neon = { error: e?.message }; }
+  try {
+    const stats = await c.env.DB.prepare(`SELECT status, SUM(cnt) as total FROM daily_task_stats GROUP BY status`).all();
+    result.d1 = stats.results || [];
+  } catch (e: any) { result.d1 = { error: e?.message }; }
   return c.json(result);
 });
 
@@ -1485,7 +1489,7 @@ app.get('/api/automation/artists', async (c) => {
   }
 });
 
-// ===== 从 artists 创建任务 =====
+// ===== 从 artists 创建任务（全部用 neon WebSQL） =====
 app.post('/api/automation/tasks/create-from-artists', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
@@ -1496,29 +1500,23 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
     const dedupWindow = ts - 7 * 24 * 60 * 60 * 1000;
     let created = 0, skipped = 0;
 
+    const sql = neon(connStr);
+    // 确保表存在
+    await sql`CREATE TABLE IF NOT EXISTS automation_tasks (id TEXT PRIMARY KEY, payload TEXT, status TEXT, run_at BIGINT, lease_until BIGINT, leased_by TEXT, attempts INT DEFAULT 0, max_attempts INT DEFAULT 3, error_reason TEXT, created_at BIGINT, updated_at BIGINT)`.catch(() => {});
+
     for (const id of artistIds) {
-      const artist = await neonQuery(connStr,
-        `SELECT id, shop_name, ig_handle, city, state FROM artists WHERE id = $1`, [id]
-      );
-      if (!artist?.[0]) continue;
-      const a = artist[0];
+      const artistRows = await sql`SELECT id, shop_name, ig_handle, city, state FROM artists WHERE id = ${Number(id)}`;
+      const artistList = artistRows?.rows || (Array.isArray(artistRows) ? artistRows : []);
+      if (!artistList.length) continue;
+      const a = artistList[0];
 
       // 检查7天内是否已有此 artist 的任务
-      const existing = await neonQuery(connStr,
-        `SELECT id FROM automation_tasks WHERE payload->>'artistHandle' = $1 AND updated_at > $2 LIMIT 1`,
-        [a.ig_handle || a.shop_name, dedupWindow]
-      );
-      if (existing?.length > 0) { skipped++; continue; }
+      const exRows = await sql`SELECT id FROM automation_tasks WHERE payload->>'artistHandle' = ${a.ig_handle || a.shop_name} AND updated_at > ${dedupWindow} LIMIT 1`;
+      const existing = exRows?.rows || (Array.isArray(exRows) ? exRows : []);
+      if (existing.length > 0) { skipped++; continue; }
 
-      await neonQuery(connStr,
-        `INSERT INTO automation_tasks (id, status, payload, run_at, created_at, updated_at)
-         VALUES ($1, 'pending', $2, $3, $4, $4)`,
-        [
-          `manual_${ts}_${id}`,
-          JSON.stringify({ artistHandle: a.ig_handle || '', shopName: a.shop_name || '', city: a.city || '', state: a.state || '' }),
-          ts, ts
-        ]
-      );
+      await sql`INSERT INTO automation_tasks (id, status, payload, run_at, created_at, updated_at)
+         VALUES (${'task_' + a.ig_handle + '_' + ts}, 'pending', ${JSON.stringify({ artistHandle: a.ig_handle, shopName: a.shop_name, taskType })}, ${ts}, ${ts}, ${ts})`;
       created++;
     }
     return c.json({ ok: true, created, skipped, total: artistIds.length });
