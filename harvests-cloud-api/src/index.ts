@@ -98,6 +98,8 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/neon-test',
   '/api/automation/tasks/create-from-artists',
   '/api/automation/tasks/inject',
+  '/api/automation/task-list',
+  '/api/automation/task-counts',
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -946,6 +948,16 @@ app.get('/api/automation/dashboard', async (c) => {
   });
 });
 
+// Frontend DataDashboard: task counts summary
+app.get('/api/automation/task-counts', async (c) => {
+  let counts: Record<string, number> = { pending: 0, leased: 0, done: 0, failed: 0 };
+  try {
+    const summary = await c.env.DB.prepare('SELECT status, COUNT(*) as cnt FROM automation_tasks GROUP BY status').all();
+    for (const r of (summary.results || []) as any) counts[r.status] = Number(r.cnt || 0);
+  } catch {}
+  return c.json({ ok: true, counts });
+});
+
 // Also expose legacy path for the frontend
 app.get('/api/automation/stats/dashboard', async (c) => {
   const resp = await c.req.raw.clone();
@@ -1385,7 +1397,31 @@ app.get('/api/automation/artists', async (c) => {
       dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
     }
     const rows = dataRes?.rows || (Array.isArray(dataRes) ? dataRes : []);
-    return c.json({ ok: true, items: rows || [], total, page, limit, pages: Math.ceil(total / limit) });
+
+    // 查询 D1 automation_tasks 获取每个 artist 的任务状态
+    let taskStatusMap: Record<string, string> = {};
+    try {
+      const handles = rows.map((r: any) => r.ig_handle).filter(Boolean);
+      if (handles.length > 0) {
+        const placeholders = handles.map(() => '?').join(',');
+        const tasks = await c.env.DB.prepare(
+          `SELECT DISTINCT payload->>'artistHandle' as handle, status
+           FROM automation_tasks
+           WHERE payload->>'artistHandle' IN (${placeholders})
+             AND status IN ('pending','leased','done','failed')`
+        ).bind(...handles).all();
+        for (const t of (tasks.results || []) as any) {
+          if (t.handle && !taskStatusMap[t.handle]) taskStatusMap[t.handle] = t.status;
+        }
+      }
+    } catch (e) { /* non-critical: status enrichment */ }
+
+    const items = rows.map((r: any) => ({
+      ...r,
+      taskStatus: taskStatusMap[r.ig_handle] || null,
+    }));
+
+    return c.json({ ok: true, items, total, page, limit, pages: Math.ceil(total / limit) });
   } catch (e: any) {
     return c.json({ ok: false, error: e.message }, 500);
   }
@@ -1462,6 +1498,29 @@ app.post('/api/automation/tasks/inject', async (c) => {
   } catch (e: any) {
     return c.json({ ok: false, error: e.message }, 500);
   }
+});
+
+// ===== 任务状态列表（从 Neon automation_tasks） =====
+app.get('/api/automation/task-list', async (c) => {
+  try {
+    const limit = Math.min(200, Math.max(1, Number(c.req.query('limit')) || 50));
+    const status = String(c.req.query('status') || '').trim();
+    const connStr = c.env.NEON_DATABASE_URL;
+    if (!connStr) return c.json({ ok: false, error: 'NEON not configured', tasks: [] }, 500);
+    const sql = neon(connStr);
+    let rows;
+    if (status) {
+      rows = await sql`SELECT id, status, leased_by, payload, error_reason, created_at, updated_at FROM automation_tasks WHERE status = ${status} ORDER BY created_at DESC LIMIT ${limit}`;
+    } else {
+      rows = await sql`SELECT id, status, leased_by, payload, error_reason, created_at, updated_at FROM automation_tasks ORDER BY created_at DESC LIMIT ${limit}`;
+    }
+    const tasks = (rows?.rows || rows || []).map((t: any) => {
+      let payload: any = {};
+      try { payload = typeof t.payload === 'string' ? JSON.parse(t.payload) : (t.payload || {}); } catch {}
+      return { id: t.id, status: t.status, artistHandle: payload.artistHandle || '', leasedBy: t.leased_by, errorReason: t.error_reason, createdAt: t.created_at, updatedAt: t.updated_at };
+    });
+    return c.json({ ok: true, tasks });
+  } catch (e: any) { return c.json({ ok: false, error: e.message, tasks: [] }, 500); }
 });
 
 export default app

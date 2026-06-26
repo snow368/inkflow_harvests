@@ -148,7 +148,6 @@ export default function DataDashboard() {
             <span className="text-lg font-black text-red-400">{taskCounts.failed || 0}</span>
           </div>
         </div>
-      )}
 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -220,15 +219,15 @@ export default function DataDashboard() {
               <th className="text-left py-2 pr-2 font-medium">IG</th>
               <th className="text-left py-2 pr-2 font-medium">城市</th>
               <th className="text-left py-2 pr-2 font-medium">地区</th>
-              <th className="text-left py-2 pr-2 font-medium">来源</th>
+              <th className="text-left py-2 pr-2 font-medium">数据</th>
               <th className="text-left py-2 pr-2 font-medium">状态</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="py-12 text-center text-zinc-600"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></td></tr>
+              <tr><td colSpan={7} className="py-12 text-center text-zinc-600"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></td></tr>
             ) : artists.length === 0 ? (
-              <tr><td colSpan={6} className="py-12 text-center text-zinc-600">暂无数据</td></tr>
+              <tr><td colSpan={7} className="py-12 text-center text-zinc-600">暂无数据</td></tr>
             ) : artists.map(a => (
               <tr key={a.id} className="border-b border-zinc-800/20 hover:bg-zinc-900/30 transition-colors">
                 <td className="py-2 pr-2">
@@ -240,7 +239,13 @@ export default function DataDashboard() {
                 <td className="py-2 pr-2 text-zinc-400">{a.ig_handle || '—'}</td>
                 <td className="py-2 pr-2 text-zinc-400">{a.city || '—'}</td>
                 <td className="py-2 pr-2"><span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-800 text-zinc-400">{a.import_region || '—'}</span></td>
-                <td className="py-2 text-zinc-500">{a.import_region || (a as any).state || '—'}</td>
+                <td className="py-2 text-zinc-500">
+                  <span className="flex items-center gap-1" title={a.website || a.phone ? `网站: ${a.website || '无'} | 电话: ${a.phone || '无'}` : '无数据'}>
+                    {a.website ? <span className="text-[10px] text-blue-400">🌐</span> : null}
+                    {a.phone ? <span className="text-[10px] text-green-400">📞</span> : null}
+                    {!a.website && !a.phone ? <span className="text-zinc-600">—</span> : null}
+                  </span>
+                </td>
                 <td className="py-2 pr-2">
                   {a.taskStatus === 'pending' ? <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-400">待处理</span> :
                    a.taskStatus === 'leased' ? <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-cyan-500/20 text-cyan-400">执行中</span> :
@@ -307,20 +312,33 @@ function ObservedData() {
               <th className="text-left py-2 pr-2 font-medium">Bot</th>
               <th className="text-left py-2 pr-2 font-medium">目标</th>
               <th className="text-left py-2 pr-2 font-medium">模式</th>
+              <th className="text-left py-2 pr-2 font-medium">粉丝数</th>
+              <th className="text-left py-2 pr-2 font-medium">发帖</th>
+              <th className="text-left py-2 pr-2 font-medium">简介</th>
               <th className="text-left py-2 pr-2 font-medium">时间</th>
             </tr></thead>
             <tbody>
-              {items.map((o: any) => (
+              {items.map((o: any) => {
+                const pf = o.profile_facts_json ? (() => { try { return JSON.parse(o.profile_facts_json); } catch { return {}; } })() : {};
+                const sm = o.summary_json ? (() => { try { return JSON.parse(o.summary_json); } catch { return {}; } })() : {};
+                const followers = pf?.followersCount || pf?.followers || pf?.followerCount || (pf?.counts?.followed_by?.count) || '—';
+                const posts = sm?.totalMedia || pf?.mediaCount || pf?.posts || (pf?.counts?.media?.count) || '—';
+                const bio = pf?.biography || pf?.bio || pf?.description || '—';
+                return (
                 <tr key={o.id} className="border-b border-zinc-800/20">
                   <td className="py-2 pr-2 text-zinc-300">{o.bot_id}</td>
                   <td className="py-2 pr-2 text-zinc-400">@{o.artist_handle}</td>
                   <td className="py-2 pr-2"><span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-800 text-zinc-400">{o.mode}</span></td>
+                  <td className="py-2 pr-2 text-zinc-400">{typeof followers === 'number' ? followers.toLocaleString() : followers}</td>
+                  <td className="py-2 pr-2 text-zinc-400">{typeof posts === 'number' ? posts.toLocaleString() : posts}</td>
+                  <td className="py-2 pr-2 text-zinc-400 max-w-[200px] truncate" title={String(bio)}>{String(bio).slice(0, 60)}</td>
                   <td className="py-2 text-zinc-500">{o.created_at ? new Date(o.created_at).toLocaleString() : '—'}</td>
-                </tr>
-              ))}
+                </tr>);
+              })}
             </tbody>
           </table>
         </div>
       )}
     </div>
   );
+}
