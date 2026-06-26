@@ -2396,6 +2396,25 @@ async function startServer() {
       res.json({ status: 'ok', message: 'HarvestsAI Server is running' });
     });
 
+    // DataDashboard: return task status counts from SQLite
+    app.get('/api/dashboard/status-counts', (req, res) => {
+      try {
+        const rows = deepScanDb.prepare(
+          `SELECT status, COUNT(*) as cnt FROM automation_tasks GROUP BY status`
+        ).all() as Array<{ status: string; cnt: number }>;
+        const counts: Record<string, number> = { pending: 0, leased: 0, done: 0, failed: 0 };
+        for (const r of rows) {
+          if (r.status === 'pending') counts.pending = Number(r.cnt || 0);
+          else if (r.status === 'leased' || r.status === 'running') counts.leased = (counts.leased || 0) + Number(r.cnt || 0);
+          else if (r.status === 'done') counts.done = Number(r.cnt || 0);
+          else if (r.status === 'failed') counts.failed = Number(r.cnt || 0);
+        }
+        res.json({ ok: true, counts });
+      } catch (e: any) {
+        res.json({ ok: false, counts: { pending: 0, leased: 0, done: 0, failed: 0 }, error: String(e?.message || e) });
+      }
+    });
+
     app.get('/api/debug/buckeye', async (req, res) => {
       try {
         const rows = await sql`SELECT id, shop_name, city, source_type, import_region, ig_handle, address, phone, last_updated FROM artists WHERE LOWER(shop_name) LIKE '%buckeye%' LIMIT 10`;

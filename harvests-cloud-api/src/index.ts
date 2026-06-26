@@ -948,9 +948,18 @@ app.get('/api/automation/dashboard', async (c) => {
   });
 });
 
-// Frontend DataDashboard: task counts summary (Neon automation_tasks)
+// Frontend DataDashboard: task counts summary (VPS Express + Neon fallback)
 app.get('/api/automation/task-counts', async (c) => {
   let counts: Record<string, number> = { pending: 0, leased: 0, done: 0, failed: 0 };
+  // Try VPS Express first (has real task data in SQLite)
+  try {
+    const vps = await fetch(`http://163.245.212.169:3000/api/dashboard/status-counts`, { signal: AbortSignal.timeout(3000) });
+    if (vps.ok) {
+      const d = await vps.json() as any;
+      if (d?.counts) return c.json({ ok: true, counts: d.counts });
+    }
+  } catch {}
+  // Fallback: Neon automation_tasks
   try {
     const connStr = c.env.NEON_DATABASE_URL;
     if (connStr) {
