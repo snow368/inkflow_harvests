@@ -948,12 +948,22 @@ app.get('/api/automation/dashboard', async (c) => {
   });
 });
 
-// Frontend DataDashboard: task counts summary
+// Frontend DataDashboard: task counts summary (Neon automation_tasks)
 app.get('/api/automation/task-counts', async (c) => {
   let counts: Record<string, number> = { pending: 0, leased: 0, done: 0, failed: 0 };
   try {
-    const summary = await c.env.DB.prepare('SELECT status, COUNT(*) as cnt FROM automation_tasks GROUP BY status').all();
-    for (const r of (summary.results || []) as any) counts[r.status] = Number(r.cnt || 0);
+    const connStr = c.env.NEON_DATABASE_URL;
+    if (connStr) {
+      const sql = neon(connStr);
+      const rows = await sql`SELECT status, COUNT(*)::int as cnt FROM automation_tasks GROUP BY status`;
+      const results = rows?.rows || (Array.isArray(rows) ? rows : []);
+      for (const r of results) {
+        if (r.status === 'pending') counts.pending = Number(r.cnt || 0);
+        else if (r.status === 'leased' || r.status === 'running') counts.leased = (counts.leased || 0) + Number(r.cnt || 0);
+        else if (r.status === 'done') counts.done = Number(r.cnt || 0);
+        else if (r.status === 'failed') counts.failed = Number(r.cnt || 0);
+      }
+    }
   } catch {}
   return c.json({ ok: true, counts });
 });

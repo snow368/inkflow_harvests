@@ -24,6 +24,7 @@ export default function DataDashboard() {
   const searchTimer = useRef<any>(null);
 
   useEffect(() => { loadArtists(); loadTaskCounts(); }, []);
+  useEffect(() => { loadArtists(); }, [page, stateFilter, search]);
   useEffect(() => { const t = setInterval(loadTaskCounts, 5000); return () => clearInterval(t); }, []);
 
   const loadTaskCounts = async () => {
@@ -323,7 +324,7 @@ function ObservedData() {
                 const sm = o.summary_json ? (() => { try { return JSON.parse(o.summary_json); } catch { return {}; } })() : {};
                 const followers = pf?.followersCount || pf?.followers || pf?.followerCount || (pf?.counts?.followed_by?.count) || '—';
                 const posts = sm?.totalMedia || pf?.mediaCount || pf?.posts || (pf?.counts?.media?.count) || '—';
-                const bio = pf?.biography || pf?.bio || pf?.description || '—';
+                const bio = pf?.biography || pf?.bio || '—';
                 return (
                 <tr key={o.id} className="border-b border-zinc-800/20">
                   <td className="py-2 pr-2 text-zinc-300">{o.bot_id}</td>
@@ -332,7 +333,7 @@ function ObservedData() {
                   <td className="py-2 pr-2 text-zinc-400">{typeof followers === 'number' ? followers.toLocaleString() : followers}</td>
                   <td className="py-2 pr-2 text-zinc-400">{typeof posts === 'number' ? posts.toLocaleString() : posts}</td>
                   <td className="py-2 pr-2 text-zinc-400 max-w-[200px] truncate" title={String(bio)}>{String(bio).slice(0, 60)}</td>
-                  <td className="py-2 text-zinc-500">{o.created_at ? new Date(o.created_at).toLocaleString() : '—'}</td>
+                  <td className="py-2 text-zinc-500">{(() => { try { const ts = Number(o.created_at); return ts ? new Date(ts).toLocaleDateString() : '—'; } catch { return '—'; } })()}</td>
                 </tr>);
               })}
             </tbody>
