@@ -100,6 +100,7 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/tasks/inject',
   '/api/automation/task-list',
   '/api/automation/task-counts',
+  '/api/automation/task-counts-debug',
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -953,28 +954,47 @@ app.get('/api/automation/task-counts', async (c) => {
   let counts: Record<string, number> = { pending: 0, leased: 0, done: 0, failed: 0 };
   // Try VPS Express first (has real task data in SQLite)
   try {
-    const vps = await fetch(`http://163.245.212.169:3000/api/dashboard/status-counts`, { signal: AbortSignal.timeout(3000) });
+    const vps = await fetch(`http://163.245.212.169:3000/api/bot/status-counts`, { signal: AbortSignal.timeout(3000) });
     if (vps.ok) {
       const d = await vps.json() as any;
-      if (d?.counts) return c.json({ ok: true, counts: d.counts });
+      if (d?.counts) return c.json({ ok: true, source: 'vps', counts: d.counts });
     }
   } catch {}
-  // Fallback: Neon automation_tasks
+  // Fallback: Neon automation_tasks (use neonQuery helper, works in Workers)
   try {
     const connStr = c.env.NEON_DATABASE_URL;
     if (connStr) {
-      const sql = neon(connStr);
-      const rows = await sql`SELECT status, COUNT(*)::int as cnt FROM automation_tasks GROUP BY status`;
-      const results = rows?.rows || (Array.isArray(rows) ? rows : []);
-      for (const r of results) {
-        if (r.status === 'pending') counts.pending = Number(r.cnt || 0);
-        else if (r.status === 'leased' || r.status === 'running') counts.leased = (counts.leased || 0) + Number(r.cnt || 0);
-        else if (r.status === 'done') counts.done = Number(r.cnt || 0);
-        else if (r.status === 'failed') counts.failed = Number(r.cnt || 0);
+      const rows = await neonQuery(connStr,
+        `SELECT status, COUNT(*) as cnt FROM automation_tasks GROUP BY status`
+      );
+      for (const r of (rows || [])) {
+        const cnt = Number(r.cnt || 0);
+        if (r.status === 'pending') counts.pending = cnt;
+        else if (r.status === 'leased' || r.status === 'running') counts.leased += cnt;
+        else if (r.status === 'done') counts.done = cnt;
+        else if (r.status === 'failed') counts.failed = cnt;
       }
     }
   } catch {}
-  return c.json({ ok: true, counts });
+  return c.json({ ok: true, source: counts.pending || counts.leased || counts.done || counts.failed ? 'neon' : 'empty', counts });
+});
+
+// Debug: check VPS + Neon raw data
+app.get('/api/automation/task-counts-debug', async (c) => {
+  const result: any = { vps: null, neon: null, error: null };
+  try {
+    const vps = await fetch(`http://163.245.212.169:3000/api/bot/status-counts`, { signal: AbortSignal.timeout(3000) });
+    if (vps.ok) result.vps = await vps.json();
+    else result.vps = { status: vps.status, statusText: vps.statusText };
+  } catch (e: any) { result.vps = { error: e?.message || 'vps timeout/refused' }; }
+  try {
+    const connStr = c.env.NEON_DATABASE_URL;
+    if (connStr) result.neon = await neonQuery(connStr,
+      `SELECT status, COUNT(*) as cnt FROM automation_tasks GROUP BY status`
+    );
+    else result.neon = 'NEON not configured';
+  } catch (e: any) { result.neon = { error: e?.message }; }
+  return c.json(result);
 });
 
 // Also expose legacy path for the frontend

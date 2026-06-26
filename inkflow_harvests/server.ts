@@ -2397,7 +2397,7 @@ async function startServer() {
     });
 
     // DataDashboard: return task status counts from SQLite
-    app.get('/api/dashboard/status-counts', (req, res) => {
+    app.get('/api/bot/status-counts', (req, res) => {
       try {
         const rows = deepScanDb.prepare(
           `SELECT status, COUNT(*) as cnt FROM automation_tasks GROUP BY status`
