@@ -965,6 +965,20 @@ app.get('/api/automation/task-counts', async (c) => {
       else if (r.status === 'failed') counts.failed += total;
     }
   } catch {}
+  // VPS Express (has historical data in SQLite)
+  try {
+    const vps = await fetch(`http://163.245.212.169:3000/api/dashboard/status-counts`, { signal: AbortSignal.timeout(3000) });
+    if (vps.ok) {
+      const d = await vps.json() as any;
+      if (d?.counts) {
+        const v = d.counts;
+        if (v.pending) counts.pending = Math.max(counts.pending, v.pending);
+        if (v.leased) counts.leased = Math.max(counts.leased, v.leased);
+        if (v.done) counts.done = Math.max(counts.done, v.done);
+        if (v.failed) counts.failed = Math.max(counts.failed, v.failed);
+      }
+    }
+  } catch {}
   // Neon automation_tasks (real-time tasks from bot workers)
   try {
     const connStr = c.env.NEON_DATABASE_URL;
@@ -988,7 +1002,7 @@ app.get('/api/automation/task-counts', async (c) => {
 app.get('/api/automation/task-counts-debug', async (c) => {
   const result: any = { vps: null, neon: null, error: null };
   try {
-    const vps = await fetch(`http://163.245.212.169:3000/api/bot/status-counts`, { signal: AbortSignal.timeout(3000) });
+    const vps = await fetch(`http://163.245.212.169:3000/api/dashboard/status-counts`, { signal: AbortSignal.timeout(3000) });
     if (vps.ok) result.vps = await vps.json();
     else result.vps = { status: vps.status, statusText: vps.statusText };
   } catch (e: any) { result.vps = { error: e?.message || 'vps timeout/refused' }; }
