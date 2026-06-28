@@ -1670,7 +1670,7 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
     await sql`CREATE TABLE IF NOT EXISTS automation_tasks (id TEXT PRIMARY KEY, payload TEXT, status TEXT, run_at BIGINT, lease_until BIGINT, leased_by TEXT, attempts INT DEFAULT 0, max_attempts INT DEFAULT 3, error_reason TEXT, created_at BIGINT, updated_at BIGINT)`.catch(() => {});
 
     // 批量查询所有 artist（1次）
-    const ids = artistIds.map((i: any) => Number(i)).filter((n: number) => n > 0);
+    const ids = artistIds.filter((i: any) => String(i).trim().length > 0);
     if (!ids.length) return c.json({ ok: false, error: 'no valid ids' }, 400);
     const artistRows = await sql`SELECT id, shop_name, ig_handle, city, state FROM artists WHERE id = ANY(${ids})`;
     const artists = artistRows?.rows || (Array.isArray(artistRows) ? artistRows : []);

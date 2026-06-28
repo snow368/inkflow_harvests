@@ -7,6 +7,7 @@ import { Loader2, Search, Database, CheckSquare, Square, Filter, ChevronLeft, Ch
 const API = 'https://harvests-cloud-api.inkflowapp.workers.dev/api/automation';
 
 export default function DataDashboard() {
+  const filtersRef = useRef({ state: '', search: '', page: 1 });
   const [artists, setArtists] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -15,6 +16,7 @@ export default function DataDashboard() {
   const [total, setTotal] = useState(0);
   const [stateFilter, setStateFilter] = useState('');
   const [search, setSearch] = useState('');
+  filtersRef.current = { state: stateFilter, search, page };
   const [creating, setCreating] = useState(false);
   const [states, setStates] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
@@ -42,9 +44,10 @@ export default function DataDashboard() {
   const loadArtists = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), limit: '50' });
-      if (stateFilter) params.set('state', stateFilter);
-      if (search) params.set('search', search);
+      const { state, search: s, page: p } = filtersRef.current;
+      const params = new URLSearchParams({ page: String(p), limit: '50' });
+      if (state) params.set('state', state);
+      if (s) params.set('search', s);
       const current = ++reqId.current;
       const res = await fetch(`${API}/artists?${params}`);
       const data = await res.json();
@@ -69,7 +72,7 @@ export default function DataDashboard() {
       toast.error('加载失败', { description: e.message });
     }
     setLoading(false);
-  }, [page, stateFilter, search]);
+  }, []); // 用 ref 读取最新值，避免闭包过期
 
   const handleSearch = (val: string) => {
     setSearch(val);
@@ -192,7 +195,17 @@ export default function DataDashboard() {
         </div>
         <select
           value={stateFilter}
-          onChange={e => { setStateFilter(e.target.value); setPage(1); setTimeout(() => loadArtists(), 0); }}
+          onChange={async e => {
+            const v = e.target.value;
+            setStateFilter(v);
+            setPage(1);
+            try {
+              const r = await fetch(`${API}/artists?page=1&limit=50${v ? '&state='+v : ''}`);
+              const d = await r.json();
+              if (d.ok) { setArtists(d.items||[]); setTotal(d.total||0); setPages(d.pages||1); }
+              else setError(d.error);
+            } catch(ex:any) { setError(ex.message); }
+          }}
           className="px-3 py-2 text-xs bg-zinc-900 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-emerald-500/50"
         >
           <option value="">全部州</option>
