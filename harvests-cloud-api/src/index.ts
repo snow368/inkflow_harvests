@@ -1270,7 +1270,7 @@ app.get('/api/automation/poll', async (c) => {
         AND (payload->>'artistHandle' IS NULL
           OR NOT EXISTS (
             SELECT 1 FROM automation_tasks d
-            WHERE d.status = 'done' AND d.updated_at > ${dedupWindow}
+            WHERE d.status IN ('pending','leased') AND d.updated_at > ${dedupWindow}
               AND d.payload->>'artistHandle' = automation_tasks.payload->>'artistHandle'
           ))
       ORDER BY run_at ASC LIMIT ${limit}
@@ -1682,10 +1682,10 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
     const artists = artistRows?.rows || (Array.isArray(artistRows) ? artistRows : []);
     if (!artists.length) return c.json({ ok: false, error: 'no artists found' }, 404);
 
-    // 批量查已有任务（1次）
+    // 批量查已有任务（只跳过的确还在 pending/leased 的，done 的允许重新创建）
     const handles = artists.map((a: any) => a.ig_handle || a.shop_name).filter(Boolean);
-    const existingRows = handles.length ? await sql`SELECT id FROM automation_tasks WHERE payload->>'artistHandle' = ANY(${handles}) AND updated_at > ${dedupWindow}` : null;
-    const existingSet = new Set(((existingRows?.rows || []) as any[]).map((r: any) => r.artistHandle || ''));
+    const existingRows = handles.length ? await sql`SELECT payload->>'artistHandle' as h FROM automation_tasks WHERE payload->>'artistHandle' = ANY(${handles}) AND status IN ('pending','leased') AND updated_at > ${dedupWindow}` : null;
+    const existingSet = new Set(((existingRows?.rows || []) as any[]).map((r: any) => r.h || '').filter(Boolean));
 
     let created = 0, skipped = 0;
     const taskIds: string[] = [], payloads: string[] = [], runAts: number[] = [];
@@ -1944,7 +1944,7 @@ app.get('/api/automation/poll-debug', async (c) => {
           AND (payload->>'artistHandle' IS NULL
             OR NOT EXISTS (
               SELECT 1 FROM automation_tasks d
-              WHERE d.status = 'done' AND d.updated_at > ${dedupWindow}
+              WHERE d.status IN ('pending','leased') AND d.updated_at > ${dedupWindow}
                 AND d.payload->>'artistHandle' = automation_tasks.payload->>'artistHandle'
             ))
         ORDER BY run_at ASC LIMIT ${limit}
