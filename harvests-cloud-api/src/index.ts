@@ -1296,32 +1296,35 @@ app.get('/api/automation/poll', async (c) => {
 
 app.post('/api/automation/report', async (c) => {
   if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
-  const { botId, commandId, status, reason } = await c.req.json();
-  if (!botId || !commandId) return c.json({ error: 'botId and commandId required' }, 400);
-  if (status !== 'done' && status !== 'failed') return c.json({ error: 'status must be done or failed' }, 400);
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
-  const now = Date.now();
   try {
-    await neonQuery(connStr,
-      `UPDATE automation_tasks SET status = $1, lease_until = NULL, leased_by = NULL, error_reason = $2, updated_at = $3
-       WHERE id = $4 AND leased_by = $5 AND status IN ('leased','running')`,
-      [status, status === 'failed' ? (reason || 'unknown') : null, now, commandId, botId]
-    );
+    const { botId, commandId, status, reason } = await c.req.json();
+    if (!botId || !commandId) return c.json({ error: 'botId and commandId required' }, 400);
+    if (status !== 'done' && status !== 'failed') return c.json({ error: 'status must be done or failed' }, 400);
+    const connStr = c.env.NEON_DATABASE_URL;
+    if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
+    const now = Date.now();
+    try {
+      const sql = neon(connStr);
+      await sql`UPDATE automation_tasks SET status = ${status}, lease_until = NULL, leased_by = NULL, error_reason = ${status === 'failed' ? (reason || 'unknown') : null}, updated_at = ${now}
+                WHERE id = ${commandId} AND leased_by = ${botId} AND status IN ('leased','running')`;
+    } catch (e: any) {
+      console.error('[report] Neon error:', e?.message || e);
+    }
+    try {
+      const day = new Date().toISOString().slice(0, 10);
+      await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS daily_task_stats (
+        day TEXT NOT NULL, status TEXT NOT NULL, cnt INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (day, status)
+      )`).run().catch(() => {});
+      await c.env.DB.prepare(
+        `INSERT INTO daily_task_stats (day, status, cnt) VALUES (?, ?, 1)
+         ON CONFLICT(day, status) DO UPDATE SET cnt = cnt + 1`
+      ).bind(day, status === 'done' ? 'done' : 'failed').run().catch(() => {});
+    } catch {}
+    return c.json({ ok: true, commandId, status });
   } catch (e: any) {
-    console.error('[report] Neon error:', e?.message || e);
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
   }
-  // Update D1 daily stats so frontend dashboard sees real-time data
-  const day = new Date().toISOString().slice(0, 10);
-  await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS daily_task_stats (
-    day TEXT NOT NULL, status TEXT NOT NULL, cnt INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (day, status)
-  )`).catch(() => {});
-  await c.env.DB.prepare(
-    `INSERT INTO daily_task_stats (day, status, cnt) VALUES (?, ?, 1)
-     ON CONFLICT(day, status) DO UPDATE SET cnt = cnt + 1`
-  ).bind(day, status === 'done' ? 'done' : 'failed').run().catch(() => {});
-  return c.json({ ok: true, commandId, status });
 });
 
 // ===== Bot 观察数据上报 (called by bot-worker after each profile) =====
@@ -1335,22 +1338,16 @@ app.post('/api/bot/observe', async (c) => {
     const artistHandle = String(body.artistHandle || body.artist_handle || '').replace(/^@/, '').trim();
     const mode = String(body.mode || '').trim();
     const commandId = String(body.commandId || body.command_id || '');
-    const summary = body.summary || {};
-    const profileFacts = body.profileFacts || body.profile_facts || {};
     if (!botId || !mode) return c.json({ error: 'botId and mode required' }, 400);
     const ts = Date.now();
-    // Write observation to Neon
-    await neonQuery(connStr,
-      `INSERT INTO bot_observations (bot_id, artist_handle, mode, summary_json, profile_facts_json, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [botId, artistHandle || null, mode, JSON.stringify(summary), JSON.stringify(profileFacts), ts]
-    );
+    const sql = neon(connStr);
+    // Ensure table exists
+    await sql`CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)`.catch(() => {});
+    // Write observation with only columns that exist in the table
+    await sql`INSERT INTO bot_observations (bot_id, artist_handle, mode, created_at) VALUES (${botId}, ${artistHandle || null}, ${mode}, ${ts})`;
     // If commandId provided, also mark task done
     if (commandId) {
-      await neonQuery(connStr,
-        `UPDATE automation_tasks SET status = 'done', lease_until = NULL, leased_by = NULL, updated_at = $1 WHERE id = $2`,
-        [ts, commandId]
-      ).catch(() => {});
+      await sql`UPDATE automation_tasks SET status = 'done', lease_until = NULL, leased_by = NULL, updated_at = ${ts} WHERE id = ${commandId}`.catch(() => {});
     }
     return c.json({ ok: true });
   } catch (e: any) {
@@ -1389,6 +1386,79 @@ app.get('/api/bot/noise-sites', async (c) => {
   } catch {}
   const sites = customSites.length > 0 ? customSites : defaultSites;
   return c.json({ ok: true, sites });
+});
+
+// ===== Bot 配置管理（供前端 BotConfigSection 使用） =====
+app.get('/api/automation/bot-config', async (c) => {
+  const auth = c.req.header('Authorization');
+  if (!auth?.startsWith('Bearer ') && !c.req.query('token')) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+  try {
+    await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_accounts (
+      account_id TEXT PRIMARY KEY, ig_handle TEXT, stage TEXT DEFAULT 'new',
+      daily_task_limit INTEGER DEFAULT 5, speed_factor REAL DEFAULT 2.5,
+      first_used_at TEXT, vps_name TEXT, proxy TEXT
+    )`).run().catch(() => {});
+    // Try to add columns that might be missing
+    for (const col of ['vps_name', 'proxy', 'first_used_at', 'ig_handle', 'bot_status', 'allowed_actions', 'enabled']) {
+      try { await c.env.DB.prepare(`ALTER TABLE bot_accounts ADD COLUMN ${col} TEXT`).run(); } catch {}
+    }
+    const rows = await c.env.DB.prepare('SELECT * FROM bot_accounts ORDER BY account_id').all();
+    return c.json({ ok: true, items: rows.results || [] });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e) }, 500);
+  }
+});
+
+app.put('/api/automation/bot-config/:botId', async (c) => {
+  const auth = c.req.header('Authorization');
+  if (!auth?.startsWith('Bearer ') && !c.req.query('token')) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+  try {
+    const botId = c.req.param('botId');
+    const body = await c.req.json();
+    const now = Date.now();
+    const fields = ['ig_handle', 'stage', 'daily_task_limit', 'speed_factor', 'first_used_at', 'vps_name', 'proxy', 'bot_status', 'allowed_actions', 'enabled'];
+    const sets: string[] = [];
+    const vals: any[] = [];
+    for (const f of fields) {
+      if (body[f] !== undefined) {
+        sets.push(`${f}=?`);
+        vals.push(body[f]);
+      }
+    }
+    if (sets.length === 0) return c.json({ error: 'no fields to update' }, 400);
+    sets.push('updated_at=?');
+    vals.push(now);
+    vals.push(botId);
+    await c.env.DB.prepare(`INSERT INTO bot_accounts (account_id, ${sets.map(s => s.split('=')[0]).join(', ')}, created_at) VALUES (?, ${sets.map(() => '?').join(', ')}, ?) ON CONFLICT(account_id) DO UPDATE SET ${sets.join(', ')}`)
+      .bind(botId, ...vals.slice(0, -1), now).run().catch(() => {
+        // Fallback: direct UPDATE
+        const updateFields = sets.join(', ').replace('updated_at=?', 'updated_at=?');
+        c.env.DB.prepare(`UPDATE bot_accounts SET ${updateFields} WHERE account_id=?`).bind(...vals).run().catch(() => {});
+      });
+    return c.json({ ok: true });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e) }, 500);
+  }
+});
+
+app.patch('/api/automation/bot-config/:botId/toggle', async (c) => {
+  const auth = c.req.header('Authorization');
+  if (!auth?.startsWith('Bearer ') && !c.req.query('token')) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+  try {
+    const botId = c.req.param('botId');
+    const row = await c.env.DB.prepare('SELECT enabled FROM bot_accounts WHERE account_id=?').bind(botId).first() as any;
+    const newEnabled = row?.enabled === 'true' ? 'false' : 'true';
+    await c.env.DB.prepare('UPDATE bot_accounts SET enabled=? WHERE account_id=?').bind(newEnabled, botId).run();
+    return c.json({ ok: true, enabled: newEnabled === 'true' });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e) }, 500);
+  }
 });
 
 // ===== 快速检查 Neon 连接 =====
