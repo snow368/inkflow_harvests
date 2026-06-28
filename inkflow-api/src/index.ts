@@ -1,8 +1,10 @@
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import { neon } from '@neondatabase/serverless'
 import type { Env } from './types'
 
 const app = new Hono<{ Bindings: Env }>()
+app.use('/*', cors())
 
 // ── Health (no auth) ──
 app.get('/api/health', (c) => c.json({ status: 'ok' }))
@@ -292,3 +294,43 @@ function requireBotAuth(c: any): boolean {
 }
 
 export default app
+
+// ── Proxy: forward missing endpoints to harvests-cloud-api ──
+// (frontend still calls harvests-api — these make it work without redeploy)
+const CLOUD_API = 'https://harvests-cloud-api.inkflowapp.workers.dev';
+
+app.get('/api/automation/task-counts', async (c) => {
+  const resp = await fetch(`${CLOUD_API}/api/automation/task-counts`);
+  return c.json(await resp.json());
+});
+app.get('/api/automation/task-counts-debug', async (c) => {
+  const resp = await fetch(`${CLOUD_API}/api/automation/task-counts-debug`);
+  return c.json(await resp.json());
+});
+app.get('/api/automation/artists', async (c) => {
+  const qs = c.req.raw.url?.includes('?') ? c.req.raw.url.split('?')[1] : '';
+  const resp = await fetch(`${CLOUD_API}/api/automation/artists${qs ? '?' + qs : ''}`);
+  return c.json(await resp.json());
+});
+app.post('/api/automation/tasks/create-from-artists', async (c) => {
+  const body = await c.req.json();
+  const resp = await fetch(`${CLOUD_API}/api/automation/tasks/create-from-artists`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  return c.json(await resp.json());
+});
+app.get('/api/automation/dashboard', async (c) => {
+  const resp = await fetch(`${CLOUD_API}/api/automation/dashboard`);
+  return c.json(await resp.json());
+});
+app.get('/api/automation/state-progress', async (c) => {
+  const resp = await fetch(`${CLOUD_API}/api/automation/state-progress`);
+  return c.json(await resp.json());
+});
+app.post('/api/automation/tasks/inject', async (c) => {
+  const body = await c.req.json();
+  const resp = await fetch(`${CLOUD_API}/api/automation/tasks/inject`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  return c.json(await resp.json());
+});
