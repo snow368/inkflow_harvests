@@ -1351,10 +1351,16 @@ app.post('/api/bot/observe', async (c) => {
       await sql`UPDATE automation_tasks SET status = 'done', lease_until = NULL, leased_by = NULL, updated_at = ${ts} WHERE id = ${commandId}`.catch(() => {});
     }
     // Update artists table with IG profile data scraped by bot
-    // Use individual UPDATEs via neonQuery (simple queries work with HTTP API)
+    // First ensure columns exist, then update
     if (artistHandle && body.profileFacts) {
       const pf = body.profileFacts;
       try {
+        // Add columns if not exist (safe, no-op if already there)
+        await sql`ALTER TABLE artists ADD COLUMN IF NOT EXISTS "following" BIGINT DEFAULT 0`.catch(() => {});
+        await sql`ALTER TABLE artists ADD COLUMN IF NOT EXISTS posts_count BIGINT DEFAULT 0`.catch(() => {});
+        await sql`ALTER TABLE artists ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT ''`.catch(() => {});
+        await sql`ALTER TABLE artists ADD COLUMN IF NOT EXISTS category TEXT DEFAULT ''`.catch(() => {});
+        // Update fields
         if (pf.followers != null) await neonQuery(connStr, `UPDATE artists SET followers = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.followers), artistHandle]).catch(() => {});
         if (pf.following != null) await neonQuery(connStr, `UPDATE artists SET "following" = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.following), artistHandle]).catch(() => {});
         if (pf.postCount != null) await neonQuery(connStr, `UPDATE artists SET posts_count = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.postCount), artistHandle]).catch(() => {});
@@ -1602,16 +1608,16 @@ app.get('/api/automation/artists', async (c) => {
     const sql = neon(connStr);
     let dataRes, countRes;
     if (state && search) {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} AND (LOWER(shop_name) LIKE LOWER(${'%'+search+'%'}) OR LOWER(ig_handle) LIKE LOWER(${'%'+search+'%'}) OR LOWER(city) LIKE LOWER(${'%'+search+'%'})) ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, "following", posts_count, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} AND (LOWER(shop_name) LIKE LOWER(${'%'+search+'%'}) OR LOWER(ig_handle) LIKE LOWER(${'%'+search+'%'}) OR LOWER(city) LIKE LOWER(${'%'+search+'%'})) ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
       countRes = await sql`SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} AND (LOWER(shop_name) LIKE LOWER(${'%'+search+'%'}) OR LOWER(ig_handle) LIKE LOWER(${'%'+search+'%'}) OR LOWER(city) LIKE LOWER(${'%'+search+'%'}))) sub`;
     } else if (state) {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, "following", posts_count, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
       countRes = await sql`SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state}) sub`;
     } else if (search) {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND (LOWER(shop_name) LIKE LOWER(${'%'+search+'%'}) OR LOWER(ig_handle) LIKE LOWER(${'%'+search+'%'}) OR LOWER(city) LIKE LOWER(${'%'+search+'%'})) ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, "following", posts_count, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND (LOWER(shop_name) LIKE LOWER(${'%'+search+'%'}) OR LOWER(ig_handle) LIKE LOWER(${'%'+search+'%'}) OR LOWER(city) LIKE LOWER(${'%'+search+'%'})) ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
       countRes = await sql`SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND (LOWER(shop_name) LIKE LOWER(${'%'+search+'%'}) OR LOWER(ig_handle) LIKE LOWER(${'%'+search+'%'}) OR LOWER(city) LIKE LOWER(${'%'+search+'%'}))) sub`;
     } else {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, "following", posts_count, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
       countRes = await sql`SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '') sub`;
     }
     const rawRows = dataRes?.rows || (Array.isArray(dataRes) ? dataRes : []);
@@ -1682,12 +1688,30 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
     const existingSet = new Set(((existingRows?.rows || []) as any[]).map((r: any) => r.artistHandle || ''));
 
     let created = 0, skipped = 0;
+    const taskIds: string[] = [], payloads: string[] = [], runAts: number[] = [];
     for (const a of artists) {
       const h = a.ig_handle || a.shop_name || '';
       if (existingSet.has(h)) { skipped++; continue; }
-      await sql`INSERT INTO automation_tasks (id, status, payload, run_at, created_at, updated_at)
-         VALUES (${'task_' + h + '_' + ts}, 'pending', ${JSON.stringify({ artistHandle: h, shopName: a.shop_name, taskType })}, ${ts}, ${ts}, ${ts})`;
+      taskIds.push('task_' + h + '_' + ts);
+      payloads.push(JSON.stringify({ artistHandle: h, shopName: a.shop_name, taskType }));
+      runAts.push(ts);
       created++;
+    }
+    if (taskIds.length > 0) {
+      // Build multi-row INSERT with proper JSON casting
+      const rows = taskIds.map((id, i) => ({
+        id, status: 'pending', payload: payloads[i], run_at: runAts[i], ts
+      }));
+      // Use batched individual inserts — but batch 5 at a time to stay under subrequest limit
+      const batchSize = 5;
+      for (let i = 0; i < rows.length; i += batchSize) {
+        const batch = rows.slice(i, i + batchSize);
+        await Promise.all(batch.map(r =>
+          sql`INSERT INTO automation_tasks (id, status, payload, run_at, created_at, updated_at)
+              VALUES (${r.id}, ${r.status}, ${r.payload}::jsonb, ${r.run_at}, ${r.ts}, ${r.ts})`
+            .catch(() => {})
+        ));
+      }
     }
     return c.json({ ok: true, created, skipped, total: artistIds.length });
   } catch (e: any) {

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { 
-  LayoutDashboard, 
-  MessageSquare, 
-  Instagram, 
-  MapPin, 
-  Settings, 
+import {
+  LayoutDashboard,
+  MessageSquare,
+  Instagram,
+  MapPin,
+  Settings,
   ChevronRight,
   TrendingUp,
   Users,
@@ -16,7 +16,14 @@ import {
   LogIn,
   LogOut,
   Loader2,
-  Zap
+  Zap,
+  ShoppingCart,
+  Package,
+  ListTodo,
+  Calendar,
+  Bot,
+  Database,
+  Shield
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
@@ -33,62 +40,68 @@ import AutomationSettings from './components/AutomationSettings';
 import ShopOutreach from './components/ShopOutreach';
 import AutomationCommandCenter from './components/AutomationCommandCenter';
 import DataDashboard from './components/DataDashboard';
+import InventoryManager from './components/InventoryManager';
+import OrderManager from './components/OrderManager';
+import TaskManager from './components/TaskManager';
+import PublishCalendar from './components/PublishCalendar';
+import BotWorkerManager from './components/BotWorkerManager';
+import BacklinkManager from './components/BacklinkManager';
+import InkFlowOutreach from './components/InkFlowOutreach';
 
-type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'automation' | 'settings';
+type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'automation' | 'settings' | 'inventory' | 'orders' | 'tasks' | 'publish' | 'botworkers' | 'backlinks' | 'inkflow-outreach';
 
 const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (tab: Tab) => void }) => {
   const { artists, user, logout } = useCRM();
-  
+
   const getHighIntentCount = () => {
     return artists.filter(a => a.stage === 'engaged' && a.heatScore >= 80).length;
   };
 
-  const tabs = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'outreach', label: 'Shop Outreach', icon: Search },
-    { id: 'analyzer', label: 'Artist Analyzer', icon: Instagram },
-    { id: 'training', label: 'AI Training', icon: MessageSquare },
-    { id: 'crm', label: 'CRM (Lifecycle)', icon: Users },
-    { id: 'automation', label: 'Automation', icon: Zap },
-    { id: 'settings', label: 'Settings', icon: Settings },
+  const section1 = [
+    { id: 'dashboard' as Tab, label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'outreach' as Tab, label: 'Shop Outreach', icon: Search },
+    { id: 'analyzer' as Tab, label: 'Artist Analyzer', icon: Instagram },
+  ];
+  const section2 = [
+    { id: 'training' as Tab, label: 'AI Training', icon: MessageSquare },
+    { id: 'crm' as Tab, label: 'CRM (Lifecycle)', icon: Users },
+  ];
+  const section3 = [
+    { id: 'inventory' as Tab, label: 'Inventory', icon: Package },
+    { id: 'orders' as Tab, label: 'Orders', icon: ShoppingCart },
+    { id: 'tasks' as Tab, label: 'Tasks', icon: ListTodo },
+    { id: 'automation' as Tab, label: 'Automation', icon: Zap },
+    { id: 'publish' as Tab, label: 'Publish Calendar', icon: Calendar },
+    { id: 'botworkers' as Tab, label: 'Bot Workers', icon: Bot },
+    { id: 'backlinks' as Tab, label: 'Backlinks', icon: Database },
+    { id: 'settings' as Tab, label: 'Settings', icon: Settings },
+    { id: 'inkflow-outreach' as Tab, label: 'InkFlow 获客', icon: Target },
   ];
 
-  const renderTab = (tab: typeof tabs[0]) => {
+  const renderTab = (tab: { id: Tab; label: string; icon: any }) => {
     const Icon = tab.icon;
     const isActive = activeTab === tab.id;
-    const highIntentCount = tab.id === 'crm' ? getHighIntentCount() : 0;
 
     return (
       <button
         key={tab.id}
-        onClick={() => setActiveTab(tab.id as Tab)}
+        onClick={() => setActiveTab(tab.id)}
         className={cn(
-          "w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group relative",
-          isActive 
-            ? "bg-rose-600/10 text-rose-500 border border-rose-500/20" 
+          "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
+          isActive
+            ? "bg-rose-600/10 text-rose-500 border border-rose-500/20"
             : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"
         )}
       >
-        <div className="flex items-center gap-3">
-          <Icon className={cn("w-5 h-5", isActive ? "text-rose-500" : "text-zinc-500 group-hover:text-zinc-300")} />
-          <span className="font-medium">{tab.label}</span>
-        </div>
-        
-        {highIntentCount > 0 && (
-          <div className="flex items-center gap-1">
-            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-black text-white shadow-lg shadow-red-600/20 animate-pulse">
-              {highIntentCount}
-            </span>
-            {highIntentCount >= 5 && <Flame className="w-3 h-3 text-red-500 animate-bounce" />}
-          </div>
-        )}
+        <Icon className={cn("w-5 h-5 flex-shrink-0", isActive ? "text-rose-500" : "text-zinc-500 group-hover:text-zinc-300")} />
+        <span className="font-medium text-sm">{tab.label}</span>
       </button>
     );
   };
 
   return (
     <aside className="fixed left-0 top-0 h-full w-64 bg-[#111] border-r border-zinc-800/50 z-50 overflow-y-auto scrollbar-hide">
-      <div className="p-6">
+      <div className="p-6 pb-32">
         <div className="flex items-center gap-3 mb-10">
           <div className="w-10 h-10 bg-rose-600 rounded-xl flex items-center justify-center shadow-lg shadow-rose-600/20">
             <ShoppingBag className="w-6 h-6 text-white" />
@@ -107,17 +120,15 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
         <div className="space-y-6">
           <div className="space-y-1">
             <p className="px-4 text-[10px] font-black text-zinc-600 uppercase tracking-widest mb-2">Main</p>
-            {tabs.slice(0, 3).map(renderTab)}
+            {section1.map(renderTab)}
           </div>
-
           <div className="space-y-1">
             <p className="px-4 text-[10px] font-black text-zinc-600 uppercase tracking-widest mb-2">Intelligence</p>
-            {tabs.slice(3, 5).map(renderTab)}
+            {section2.map(renderTab)}
           </div>
-
           <div className="space-y-1">
             <p className="px-4 text-[10px] font-black text-zinc-600 uppercase tracking-widest mb-2">System</p>
-            {tabs.slice(5).map(renderTab)}
+            {section3.map(renderTab)}
           </div>
         </div>
       </div>
@@ -136,8 +147,8 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
             <p className="text-[10px] text-zinc-500 truncate">{user?.email}</p>
           </div>
         </div>
-        
-        <button 
+
+        <button
           onClick={logout}
           className="w-full flex items-center gap-3 px-4 py-2 text-zinc-500 hover:text-rose-500 hover:bg-rose-500/5 rounded-lg transition-all group"
         >
@@ -170,7 +181,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
         <p className="text-zinc-500 text-center max-w-md mb-12 font-medium leading-relaxed">
           Welcome back. Please sign in to access your CRM data and cloud-synced outreach pipeline.
         </p>
-        <button 
+        <button
           onClick={login}
           className="flex items-center gap-4 px-10 py-5 bg-white text-black rounded-[2rem] font-black text-lg hover:bg-zinc-200 transition-all shadow-xl shadow-white/5"
         >
@@ -184,24 +195,38 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     );
   }
 
-  const labels: Record<Tab, string> = {
+  const labels: Record<string, string> = {
     dashboard: 'Dashboard',
     outreach: 'Shop Outreach',
     analyzer: 'Artist Analyzer',
     training: 'AI Training',
     crm: 'CRM (Lifecycle)',
+    inventory: 'Inventory Management',
+    orders: 'Order Fulfillment',
+    tasks: 'Task Queue',
     automation: 'Automation Center',
-    settings: 'Settings'
+    publish: 'Publish Calendar',
+    botworkers: 'Bot Workers',
+    backlinks: 'Backlink Manager',
+    settings: 'Settings',
+    'inkflow-outreach': 'InkFlow 获客'
   };
 
-  const descriptions: Record<Tab, string> = {
+  const descriptions: Record<string, string> = {
     dashboard: "Overview of total leads, conversion rates, and daily hot leads.",
     outreach: "A large searchable table of tattoo artists and shops.",
     analyzer: "A deep-dive profile page for a single artist and post analysis.",
     training: "Manage AI personas and chat history to refine automation.",
     crm: "Manage 'Engaged' and 'Customers' through the lifecycle funnel.",
+    inventory: "Track stock levels, inbound, and outbound shipments.",
+    orders: "Fulfill customer orders and manage shipping.",
+    tasks: "View and manage automation tasks.",
     automation: "AdsPower & Playwright multi-account orchestration command center.",
-    settings: "Configure API keys and automation safety settings."
+    publish: "Schedule and publish content across platforms.",
+    botworkers: "Manage bot worker instances and configuration.",
+    backlinks: "Track and manage backlink building campaigns.",
+    settings: "Configure API keys and automation safety settings.",
+    'inkflow-outreach': "Manage InkFlow outreach campaigns."
   };
 
   return (
@@ -209,10 +234,10 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
       <header className="flex items-center justify-between mb-10">
         <div>
           <h2 className="text-3xl font-bold tracking-tight mb-1 text-white">
-            {labels[activeTab]}
+            {labels[activeTab] || activeTab}
           </h2>
           <p className="text-zinc-500">
-            {descriptions[activeTab]}
+            {descriptions[activeTab] || ''}
           </p>
         </div>
 
@@ -221,7 +246,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             <span className="text-xs font-medium text-zinc-400">AI Engine Active</span>
           </div>
-          <button 
+          <button
             onClick={() => {
               setActiveTab('automation');
               toast.success("Campaign Engine Initialized", {
@@ -248,8 +273,15 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
           {activeTab === 'analyzer' && <ArtistAnalyzer />}
           {activeTab === 'training' && <ChatTrainer />}
           {activeTab === 'crm' && <DualListManager />}
+          {activeTab === 'inventory' && <InventoryManager />}
+          {activeTab === 'orders' && <OrderManager />}
+          {activeTab === 'tasks' && <TaskManager />}
           {activeTab === 'automation' && <><AutomationCommandCenter /><DataDashboard /></>}
+          {activeTab === 'publish' && <PublishCalendar />}
+          {activeTab === 'botworkers' && <BotWorkerManager />}
+          {activeTab === 'backlinks' && <BacklinkManager />}
           {activeTab === 'settings' && <AutomationSettings />}
+          {activeTab === 'inkflow-outreach' && <InkFlowOutreach />}
         </motion.div>
       </AnimatePresence>
     </main>
@@ -257,14 +289,12 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
 };
 
 export default function App() {
-  // Hash routing — read initial tab from URL
   const getTabFromHash = (): Tab => {
-    const valid: Tab[] = ['dashboard','outreach','analyzer','training','crm','automation','settings'];
+    const valid: Tab[] = ['dashboard','outreach','analyzer','training','crm','inventory','orders','tasks','automation','publish','botworkers','backlinks','settings','inkflow-outreach'];
     const hash = window.location.hash.replace('#/', '') || 'dashboard';
     return valid.includes(hash as Tab) ? hash as Tab : 'dashboard';
   };
   const [activeTab, setActiveTab] = useState<Tab>(getTabFromHash);
-  // Sync URL hash when tab changes
   const setTabAndHash = (tab: Tab) => {
     setActiveTab(tab);
     const hash = tab === 'dashboard' ? '' : tab;

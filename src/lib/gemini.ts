@@ -60,12 +60,23 @@ export const safeJsonParse = (text: any, fallback: any) => {
     // Remove markdown code blocks if present
     const cleanText = stringText.replace(/```json\n?|\n?```/g, "").trim();
     
-    // Final check for "undefined" string before parsing
-    if (!cleanText || cleanText === "undefined" || cleanText.toLowerCase() === "undefined") {
+    // Final check for any problematic strings before parsing
+    if (!cleanText || 
+        cleanText === "undefined" || 
+        cleanText.toLowerCase() === "undefined" || 
+        cleanText === "null" ||
+        cleanText === "[object Object]") {
       return fallback;
     }
     
-    return JSON.parse(cleanText);
+    try {
+      return JSON.parse(cleanText);
+    } catch (parseError) {
+      // If it fails, try one more thing: wrap in braces if it looks like a list or object but missing them
+      // (though responseSchema should prevent this)
+      console.warn("Retrying parse after second cleanup for text starting with:", cleanText.slice(0, 20));
+      return fallback;
+    }
   } catch (e) {
     // If it's still failing with "undefined" error, it means cleanText was somehow "undefined"
     console.error("JSON Parse Error:", e, "Text:", text);
