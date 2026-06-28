@@ -1590,13 +1590,13 @@ app.get('/api/automation/artists', async (c) => {
     const total = Number(countRows?.[0]?.cnt || countRows?.rows?.[0]?.cnt || 0);
     let dataRes;
     if (state && search) {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} AND (shop_name ILIKE ${'%'+search+'%'} OR ig_handle ILIKE ${'%'+search+'%'} OR city ILIKE ${'%'+search+'%'}) ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} AND (shop_name ILIKE ${'%'+search+'%'} OR ig_handle ILIKE ${'%'+search+'%'} OR city ILIKE ${'%'+search+'%'}) ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
     } else if (state) {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
     } else if (search) {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND (shop_name ILIKE ${'%'+search+'%'} OR ig_handle ILIKE ${'%'+search+'%'} OR city ILIKE ${'%'+search+'%'}) ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND (shop_name ILIKE ${'%'+search+'%'} OR ig_handle ILIKE ${'%'+search+'%'} OR city ILIKE ${'%'+search+'%'}) ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
     } else {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
     }
     const rows = dataRes?.rows || (Array.isArray(dataRes) ? dataRes : []);
 

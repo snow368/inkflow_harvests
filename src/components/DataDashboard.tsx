@@ -23,7 +23,8 @@ export default function DataDashboard() {
   const [taskCounts, setTaskCounts] = useState<any>({});
   const searchTimer = useRef<any>(null);
 
-  useEffect(() => { loadArtists(); loadTaskCounts(); }, []);
+  useEffect(() => { loadArtists(); }, [page, stateFilter]);
+  useEffect(() => { loadTaskCounts(); }, []);
   useEffect(() => { const t = setInterval(loadTaskCounts, 5000); return () => clearInterval(t); }, []);
 
   const loadTaskCounts = async () => {
@@ -176,7 +177,7 @@ export default function DataDashboard() {
         </div>
         <select
           value={stateFilter}
-          onChange={e => { setStateFilter(e.target.value); setPage(1); }}
+          onChange={e => { setStateFilter(e.target.value); setPage(1); setTimeout(() => loadArtists(), 0); }}
           className="px-3 py-2 text-xs bg-zinc-900 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-emerald-500/50"
         >
           <option value="">全部州</option>
@@ -217,6 +218,9 @@ export default function DataDashboard() {
               </th>
               <th className="text-left py-2 pr-2 font-medium">店铺</th>
               <th className="text-left py-2 pr-2 font-medium">IG</th>
+              <th className="text-right py-2 pr-2 font-medium">粉丝</th>
+              <th className="text-right py-2 pr-2 font-medium">评价数</th>
+              <th className="text-left py-2 pr-2 font-medium">简介</th>
               <th className="text-left py-2 pr-2 font-medium">城市</th>
               <th className="text-left py-2 pr-2 font-medium">地区</th>
               <th className="text-left py-2 pr-2 font-medium">来源</th>
@@ -225,9 +229,9 @@ export default function DataDashboard() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="py-12 text-center text-zinc-600"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></td></tr>
+              <tr><td colSpan={10} className="py-12 text-center text-zinc-600"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></td></tr>
             ) : artists.length === 0 ? (
-              <tr><td colSpan={6} className="py-12 text-center text-zinc-600">暂无数据</td></tr>
+              <tr><td colSpan={10} className="py-12 text-center text-zinc-600">暂无数据</td></tr>
             ) : artists.map(a => (
               <tr key={a.id} className="border-b border-zinc-800/20 hover:bg-zinc-900/30 transition-colors">
                 <td className="py-2 pr-2">
@@ -237,6 +241,9 @@ export default function DataDashboard() {
                 </td>
                 <td className="py-2 pr-2 text-zinc-300 font-medium max-w-[200px] truncate">{a.shop_name || '—'}</td>
                 <td className="py-2 pr-2 text-zinc-400">{a.ig_handle || '—'}</td>
+                <td className="py-2 pr-2 text-right text-zinc-300 font-medium">{a.followers != null ? Number(a.followers).toLocaleString() : '—'}</td>
+                <td className="py-2 pr-2 text-right text-zinc-400">{a.reviews != null ? Number(a.reviews).toLocaleString() : '—'}</td>
+                <td className="py-2 pr-2 text-zinc-400 max-w-[200px] truncate" title={a.bio || ''}>{a.bio || '—'}</td>
                 <td className="py-2 pr-2 text-zinc-400">{a.city || '—'}</td>
                 <td className="py-2 pr-2"><span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-800 text-zinc-400">{a.import_region || '—'}</span></td>
                 <td className="py-2 text-zinc-500">{a.import_region || (a as any).state || '—'}</td>
