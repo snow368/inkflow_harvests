@@ -32,6 +32,7 @@ import DualListManager from './components/DualListManager';
 import AutomationSettings from './components/AutomationSettings';
 import ShopOutreach from './components/ShopOutreach';
 import AutomationCommandCenter from './components/AutomationCommandCenter';
+import DataDashboard from './components/DataDashboard';
 
 type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'automation' | 'settings';
 
@@ -247,7 +248,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
           {activeTab === 'analyzer' && <ArtistAnalyzer />}
           {activeTab === 'training' && <ChatTrainer />}
           {activeTab === 'crm' && <DualListManager />}
-          {activeTab === 'automation' && <AutomationCommandCenter />}
+          {activeTab === 'automation' && <><AutomationCommandCenter /><DataDashboard /></>}
           {activeTab === 'settings' && <AutomationSettings />}
         </motion.div>
       </AnimatePresence>

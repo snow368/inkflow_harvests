@@ -26,7 +26,7 @@ import { cn } from '../lib/utils';
 import { useCRM } from '../contexts/CRMContext';
 import { InstagramAccount, TaskAssignment } from '../types/crm';
 import { toast } from 'sonner';
-import DataDashboard from './DataDashboard';
+// DataDashboard moved to App.tsx
 
 const StatusBadge = ({ status }: { status: InstagramAccount['status'] }) => {
   const styles = {
@@ -236,7 +236,6 @@ export default function AutomationCommandCenter() {
           </div>
         </div>
       </div>
-      <DataDashboard />
     </div>
   );
 }
