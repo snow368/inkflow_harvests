@@ -276,7 +276,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
           {activeTab === 'inventory' && <InventoryManager />}
           {activeTab === 'orders' && <OrderManager />}
           {activeTab === 'tasks' && <TaskManager />}
-          {activeTab === 'automation' && <><AutomationCommandCenter /><DataDashboard /></>}
+          {activeTab === 'automation' && <><AutomationCommandCenter /><React.Suspense fallback={null}><DataDashboard /></React.Suspense></>}
           {activeTab === 'publish' && <PublishCalendar />}
           {activeTab === 'botworkers' && <BotWorkerManager />}
           {activeTab === 'backlinks' && <BacklinkManager />}
