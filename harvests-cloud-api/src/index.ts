@@ -1683,19 +1683,40 @@ app.post('/api/tasks/create', async (c) => {
     const { tasks } = await c.req.json();
     if (!Array.isArray(tasks) || !tasks.length) return c.json({ error: 'tasks array required' }, 400);
     const sql = neon(connStr);
+    const ts = Date.now();
+    const dedupWindow = ts - 7 * 24 * 60 * 60 * 1000; // 7-day dedup (match poll)
     let created = 0, skipped = 0;
+
     for (const t of tasks) {
       if (!t.id || !t.payload) { skipped++; continue; }
-      const ts = Date.now();
+      // Extract artistHandle from payload for dedup check
+      const payload = typeof t.payload === 'object' ? t.payload : (() => { try { return JSON.parse(t.payload); } catch { return {}; } })();
+      const handle = String(payload?.artistHandle || '').trim().toLowerCase();
+      if (!handle) { skipped++; continue; }
+
+      // Dedup: skip if this handle already has a non-failed task in dedup window
+      try {
+        const existing = await sql`
+          SELECT id FROM automation_tasks
+          WHERE payload->>'artistHandle' = ${handle}
+            AND status IN ('pending','leased','done')
+            AND updated_at > ${dedupWindow}
+          LIMIT 1
+        `;
+        if (existing?.rows?.length || (Array.isArray(existing) && existing.length > 0)) {
+          skipped++;
+          continue;
+        }
+      } catch { /* fall through to insert */ }
+
       const runAt = Number(t.runAt) || ts;
-      const payload = typeof t.payload === 'object' ? JSON.stringify(t.payload) : String(t.payload);
+      const payloadStr = typeof t.payload === 'object' ? JSON.stringify(t.payload) : String(t.payload);
       try {
         await sql`INSERT INTO automation_tasks (id, status, payload, run_at, created_at, updated_at)
-          VALUES (${String(t.id)}, 'pending', ${payload}, ${runAt}, ${ts}, ${ts})`;
+          VALUES (${String(t.id)}, 'pending', ${payloadStr}, ${runAt}, ${ts}, ${ts})`;
         created++;
       } catch (e: any) {
-        if (e?.message?.includes('duplicate') || e?.message?.includes('unique')) { skipped++; }
-        else { skipped++; }
+        skipped++;
       }
     }
     return c.json({ ok: true, created, skipped });
