@@ -1600,17 +1600,17 @@ app.get('/api/automation/artists', async (c) => {
 
     const sql = neon(connStr);
     // 简化：先用模板语法查全部，后续可加客户端筛选
-    const countRows = await sql`SELECT COUNT(*) as cnt FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != ''`;
+    const countRows = await sql`SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '') sub`;
     const total = Number(countRows?.[0]?.cnt || countRows?.rows?.[0]?.cnt || 0);
     let dataRes;
     if (state && search) {
-      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' AND sub.import_region = ${state} AND (sub.shop_name ILIKE ${'%'+search+'%'} OR sub.ig_handle ILIKE ${'%'+search+'%'} OR sub.city ILIKE ${'%'+search+'%'}) ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists ORDER BY LOWER(ig_handle), id) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' AND sub.import_region = ${state} AND (sub.shop_name ILIKE ${'%'+search+'%'} OR sub.ig_handle ILIKE ${'%'+search+'%'} OR sub.city ILIKE ${'%'+search+'%'}) ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
     } else if (state) {
-      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' AND sub.import_region = ${state} ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists ORDER BY LOWER(ig_handle), id) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' AND sub.import_region = ${state} ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
     } else if (search) {
-      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' AND (sub.shop_name ILIKE ${'%'+search+'%'} OR sub.ig_handle ILIKE ${'%'+search+'%'} OR sub.city ILIKE ${'%'+search+'%'}) ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists ORDER BY LOWER(ig_handle), id) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' AND (sub.shop_name ILIKE ${'%'+search+'%'} OR sub.ig_handle ILIKE ${'%'+search+'%'} OR sub.city ILIKE ${'%'+search+'%'}) ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
     } else {
-      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists ORDER BY LOWER(ig_handle), id) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
     }
     const rows = dataRes?.rows || (Array.isArray(dataRes) ? dataRes : []);
 
@@ -1876,8 +1876,9 @@ app.post('/api/automation/tasks/clear-all-pending', async (c) => {
   if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
   try {
     const sql = neon(connStr);
-    const deleted = (await sql`DELETE FROM automation_tasks WHERE status = 'pending' RETURNING id`).length || 0;
-    return c.json({ ok: true, deleted });
+    const delPending = (await sql`DELETE FROM automation_tasks WHERE status = 'pending' RETURNING id`).length || 0;
+    const delLeased = (await sql`DELETE FROM automation_tasks WHERE status = 'leased' RETURNING id`).length || 0;
+    return c.json({ ok: true, deleted: delPending + delLeased, pending: delPending, leased: delLeased });
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e) }, 500);
   }

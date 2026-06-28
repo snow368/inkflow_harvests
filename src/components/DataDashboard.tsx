@@ -120,18 +120,29 @@ export default function DataDashboard() {
     } catch {}
   };
 
+  const clearPendingTasks = async () => {
+    if (!confirm('确定清空所有待处理和执行中的任务？')) return;
+    try {
+      const res = await fetch(`https://harvests-cloud-api.inkflowapp.workers.dev/api/automation/tasks/clear-all-pending?token=vps-bot-secret-2024`, { method: 'POST' });
+      const data = await res.json();
+      toast.success(`已清空 ${data.deleted || 0} 个任务`);
+      loadTaskCounts();
+    } catch { toast.error('清空失败'); }
+  };
+
   return (
     <div className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6 mt-8">
       {/* Task Summary - always show */}
       <div className="flex items-center gap-4 mb-6 p-4 bg-zinc-900/50 rounded-xl border border-zinc-800/50">
-        <button onClick={loadTaskCounts} className="text-[10px] text-zinc-500 hover:text-white transition-colors mr-2" title="刷新">🔄</button>
-        <div className="flex items-center gap-2">
+        <button onClick={loadTaskCounts} className="text-[10px] text-zinc-500 hover:text-white transition-colors mr-1" title="刷新">🔄</button>
+        <button onClick={clearPendingTasks} className="text-[10px] text-zinc-600 hover:text-red-400 transition-colors mr-2" title="清空待处理+执行中">🗑️</button>
+        <div className="flex items-center gap-2 cursor-pointer hover:bg-zinc-800/50 px-2 py-1 rounded-xl transition-colors" onClick={() => window.open('https://harvests-cloud-api.inkflowapp.workers.dev/api/automation/task-list?status=pending', '_blank')}>
           <ListTodo className="w-4 h-4 text-amber-400" />
           <span className="text-xs text-zinc-400">待处理</span>
           <span className="text-lg font-black text-amber-400">{taskCounts.pending || 0}</span>
         </div>
         <div className="w-px h-8 bg-zinc-800" />
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 cursor-pointer hover:bg-zinc-800/50 px-2 py-1 rounded-xl transition-colors" onClick={() => window.open('https://harvests-cloud-api.inkflowapp.workers.dev/api/automation/task-list?status=leased', '_blank')}>
           <Clock className="w-4 h-4 text-cyan-400" />
           <span className="text-xs text-zinc-400">执行中</span>
           <span className="text-lg font-black text-cyan-400">{taskCounts.leased || 0}</span>
