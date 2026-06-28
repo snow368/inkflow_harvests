@@ -102,6 +102,7 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/task-counts',
   '/api/automation/task-counts-debug',
   '/api/automation/task-list/sync',
+  '/api/tasks/create',
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -1666,6 +1667,38 @@ app.post('/api/automation/tasks/inject', async (c) => {
       created++;
     }
     return c.json({ ok: true, created, skipped, total: artistHandles.length });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message }, 500);
+  }
+});
+
+// ===== Scheduler 批量创建任务（ig-scheduler-lite 调用） =====
+app.post('/api/tasks/create', async (c) => {
+  // 支持 ?token= 认证（scheduler 用 query param）
+  const tokenParam = c.req.query('token');
+  if (tokenParam !== 'vps-bot-secret-2024') return c.json({ error: 'unauthorized' }, 401);
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
+  try {
+    const { tasks } = await c.req.json();
+    if (!Array.isArray(tasks) || !tasks.length) return c.json({ error: 'tasks array required' }, 400);
+    const sql = neon(connStr);
+    let created = 0, skipped = 0;
+    for (const t of tasks) {
+      if (!t.id || !t.payload) { skipped++; continue; }
+      const ts = Date.now();
+      const runAt = Number(t.runAt) || ts;
+      const payload = typeof t.payload === 'object' ? JSON.stringify(t.payload) : String(t.payload);
+      try {
+        await sql`INSERT INTO automation_tasks (id, status, payload, run_at, created_at, updated_at)
+          VALUES (${String(t.id)}, 'pending', ${payload}, ${runAt}, ${ts}, ${ts})`;
+        created++;
+      } catch (e: any) {
+        if (e?.message?.includes('duplicate') || e?.message?.includes('unique')) { skipped++; }
+        else { skipped++; }
+      }
+    }
+    return c.json({ ok: true, created, skipped });
   } catch (e: any) {
     return c.json({ ok: false, error: e.message }, 500);
   }
