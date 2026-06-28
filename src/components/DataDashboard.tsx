@@ -22,8 +22,10 @@ export default function DataDashboard() {
   const [debug, setDebug] = useState('');
   const [taskCounts, setTaskCounts] = useState<any>({});
   const searchTimer = useRef<any>(null);
+  const reqId = useRef(0);
 
   useEffect(() => { loadArtists(); }, [page, stateFilter]);
+  useEffect(() => { loadStates(); }, []);
   useEffect(() => { loadTaskCounts(); }, []);
   useEffect(() => { const t = setInterval(loadTaskCounts, 5000); return () => clearInterval(t); }, []);
 
@@ -43,8 +45,10 @@ export default function DataDashboard() {
       const params = new URLSearchParams({ page: String(page), limit: '50' });
       if (stateFilter) params.set('state', stateFilter);
       if (search) params.set('search', search);
+      const current = ++reqId.current;
       const res = await fetch(`${API}/artists?${params}`);
       const data = await res.json();
+      if (current !== reqId.current) return; // 丢弃旧请求
       if (data.ok) {
         setArtists(data.items || []);
         setPages(data.pages || 1);
