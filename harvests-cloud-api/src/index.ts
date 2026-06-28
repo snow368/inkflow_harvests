@@ -1587,7 +1587,7 @@ app.all('/api/automation/observations', async (c) => {
 // 删除旧的 sync 端点（已合并到 POST /observations）
 // app.post('/api/automation/observations/sync', ...) 已移除
 
-// ===== 数据看板：查询 Neon artists 表 =====
+// ===== 数据看板：查询 Neon artists 表（JS 去重，不与 SQL 打架） =====
 app.get('/api/automation/artists', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
@@ -1597,57 +1597,59 @@ app.get('/api/automation/artists', async (c) => {
     const page = Math.max(1, parseInt(c.req.query('page') || '1'));
     const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '50')));
     const offset = (page - 1) * limit;
+    const fetchLimit = Math.min(200, limit * 4);
 
     const sql = neon(connStr);
-    // 简化：先用模板语法查全部，后续可加客户端筛选
-    const countRows = await sql`SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '') sub`;
-    const total = Number(countRows?.[0]?.cnt || countRows?.rows?.[0]?.cnt || 0);
-    let dataRes;
+    let dataRes, countRes;
     if (state && search) {
-      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists ORDER BY LOWER(ig_handle), id) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' AND sub.import_region = ${state} AND (sub.shop_name ILIKE ${'%'+search+'%'} OR sub.ig_handle ILIKE ${'%'+search+'%'} OR sub.city ILIKE ${'%'+search+'%'}) ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} AND (LOWER(shop_name) LIKE LOWER(${'%'+search+'%'}) OR LOWER(ig_handle) LIKE LOWER(${'%'+search+'%'}) OR LOWER(city) LIKE LOWER(${'%'+search+'%'})) ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
+      countRes = await sql`SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} AND (LOWER(shop_name) LIKE LOWER(${'%'+search+'%'}) OR LOWER(ig_handle) LIKE LOWER(${'%'+search+'%'}) OR LOWER(city) LIKE LOWER(${'%'+search+'%'}))) sub`;
     } else if (state) {
-      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists ORDER BY LOWER(ig_handle), id) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' AND sub.import_region = ${state} ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
+      countRes = await sql`SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state}) sub`;
     } else if (search) {
-      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists ORDER BY LOWER(ig_handle), id) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' AND (sub.shop_name ILIKE ${'%'+search+'%'} OR sub.ig_handle ILIKE ${'%'+search+'%'} OR sub.city ILIKE ${'%'+search+'%'}) ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND (LOWER(shop_name) LIKE LOWER(${'%'+search+'%'}) OR LOWER(ig_handle) LIKE LOWER(${'%'+search+'%'}) OR LOWER(city) LIKE LOWER(${'%'+search+'%'})) ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
+      countRes = await sql`SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND (LOWER(shop_name) LIKE LOWER(${'%'+search+'%'}) OR LOWER(ig_handle) LIKE LOWER(${'%'+search+'%'}) OR LOWER(city) LIKE LOWER(${'%'+search+'%'}))) sub`;
     } else {
-      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists ORDER BY LOWER(ig_handle), id) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
+      countRes = await sql`SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '') sub`;
     }
-    const rows = dataRes?.rows || (Array.isArray(dataRes) ? dataRes : []);
+    const rawRows = dataRes?.rows || (Array.isArray(dataRes) ? dataRes : []);
 
-    // 查询 D1 + Neon 获取每个 artist 的任务状态
+    // JS 去重
+    const seen = new Set<string>();
+    const deduped: any[] = [];
+    for (const r of rawRows) {
+      const key = String(r.ig_handle || '').toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(r);
+    }
+
+    const total = Number(countRes?.[0]?.cnt || countRes?.rows?.[0]?.cnt || 0);
+    const items = deduped.slice(0, limit);
+
+    // 任务状态
     let taskStatusMap: Record<string, string> = {};
     try {
-      const handles = rows.map((r: any) => r.ig_handle).filter(Boolean);
+      const handles = items.map((r: any) => r.ig_handle).filter(Boolean);
       if (handles.length > 0) {
-        // D1 (同步过来的历史数据)
-        const placeholders = handles.map(() => '?').join(',');
         const tasks = await c.env.DB.prepare(
-          `SELECT DISTINCT payload->>'artistHandle' as handle, status
-           FROM automation_tasks
-           WHERE payload->>'artistHandle' IN (${placeholders})
-             AND status IN ('pending','leased','done','failed')`
+          `SELECT DISTINCT payload->>'artistHandle' as handle, status FROM automation_tasks
+           WHERE payload->>'artistHandle' IN (${handles.map(() => '?').join(',')})
+           AND status IN ('pending','leased','done','failed')`
         ).bind(...handles).all();
         for (const t of (tasks.results || []) as any) {
           if (t.handle && !taskStatusMap[t.handle]) taskStatusMap[t.handle] = t.status;
         }
-        // Neon (实时创建的任务)
-        try {
-          const nsql = neon(connStr);
-          const neonTasks = await nsql`SELECT payload->>'artistHandle' as handle, status FROM automation_tasks WHERE payload->>'artistHandle' = ANY(${handles}) AND status IN ('pending','leased','done','failed')`;
-          const neonRows = neonTasks?.rows || (Array.isArray(neonTasks) ? neonTasks : []);
-          for (const t of neonRows) {
-            if (t.handle && !taskStatusMap[t.handle]) taskStatusMap[t.handle] = t.status;
-          }
-        } catch {}
       }
-    } catch (e) { /* non-critical: status enrichment */ }
+    } catch {}
 
-    const items = rows.map((r: any) => ({
-      ...r,
-      taskStatus: taskStatusMap[r.ig_handle] || null,
-    }));
-
-    return c.json({ ok: true, items, total, page, limit, pages: Math.ceil(total / limit) });
+    return c.json({
+      ok: true,
+      items: items.map((r: any) => ({ ...r, taskStatus: taskStatusMap[r.ig_handle] || null })),
+      total, page, limit, pages: Math.ceil(total / limit),
+    });
   } catch (e: any) {
     return c.json({ ok: false, error: e.message }, 500);
   }
