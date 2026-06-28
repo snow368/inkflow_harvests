@@ -1252,43 +1252,40 @@ app.get('/api/automation/poll', async (c) => {
   const now = Date.now();
   const dedupWindow = now - 7 * 24 * 60 * 60 * 1000;
   try {
-    // Recycle expired leases so tasks don't get stuck
-    await neonQuery(connStr,
-      `UPDATE automation_tasks SET status = 'pending', leased_by = NULL, lease_until = NULL, updated_at = $1
-       WHERE status = 'leased' AND lease_until IS NOT NULL AND lease_until < $1`,
-      [now]
-    ).catch(() => {});
+    const sql = neon(connStr);
+    // Recycle expired leases
+    await sql`UPDATE automation_tasks SET status = 'pending', leased_by = NULL, lease_until = NULL, updated_at = ${now}
+              WHERE status = 'leased' AND lease_until IS NOT NULL AND lease_until < ${now}`.catch(() => {});
 
-    // Atomic: SELECT pending + UPDATE to leased + RETURN data, one query
-    const rows = await neonQuery(connStr,
-      `UPDATE automation_tasks SET status = 'leased', leased_by = $1, lease_until = $2, updated_at = $3
-       WHERE id IN (
-         SELECT id FROM automation_tasks
-         WHERE status = 'pending' AND run_at <= $4
-           AND (payload->>'artistHandle' IS NULL
-             OR NOT EXISTS (
-               SELECT 1 FROM automation_tasks d
-               WHERE d.status = 'done' AND d.updated_at > $5
-                 AND d.payload->>'artistHandle' = automation_tasks.payload->>'artistHandle'
-             ))
-         ORDER BY run_at ASC LIMIT $6
-       )
-       RETURNING id, payload::text`,
-      [botId, now + 120_000, now, now, dedupWindow, limit]
-    );
-    const commands = (rows || []).map((r: any) => {
+    // SELECT pending tasks with dedup
+    const candidates = await sql`
+      SELECT id, payload FROM automation_tasks
+      WHERE status = 'pending' AND run_at <= ${now}
+        AND (payload->>'artistHandle' IS NULL
+          OR NOT EXISTS (
+            SELECT 1 FROM automation_tasks d
+            WHERE d.status = 'done' AND d.updated_at > ${dedupWindow}
+              AND d.payload->>'artistHandle' = automation_tasks.payload->>'artistHandle'
+          ))
+      ORDER BY run_at ASC LIMIT ${limit}
+    `;
+    const rows = candidates?.rows || (Array.isArray(candidates) ? candidates : []);
+    const commands: any[] = [];
+    for (const r of rows) {
+      await sql`UPDATE automation_tasks SET status = 'leased', leased_by = ${botId}, lease_until = ${now + 120_000}, updated_at = ${now}
+                WHERE id = ${r.id} AND status = 'pending'`;
       let payload: any = {};
-      try { payload = JSON.parse(r.payload || '{}'); } catch {}
-      return { ...payload, id: r.id };
-    });
-    // Also update bot heartbeat (keep alive)
+      try { payload = typeof r.payload === 'string' ? JSON.parse(r.payload) : (r.payload || {}); } catch {}
+      commands.push({ ...payload, id: r.id });
+    }
+    // Update bot heartbeat
     await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,status,registered_at,last_heartbeat)
       VALUES (?,'online',?,?) ON CONFLICT(bot_id) DO UPDATE SET status='online', last_heartbeat=excluded.last_heartbeat
     `).bind(botId, now, now).catch(() => {});
     return c.json({ ok: true, commands });
   } catch (e: any) {
     console.error('[poll] Neon error:', e?.message || e);
-    return c.json({ ok: true, commands: [] }); // graceful degradation
+    return c.json({ ok: true, commands: [] });
   }
 });
 
@@ -1320,6 +1317,73 @@ app.post('/api/automation/report', async (c) => {
      ON CONFLICT(day, status) DO UPDATE SET cnt = cnt + 1`
   ).bind(day, status === 'done' ? 'done' : 'failed').run().catch(() => {});
   return c.json({ ok: true, commandId, status });
+});
+
+// ===== Bot 观察数据上报 (called by bot-worker after each profile) =====
+app.post('/api/bot/observe', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
+  try {
+    const body = await c.req.json();
+    const botId = String(body.botId || '').trim();
+    const artistHandle = String(body.artistHandle || body.artist_handle || '').replace(/^@/, '').trim();
+    const mode = String(body.mode || '').trim();
+    const commandId = String(body.commandId || body.command_id || '');
+    const summary = body.summary || {};
+    const profileFacts = body.profileFacts || body.profile_facts || {};
+    if (!botId || !mode) return c.json({ error: 'botId and mode required' }, 400);
+    const ts = Date.now();
+    // Write observation to Neon
+    await neonQuery(connStr,
+      `INSERT INTO bot_observations (bot_id, artist_handle, mode, summary_json, profile_facts_json, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [botId, artistHandle || null, mode, JSON.stringify(summary), JSON.stringify(profileFacts), ts]
+    );
+    // If commandId provided, also mark task done
+    if (commandId) {
+      await neonQuery(connStr,
+        `UPDATE automation_tasks SET status = 'done', lease_until = NULL, leased_by = NULL, updated_at = $1 WHERE id = $2`,
+        [ts, commandId]
+      ).catch(() => {});
+    }
+    return c.json({ ok: true });
+  } catch (e: any) {
+    return c.json({ error: String(e?.message || e) }, 500);
+  }
+});
+
+// ===== 噪声站点配置（供 bot human mimicry 使用） =====
+app.get('/api/bot/noise-sites', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  const botId = c.req.query('botId') || '';
+  // Default noise sites — can be overridden per bot via D1 bot_config table
+  const defaultSites = [
+    'https://www.cnn.com',
+    'https://www.nydailynews.com',
+    'https://www.youtube.com',
+    'https://www.nytimes.com',
+    'https://www.bbc.com/news',
+    'https://www.reddit.com',
+    'https://weather.com',
+    'https://www.espn.com',
+  ];
+  // Check D1 for per-bot override
+  let customSites: string[] = [];
+  try {
+    await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_config (
+      bot_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT, updated_at INTEGER,
+      PRIMARY KEY (bot_id, key)
+    )`).run().catch(() => {});
+    const row = await c.env.DB.prepare(
+      'SELECT value FROM bot_config WHERE bot_id = ? AND key = ?'
+    ).bind(botId, 'noise_sites').first() as any;
+    if (row?.value) {
+      try { customSites = JSON.parse(row.value); } catch {}
+    }
+  } catch {}
+  const sites = customSites.length > 0 ? customSites : defaultSites;
+  return c.json({ ok: true, sites });
 });
 
 // ===== 快速检查 Neon 连接 =====
@@ -1461,11 +1525,12 @@ app.get('/api/automation/artists', async (c) => {
     }
     const rows = dataRes?.rows || (Array.isArray(dataRes) ? dataRes : []);
 
-    // 查询 D1 automation_tasks 获取每个 artist 的任务状态
+    // 查询 D1 + Neon 获取每个 artist 的任务状态
     let taskStatusMap: Record<string, string> = {};
     try {
       const handles = rows.map((r: any) => r.ig_handle).filter(Boolean);
       if (handles.length > 0) {
+        // D1 (同步过来的历史数据)
         const placeholders = handles.map(() => '?').join(',');
         const tasks = await c.env.DB.prepare(
           `SELECT DISTINCT payload->>'artistHandle' as handle, status
@@ -1476,6 +1541,15 @@ app.get('/api/automation/artists', async (c) => {
         for (const t of (tasks.results || []) as any) {
           if (t.handle && !taskStatusMap[t.handle]) taskStatusMap[t.handle] = t.status;
         }
+        // Neon (实时创建的任务)
+        try {
+          const nsql = neon(connStr);
+          const neonTasks = await nsql`SELECT payload->>'artistHandle' as handle, status FROM automation_tasks WHERE payload->>'artistHandle' = ANY(${handles}) AND status IN ('pending','leased','done','failed')`;
+          const neonRows = neonTasks?.rows || (Array.isArray(neonTasks) ? neonTasks : []);
+          for (const t of neonRows) {
+            if (t.handle && !taskStatusMap[t.handle]) taskStatusMap[t.handle] = t.status;
+          }
+        } catch {}
       }
     } catch (e) { /* non-critical: status enrichment */ }
 
