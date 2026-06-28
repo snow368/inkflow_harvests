@@ -256,14 +256,26 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  // Hash routing — read initial tab from URL
+  const getTabFromHash = (): Tab => {
+    const valid: Tab[] = ['dashboard','outreach','analyzer','training','crm','automation','settings'];
+    const hash = window.location.hash.replace('#/', '') || 'dashboard';
+    return valid.includes(hash as Tab) ? hash as Tab : 'dashboard';
+  };
+  const [activeTab, setActiveTab] = useState<Tab>(getTabFromHash);
+  // Sync URL hash when tab changes
+  const setTabAndHash = (tab: Tab) => {
+    setActiveTab(tab);
+    const hash = tab === 'dashboard' ? '' : tab;
+    window.history.replaceState(null, '', `#/${hash}`);
+  };
 
   return (
     <CRMProvider>
       <div className="min-h-screen bg-[#0a0a0a] text-zinc-100 font-sans selection:bg-rose-500/30">
         <Toaster position="top-right" theme="dark" richColors />
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
-        <MainContent activeTab={activeTab} setActiveTab={setActiveTab} />
+        <Sidebar activeTab={activeTab} setActiveTab={setTabAndHash} />
+        <MainContent activeTab={activeTab} setActiveTab={setTabAndHash} />
       </div>
     </CRMProvider>
   );
