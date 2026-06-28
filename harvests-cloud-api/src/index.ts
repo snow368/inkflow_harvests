@@ -104,6 +104,8 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/task-list/sync',
   '/api/automation/tasks/clear-duplicate-pending',
   '/api/automation/poll-debug',
+  '/api/bot/noise-sites',
+  '/api/bot/observe',
   '/api/tasks/create',
 ])
 
