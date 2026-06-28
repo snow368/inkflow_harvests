@@ -103,6 +103,7 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/task-counts-debug',
   '/api/automation/task-list/sync',
   '/api/automation/tasks/clear-duplicate-pending',
+  '/api/automation/tasks/clear-all-pending',
   '/api/automation/poll-debug',
   '/api/bot/noise-sites',
   '/api/bot/observe',
@@ -1343,11 +1344,24 @@ app.post('/api/bot/observe', async (c) => {
     const sql = neon(connStr);
     // Ensure table exists
     await sql`CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)`.catch(() => {});
-    // Write observation with only columns that exist in the table
+    // Write observation
     await sql`INSERT INTO bot_observations (bot_id, artist_handle, mode, created_at) VALUES (${botId}, ${artistHandle || null}, ${mode}, ${ts})`;
     // If commandId provided, also mark task done
     if (commandId) {
       await sql`UPDATE automation_tasks SET status = 'done', lease_until = NULL, leased_by = NULL, updated_at = ${ts} WHERE id = ${commandId}`.catch(() => {});
+    }
+    // Update artists table with IG profile data scraped by bot
+    // Use individual UPDATEs via neonQuery (simple queries work with HTTP API)
+    if (artistHandle && body.profileFacts) {
+      const pf = body.profileFacts;
+      try {
+        if (pf.followers != null) await neonQuery(connStr, `UPDATE artists SET followers = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.followers), artistHandle]).catch(() => {});
+        if (pf.following != null) await neonQuery(connStr, `UPDATE artists SET "following" = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.following), artistHandle]).catch(() => {});
+        if (pf.postCount != null) await neonQuery(connStr, `UPDATE artists SET posts_count = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.postCount), artistHandle]).catch(() => {});
+        if (pf.bio) await neonQuery(connStr, `UPDATE artists SET bio = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.bio).slice(0, 500), artistHandle]).catch(() => {});
+        if (pf.email) await neonQuery(connStr, `UPDATE artists SET email = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.email), artistHandle]).catch(() => {});
+        if (pf.externalUrl) await neonQuery(connStr, `UPDATE artists SET website = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.externalUrl), artistHandle]).catch(() => {});
+      } catch {}
     }
     return c.json({ ok: true });
   } catch (e: any) {
@@ -1590,13 +1604,13 @@ app.get('/api/automation/artists', async (c) => {
     const total = Number(countRows?.[0]?.cnt || countRows?.rows?.[0]?.cnt || 0);
     let dataRes;
     if (state && search) {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} AND (shop_name ILIKE ${'%'+search+'%'} OR ig_handle ILIKE ${'%'+search+'%'} OR city ILIKE ${'%'+search+'%'}) ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' AND sub.import_region = ${state} AND (sub.shop_name ILIKE ${'%'+search+'%'} OR sub.ig_handle ILIKE ${'%'+search+'%'} OR sub.city ILIKE ${'%'+search+'%'}) ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
     } else if (state) {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' AND sub.import_region = ${state} ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
     } else if (search) {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND (shop_name ILIKE ${'%'+search+'%'} OR ig_handle ILIKE ${'%'+search+'%'} OR city ILIKE ${'%'+search+'%'}) ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' AND (sub.shop_name ILIKE ${'%'+search+'%'} OR sub.ig_handle ILIKE ${'%'+search+'%'} OR sub.city ILIKE ${'%'+search+'%'}) ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
     } else {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' ORDER BY shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
+      dataRes = await sql`SELECT * FROM (SELECT DISTINCT ON (LOWER(ig_handle)) id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews FROM artists) sub WHERE sub.ig_handle IS NOT NULL AND sub.ig_handle != '' ORDER BY sub.shop_name ASC LIMIT ${limit} OFFSET ${offset}`;
     }
     const rows = dataRes?.rows || (Array.isArray(dataRes) ? dataRes : []);
 
@@ -1851,6 +1865,23 @@ app.post('/api/automation/tasks/clear-duplicate-pending', async (c) => {
 });
 
 export default app
+
+// ===== 清空所有 pending 任务 =====
+app.post('/api/automation/tasks/clear-all-pending', async (c) => {
+  const tokenParam = c.req.query('token');
+  const auth = c.req.header('Authorization');
+  const authed = tokenParam === 'vps-bot-secret-2024' || auth === 'Bearer vps-bot-secret-2024';
+  if (!authed) return c.json({ error: 'unauthorized' }, 401);
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
+  try {
+    const sql = neon(connStr);
+    const deleted = (await sql`DELETE FROM automation_tasks WHERE status = 'pending' RETURNING id`).length || 0;
+    return c.json({ ok: true, deleted });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e) }, 500);
+  }
+});
 
 // ===== Poll 调试端点 =====
 app.get('/api/automation/poll-debug', async (c) => {
