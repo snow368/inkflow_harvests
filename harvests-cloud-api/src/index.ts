@@ -102,6 +102,8 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/task-counts',
   '/api/automation/task-counts-debug',
   '/api/automation/task-list/sync',
+  '/api/automation/tasks/clear-duplicate-pending',
+  '/api/automation/poll-debug',
   '/api/tasks/create',
 ])
 
@@ -1282,7 +1284,7 @@ app.get('/api/automation/poll', async (c) => {
     // Update bot heartbeat
     await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,status,registered_at,last_heartbeat)
       VALUES (?,'online',?,?) ON CONFLICT(bot_id) DO UPDATE SET status='online', last_heartbeat=excluded.last_heartbeat
-    `).bind(botId, now, now).catch(() => {});
+    `).bind(botId, now, now).run().catch(() => {});
     return c.json({ ok: true, commands });
   } catch (e: any) {
     console.error('[poll] Neon error:', e?.message || e);
@@ -1748,4 +1750,115 @@ app.get('/api/automation/task-list', async (c) => {
   } catch (e: any) { return c.json({ ok: false, error: e.message, tasks: [] }, 500); }
 });
 
+// ===== 清空重复 pending 任务（手动触发，只清已存在 done 的 handle） =====
+app.post('/api/automation/tasks/clear-duplicate-pending', async (c) => {
+  const auth = c.req.header('Authorization');
+  if (!auth?.startsWith('Bearer ') || auth.slice(7) !== 'vps-bot-secret-2024') {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
+  try {
+    const sql = neon(connStr);
+    const dedupWindow = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    // 删除 pending 任务，其 handle 已有 done/leased 任务在 dedup 窗口内
+    const result = await sql`
+      DELETE FROM automation_tasks
+      WHERE status = 'pending'
+        AND EXISTS (
+          SELECT 1 FROM automation_tasks d
+          WHERE d.status IN ('done','leased')
+            AND d.updated_at > ${dedupWindow}
+            AND d.payload->>'artistHandle' = automation_tasks.payload->>'artistHandle'
+        )
+    `;
+    return c.json({ ok: true, deleted: result?.count || 0 });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message }, 500);
+  }
+});
+
 export default app
+
+// ===== Poll 调试端点 =====
+app.get('/api/automation/poll-debug', async (c) => {
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
+  try {
+    const sql = neon(connStr);
+    const now = Date.now();
+    const dedupWindow = now - 7 * 24 * 60 * 60 * 1000;
+
+    // 1. Total pending count
+    const totalPending = await sql`SELECT COUNT(*) as cnt FROM automation_tasks WHERE status = 'pending'`;
+    const pendingCount = Number(totalPending?.[0]?.cnt || 0);
+
+    // 2. Pending with run_at <= now
+    const readyPending = await sql`SELECT COUNT(*) as cnt FROM automation_tasks WHERE status = 'pending' AND run_at <= ${now}`;
+    const readyCount = Number(readyPending?.[0]?.cnt || 0);
+
+    // 3. Pending where handle already done in dedup window
+    const dedupBlocked = await sql`SELECT COUNT(*) as cnt FROM automation_tasks t WHERE status = 'pending' AND EXISTS (SELECT 1 FROM automation_tasks d WHERE d.status = 'done' AND d.updated_at > ${dedupWindow} AND d.payload->>'artistHandle' = t.payload->>'artistHandle')`;
+    const dedupBlockedCount = Number(dedupBlocked?.[0]?.cnt || 0);
+
+    // 4. Sample tasks with run_at
+    const sampleTasks = await sql`SELECT id, status, run_at, created_at, updated_at, payload FROM automation_tasks WHERE status = 'pending' LIMIT 3`;
+
+    // 5. Exact poll query simulation
+    const limit = 3;
+    let pollCandidates: any[] = [];
+    try {
+      const pc = await sql`
+        SELECT id, payload FROM automation_tasks
+        WHERE status = 'pending' AND run_at <= ${now}
+          AND (payload->>'artistHandle' IS NULL
+            OR NOT EXISTS (
+              SELECT 1 FROM automation_tasks d
+              WHERE d.status = 'done' AND d.updated_at > ${dedupWindow}
+                AND d.payload->>'artistHandle' = automation_tasks.payload->>'artistHandle'
+            ))
+        ORDER BY run_at ASC LIMIT ${limit}
+      `;
+      const pRows = pc?.rows || (Array.isArray(pc) ? pc : []);
+      pollCandidates = pRows.map((r: any) => ({ id: r.id, run_at: r.run_at }));
+      // Also try the UPDATE (without committing — just test)
+      if (pRows.length > 0) {
+        const first = pRows[0];
+        try {
+          await sql`UPDATE automation_tasks SET status = 'pending', lease_until = NULL, leased_by = NULL, updated_at = ${now}
+                    WHERE id = ${first.id} AND status = 'pending'`;
+          // Revert the test update
+          await sql`UPDATE automation_tasks SET updated_at = ${now} WHERE id = ${first.id}`;
+          pollCandidates[0].updateOk = true;
+        } catch (e_u: any) {
+          pollCandidates[0].updateError = String(e_u?.message || e_u).slice(0, 200);
+        }
+      }
+    } catch (e: any) {
+      pollCandidates = [{ error: String(e?.message || e).slice(0, 200) }];
+    }
+
+    // 5. (skip bot_instances)
+    return c.json({
+      debug: {
+        now,
+        nowReadable: new Date(now).toISOString(),
+        dedupWindow,
+        pendingCount,
+        readyCount,
+        dedupBlockedCount,
+        pollCandidates,
+        sampleTasks: (sampleTasks?.rows || sampleTasks || []).map((t: any) => ({
+          id: t.id,
+          status: t.status,
+          run_at: t.run_at,
+          run_at_readable: t.run_at ? new Date(Number(t.run_at)).toISOString() : null,
+          created_at: t.created_at ? new Date(Number(t.created_at)).toISOString() : null,
+          handle: typeof t.payload === 'string' ? (() => { try { return JSON.parse(t.payload).artistHandle; } catch { return null; } })() : t.payload?.artistHandle,
+        })),
+      }
+    });
+  } catch (e: any) {
+    return c.json({ error: e.message, stack: e.stack?.slice(0, 500) }, 500);
+  }
+});
