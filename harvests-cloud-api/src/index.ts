@@ -1,27 +1,46 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
-import { neon } from '@neondatabase/serverless'
+// Neon 数据库查询 — 使用 HTTP 协议（/sql endpoint），避免 WebSocket 在 Worker 中不稳定
+// @neondatabase/serverless 的 neon() 函数基于 WebSocket，在 Cloudflare Worker 中时好时坏
+// 改用 HTTP neonQuery，已验证可用
 
 type UserInfo = { uid: string; email?: string }
 
-// Neon HTTP query helper — uses Neon SQL-over-HTTP API with Basic auth
+// Neon HTTP query helper — uses Neon SQL-over-HTTP API (new /sql endpoint)
 async function neonQuery(connStr: string, query: string, params?: any[]): Promise<any[]> {
   if (!connStr) throw new Error('NEON_DATABASE_URL not configured');
   const m = connStr.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^/]+)\/([^?]+)/);
   if (!m) throw new Error('Invalid Neon URL format');
-  const [, user, pass, host] = m;
-  const basic = btoa(`${user}:${pass}`);
+  const [, , , host] = m;
+  const baseConnStr = connStr.replace(/\?.*$/, '');
   const body: any = { query };
   if (params && params.length > 0) body.params = params;
-  const resp = await fetch(`https://${host}/v2/query`, {
+  const resp = await fetch(`https://${host}/sql`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${basic}` },
+    headers: { 'Content-Type': 'application/json', 'neon-connection-string': baseConnStr },
     body: JSON.stringify(body),
   });
   if (!resp.ok) { const t = await resp.text(); throw new Error(`Neon ${resp.status}: ${t.slice(0,200)}`); }
   const data: any = await resp.json();
   return data.rows || data;
+}
+
+// 兼容 neon() 模板语法的 SQL 标签函数 — 底层走 HTTP
+function neonSql(connStr: string) {
+  return async (strings: TemplateStringsArray, ...values: any[]): Promise<{rows: any[]}> => {
+    let query = strings[0];
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i];
+      if (typeof v === 'number') query += v;
+      else if (typeof v === 'string') query += `'${v.replace(/'/g, "''")}'`;
+      else if (v === null || v === undefined) query += 'NULL';
+      else query += `'${String(v).replace(/'/g, "''")}'`;
+      query += strings[i + 1];
+    }
+    const rows = await neonQuery(connStr, query);
+    return { rows };
+  };
 }
 
 // Bot token verification — shared between bot endpoints
@@ -89,6 +108,7 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/bot-account',
   '/api/automation/bot-account/delete',
   '/api/automation/behavior-logs',
+  '/api/automation/bot-config',
   '/api/bot/register',
   '/api/bot/heartbeat',
   '/api/automation/poll',
@@ -108,6 +128,27 @@ const PUBLIC_PATHS = new Set([
   '/api/bot/noise-sites',
   '/api/bot/observe',
   '/api/tasks/create',
+  '/api/tasks/count',
+  '/api/amazon/pending',
+  '/api/amazon/report',
+  '/api/voice/log',
+  '/api/inventory/stock',
+  '/api/inventory/stocktake',
+  '/api/inventory/alerts',
+  '/api/inventory/inbounds',
+  '/api/inventory/outbounds',
+  '/api/inventory/customers',
+  '/api/inventory/inbound-summary',
+  '/api/inventory/outbound-summary',
+  '/api/inventory/inbound',
+  '/api/inventory/outbound',
+  '/api/inventory/product',
+  '/api/inventory/customer',
+  '/api/inventory/customer-orders',
+  '/api/inventory/distributor-candidates',
+  '/api/inventory/import-distributor',
+  '/api/inventory/trends',
+  '/api/inventory/po',
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -237,6 +278,66 @@ app.post('/api/inventory/product/:sku/field', async (c) => {
   return c.json({ ok: true })
 })
 
+// ── Stocktake API (D1 persistent) ──
+app.post('/api/inventory/stocktake', async (c) => {
+  try {
+    const { location, sku, expected_qty, actual_qty, notes, clear } = await c.req.json();
+    const now = Date.now();
+    if (clear) {
+      await c.env.DB.prepare('DELETE FROM inventory_stocktakes').run();
+      return c.json({ ok: true, cleared: true });
+    }
+    const existing = await c.env.DB.prepare('SELECT id FROM inventory_stocktakes WHERE location=? AND sku=?').bind(location, sku).first();
+    const diff = (actual_qty || 0) - (expected_qty || 0);
+    if (existing) {
+      await c.env.DB.prepare('UPDATE inventory_stocktakes SET expected_qty=?, actual_qty=?, difference=?, notes=?, created_at=? WHERE id=?')
+        .bind(expected_qty||0, actual_qty||0, diff, notes||'', now, (existing as any).id).run();
+    } else {
+      await c.env.DB.prepare('INSERT INTO inventory_stocktakes (location,sku,expected_qty,actual_qty,difference,notes,created_at) VALUES (?,?,?,?,?,?,?)')
+        .bind(location, sku, expected_qty||0, actual_qty||0, diff, notes||'', now).run();
+    }
+    return c.json({ ok: true });
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
+});
+app.post('/api/inventory/stocktake/batch', async (c) => {
+  try {
+    const { records } = await c.req.json();
+    if (!Array.isArray(records) || !records.length) return c.json({ ok: false, error: 'records required' }, 400);
+    const now = Date.now(); let count = 0;
+    for (const r of records) {
+      const { location, sku, expected_qty, actual_qty, notes } = r;
+      const existing = await c.env.DB.prepare('SELECT id FROM inventory_stocktakes WHERE location=? AND sku=?').bind(location, sku).first();
+      const diff = (actual_qty||0) - (expected_qty||0);
+      if (existing) {
+        await c.env.DB.prepare('UPDATE inventory_stocktakes SET expected_qty=?, actual_qty=?, difference=?, notes=?, created_at=? WHERE id=?')
+          .bind(expected_qty||0, actual_qty||0, diff, notes||'', now, (existing as any).id).run();
+      } else {
+        await c.env.DB.prepare('INSERT INTO inventory_stocktakes (location,sku,expected_qty,actual_qty,difference,notes,created_at) VALUES (?,?,?,?,?,?,?)')
+          .bind(location, sku, expected_qty||0, actual_qty||0, diff, notes||'', now).run();
+      }
+      count++;
+    }
+    return c.json({ ok: true, count });
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
+});
+app.get('/api/inventory/stocktake', async (c) => {
+  try {
+    const location = c.req.query('location') || '';
+    const rows = await c.env.DB.prepare(
+      `SELECT s.*, p.name as product_name FROM inventory_stocktakes s LEFT JOIN inventory_products p ON s.sku=p.sku ${location ? 'WHERE s.location=?': ''} ORDER BY s.location ASC, s.sku ASC`
+    ).bind(...(location ? [location] : [])).all();
+    return c.json({ ok: true, items: rows.results || [] });
+  } catch (e: any) { return c.json({ ok: false, items: [], error: e.message }, 500); }
+});
+app.delete('/api/inventory/stocktake', async (c) => {
+  try { await c.env.DB.prepare('DELETE FROM inventory_stocktakes').run(); return c.json({ ok: true }); }
+  catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
+});
+app.delete('/api/inventory/stocktake/:id', async (c) => {
+  try { await c.env.DB.prepare('DELETE FROM inventory_stocktakes WHERE id=?').bind(c.req.param('id')).run(); return c.json({ ok: true }); }
+  catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
+});
+
 app.delete('/api/inventory/product/:sku', async (c) => {
   await c.env.DB.prepare('DELETE FROM inventory_products WHERE sku=?').bind(c.req.param('sku')).run()
   return c.json({ ok: true })
@@ -245,20 +346,30 @@ app.delete('/api/inventory/product/:sku', async (c) => {
 // ============ INBOUND / OUTBOUND ============
 
 app.post('/api/inventory/inbound', async (c) => {
-  const { product_sku, quantity, po_number, inbound_date, note } = await c.req.json()
-  if (!product_sku || !quantity || !inbound_date) return c.json({ error: 'product_sku, quantity, inbound_date required' }, 400)
-  await c.env.DB.prepare('INSERT INTO inventory_inbounds (product_sku,quantity,po_number,inbound_date,note,created_at) VALUES (?,?,?,?,?,?)')
-    .bind(product_sku, quantity, po_number||'', inbound_date, note||'', Date.now()).run()
+  const { product_sku, quantity, large_case_qty, small_box_qty, po_number, inbound_date, note, sterilized } = await c.req.json()
+  if (!product_sku || !inbound_date) return c.json({ error: 'product_sku, inbound_date required' }, 400)
+  // 自动算总数量：1大箱=2小箱=100盒，1小箱=50盒
+  const lq = Math.max(0, parseInt(large_case_qty) || 0)
+  const sq = Math.max(0, parseInt(small_box_qty) || 0)
+  const totalQty = lq * 100 + sq * 50 + (parseInt(quantity) || 0)
+  if (totalQty <= 0) return c.json({ error: '总数量必须大于0' }, 400)
+  try { await c.env.DB.prepare(`ALTER TABLE inventory_inbounds ADD COLUMN sterilized INTEGER DEFAULT 0`).run() } catch {}
+  try { await c.env.DB.prepare(`ALTER TABLE inventory_inbounds ADD COLUMN large_case_qty INTEGER DEFAULT 0`).run() } catch {}
+  try { await c.env.DB.prepare(`ALTER TABLE inventory_inbounds ADD COLUMN small_box_qty INTEGER DEFAULT 0`).run() } catch {}
+  await c.env.DB.prepare('INSERT INTO inventory_inbounds (product_sku,quantity,large_case_qty,small_box_qty,po_number,inbound_date,note,sterilized,created_at) VALUES (?,?,?,?,?,?,?,?,?)')
+    .bind(product_sku, totalQty, lq, sq, po_number||'', inbound_date, note||'', sterilized ? 1 : 0, Date.now()).run()
   return c.json({ ok: true })
 })
+
+const VALID_CHANNELS = ['B2C','B2B','sample_b2b','sample_b2c']
 
 app.post('/api/inventory/outbound', async (c) => {
   const { product_sku, quantity, channel, customer_name, shopify_order_id, outbound_date, note } = await c.req.json()
   if (!product_sku || !quantity || !channel || !outbound_date) return c.json({ error: 'product_sku, quantity, channel, outbound_date required' }, 400)
-  if (!['B2C','B2B'].includes(channel)) return c.json({ error: 'channel must be B2C or B2B' }, 400)
+  if (!VALID_CHANNELS.includes(channel)) return c.json({ error: `channel must be one of: ${VALID_CHANNELS.join(', ')}` }, 400)
   await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
     .bind(product_sku, quantity, channel, customer_name||'', shopify_order_id||'', outbound_date, note||'', Date.now()).run()
-  if (channel === 'B2B' && customer_name) {
+  if ((channel === 'B2B' || channel === 'sample_b2b') && customer_name) {
     const now = Date.now()
     try {
       await c.env.DB.prepare('INSERT INTO inventory_customers (name,updated_at,created_at) VALUES (?,?,?) ON CONFLICT(name) DO UPDATE SET updated_at=?')
@@ -269,14 +380,64 @@ app.post('/api/inventory/outbound', async (c) => {
 })
 
 app.get('/api/inventory/inbounds', async (c) => {
-  const rows = await c.env.DB.prepare('SELECT * FROM inventory_inbounds ORDER BY inbound_date DESC LIMIT 500').all()
+  const rows = await c.env.DB.prepare('SELECT i.*, p.name as product_name FROM inventory_inbounds i LEFT JOIN inventory_products p ON i.product_sku = p.sku ORDER BY i.inbound_date DESC LIMIT 500').all()
+  return c.json({ ok: true, items: rows.results || [] })
+})
+
+// 入库汇总：按日期+型号+消毒 分组统计
+app.get('/api/inventory/inbound-summary', async (c) => {
+  const rows = await c.env.DB.prepare(`
+    SELECT inbound_date, product_sku, p.name as product_name, sterilized,
+           SUM(quantity) as total_qty, COUNT(*) as batch_count,
+           SUM(large_case_qty) as total_cases, SUM(small_box_qty) as total_boxes
+    FROM inventory_inbounds i
+    LEFT JOIN inventory_products p ON i.product_sku = p.sku
+    GROUP BY inbound_date, product_sku, sterilized
+    ORDER BY inbound_date DESC, product_sku ASC
+    LIMIT 1000
+  `).all()
+  return c.json({ ok: true, items: rows.results || [] })
+})
+
+// 单个客户各型号具体盒数
+app.get('/api/inventory/customer-orders/:name', async (c) => {
+  const name = c.req.param('name')
+  const rows = await c.env.DB.prepare(`
+    SELECT product_sku, p.name as product_name, SUM(quantity) as total_qty, COUNT(*) as order_count,
+           MIN(outbound_date) as first_date, MAX(outbound_date) as last_date
+    FROM inventory_outbounds o
+    LEFT JOIN inventory_products p ON o.product_sku = p.sku
+    WHERE o.customer_name = ?
+    GROUP BY product_sku
+    ORDER BY total_qty DESC
+  `).bind(name).all()
+  const details = await c.env.DB.prepare(`
+    SELECT product_sku, quantity, channel, outbound_date, note
+    FROM inventory_outbounds
+    WHERE customer_name = ?
+    ORDER BY outbound_date DESC
+    LIMIT 200
+  `).bind(name).all()
+  return c.json({ ok: true, items: rows.results || [], details: details.results || [] })
+})
+
+// 出库汇总：按客户+渠道统计
+app.get('/api/inventory/outbound-summary', async (c) => {
+  const rows = await c.env.DB.prepare(`
+    SELECT customer_name, channel, COUNT(*) as total_orders, SUM(quantity) as total_qty, MAX(outbound_date) as last_date
+    FROM inventory_outbounds
+    WHERE customer_name != ''
+    GROUP BY customer_name, channel
+    ORDER BY total_qty DESC
+    LIMIT 500
+  `).all()
   return c.json({ ok: true, items: rows.results || [] })
 })
 
 app.get('/api/inventory/outbounds', async (c) => {
   const channel = c.req.query('channel')
   const sku = c.req.query('sku')
-  let sql = 'SELECT * FROM inventory_outbounds WHERE 1=1'
+  let sql = 'SELECT o.*, p.name as product_name FROM inventory_outbounds o LEFT JOIN inventory_products p ON o.product_sku = p.sku WHERE 1=1'
   const binds: any[] = []
   if (channel && channel !== 'all') { sql += ' AND channel = ?'; binds.push(channel) }
   if (sku) { sql += ' AND product_sku = ?'; binds.push(sku) }
@@ -821,6 +982,24 @@ app.get('/api/admin/stats', async (c) => {
 
 // ============ BOT ACCOUNT CONFIG (write to Neon, read D1 dashboard) ============
 
+app.post('/api/automation/bot-account', async (c) => {
+  try {
+    const { account_id, ig_handle } = await c.req.json();
+    if (!account_id) return c.json({ error: 'account_id required' }, 400);
+    await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_accounts (account_id TEXT PRIMARY KEY, ig_handle TEXT, created_at TEXT, stage TEXT DEFAULT 'new', daily_task_limit INTEGER DEFAULT 5, speed_factor REAL DEFAULT 2.5, first_used_at TEXT, vps_name TEXT, proxy TEXT)`).run();
+    try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN created_at TEXT').run(); } catch {}
+    const now = new Date().toISOString();
+    // 新账号设创建时间，已有账号不覆盖
+    const existing = await c.env.DB.prepare('SELECT created_at FROM bot_accounts WHERE account_id=?').bind(account_id).first() as any;
+    if (existing?.created_at) {
+      await c.env.DB.prepare('UPDATE bot_accounts SET ig_handle=? WHERE account_id=?').bind(ig_handle || '', account_id).run();
+    } else {
+      await c.env.DB.prepare('INSERT INTO bot_accounts (account_id, ig_handle, created_at) VALUES (?, ?, ?)').bind(account_id, ig_handle || '', now).run();
+    }
+    return c.json({ ok: true });
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
+});
+
 app.get('/api/automation/bot-account', async (c) => {
   const botId = c.req.query('botId');
   if (!botId) return c.json({ error: 'botId required' }, 400);
@@ -901,8 +1080,8 @@ app.post('/api/automation/sync', async (c) => {
     } catch {}
   }
 
-  // Bot accounts
-  if (body.accounts) {
+  // Bot accounts（空数组不处理，防止误清）
+  if (body.accounts?.length) {
     try {
       await c.env.DB.prepare('DELETE FROM bot_accounts').run();
       for (const a of body.accounts) {
@@ -990,7 +1169,7 @@ app.get('/api/automation/task-counts', async (c) => {
   try {
     const connStr = c.env.NEON_DATABASE_URL;
     if (connStr) {
-      const sql = neon(connStr);
+      const sql = neonSql(connStr);
       const rows = await sql`SELECT status, COUNT(*)::int as cnt FROM automation_tasks GROUP BY status`;
       const results = rows?.rows || (Array.isArray(rows) ? rows : []);
       for (const r of results) {
@@ -1258,7 +1437,7 @@ app.get('/api/automation/poll', async (c) => {
   const now = Date.now();
   const dedupWindow = now - 7 * 24 * 60 * 60 * 1000;
   try {
-    const sql = neon(connStr);
+    const sql = neonSql(connStr);
     // Recycle expired leases
     await sql`UPDATE automation_tasks SET status = 'pending', leased_by = NULL, lease_until = NULL, updated_at = ${now}
               WHERE status = 'leased' AND lease_until IS NOT NULL AND lease_until < ${now}`.catch(() => {});
@@ -1270,7 +1449,8 @@ app.get('/api/automation/poll', async (c) => {
         AND (payload->>'artistHandle' IS NULL
           OR NOT EXISTS (
             SELECT 1 FROM automation_tasks d
-            WHERE d.status IN ('pending','leased') AND d.updated_at > ${dedupWindow}
+            WHERE d.id != automation_tasks.id
+              AND d.status IN ('pending','leased') AND d.updated_at > ${dedupWindow}
               AND d.payload->>'artistHandle' = automation_tasks.payload->>'artistHandle'
           ))
       ORDER BY run_at ASC LIMIT ${limit}
@@ -1305,7 +1485,7 @@ app.post('/api/automation/report', async (c) => {
     if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
     const now = Date.now();
     try {
-      const sql = neon(connStr);
+      const sql = neonSql(connStr);
       await sql`UPDATE automation_tasks SET status = ${status}, lease_until = NULL, leased_by = NULL, error_reason = ${status === 'failed' ? (reason || 'unknown') : null}, updated_at = ${now}
                 WHERE id = ${commandId} AND leased_by = ${botId} AND status IN ('leased','running')`;
     } catch (e: any) {
@@ -1341,7 +1521,7 @@ app.post('/api/bot/observe', async (c) => {
     const commandId = String(body.commandId || body.command_id || '');
     if (!botId || !mode) return c.json({ error: 'botId and mode required' }, 400);
     const ts = Date.now();
-    const sql = neon(connStr);
+    const sql = neonSql(connStr);
     // Ensure table exists
     await sql`CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)`.catch(() => {});
     // Write observation
@@ -1357,16 +1537,17 @@ app.post('/api/bot/observe', async (c) => {
       try {
         // Add columns if not exist (safe, no-op if already there)
         await sql`ALTER TABLE artists ADD COLUMN IF NOT EXISTS "following" BIGINT DEFAULT 0`.catch(() => {});
-        await sql`ALTER TABLE artists ADD COLUMN IF NOT EXISTS posts_count BIGINT DEFAULT 0`.catch(() => {});
+        await sql`ALTER TABLE artists ADD COLUMN IF NOT EXISTS post_count BIGINT DEFAULT 0`.catch(() => {});
         await sql`ALTER TABLE artists ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT ''`.catch(() => {});
         await sql`ALTER TABLE artists ADD COLUMN IF NOT EXISTS category TEXT DEFAULT ''`.catch(() => {});
         // Update fields
         if (pf.followers != null) await neonQuery(connStr, `UPDATE artists SET followers = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.followers), artistHandle]).catch(() => {});
         if (pf.following != null) await neonQuery(connStr, `UPDATE artists SET "following" = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.following), artistHandle]).catch(() => {});
-        if (pf.postCount != null) await neonQuery(connStr, `UPDATE artists SET posts_count = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.postCount), artistHandle]).catch(() => {});
+        if (pf.postCount != null) await neonQuery(connStr, `UPDATE artists SET post_count = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.postCount), artistHandle]).catch(() => {});
         if (pf.bio) await neonQuery(connStr, `UPDATE artists SET bio = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.bio).slice(0, 500), artistHandle]).catch(() => {});
         if (pf.email) await neonQuery(connStr, `UPDATE artists SET email = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.email), artistHandle]).catch(() => {});
         if (pf.externalUrl) await neonQuery(connStr, `UPDATE artists SET website = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.externalUrl), artistHandle]).catch(() => {});
+        if (pf.category) await neonQuery(connStr, `UPDATE artists SET category = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.category), artistHandle]).catch(() => {});
       } catch {}
     }
     return c.json({ ok: true });
@@ -1410,10 +1591,6 @@ app.get('/api/bot/noise-sites', async (c) => {
 
 // ===== Bot 配置管理（供前端 BotConfigSection 使用） =====
 app.get('/api/automation/bot-config', async (c) => {
-  const auth = c.req.header('Authorization');
-  if (!auth?.startsWith('Bearer ') && !c.req.query('token')) {
-    return c.json({ error: 'unauthorized' }, 401);
-  }
   try {
     await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_accounts (
       account_id TEXT PRIMARY KEY, ig_handle TEXT, stage TEXT DEFAULT 'new',
@@ -1553,7 +1730,7 @@ app.all('/api/automation/observations', async (c) => {
     try {
       const connStr = c.env.NEON_DATABASE_URL;
       if (!connStr) return c.json({ ok: false, error: 'NEON not configured', items: [] }, 500);
-      const sql = neon(connStr);
+      const sql = neonSql(connStr);
       await sql`CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)`;
       const obsRes = await sql`SELECT id, bot_id, COALESCE(artist_handle, '') as artist_handle, mode, COALESCE(summary_json, '{}') as summary_json, COALESCE(profile_facts_json, '{}') as profile_facts_json, created_at FROM bot_observations ORDER BY created_at DESC LIMIT ${limit}`;
       const rows = obsRes?.rows || (Array.isArray(obsRes) ? obsRes : []);
@@ -1593,7 +1770,7 @@ app.all('/api/automation/observations', async (c) => {
 // 删除旧的 sync 端点（已合并到 POST /observations）
 // app.post('/api/automation/observations/sync', ...) 已移除
 
-// ===== 数据看板：查询 Neon artists 表（JS 去重，不与 SQL 打架） =====
+// ===== 数据看板：查询 Neon artists 表（SQL 层去重分页） =====
 app.get('/api/automation/artists', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
@@ -1603,43 +1780,36 @@ app.get('/api/automation/artists', async (c) => {
     const page = Math.max(1, parseInt(c.req.query('page') || '1'));
     const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '50')));
     const offset = (page - 1) * limit;
-    const fetchLimit = Math.min(200, limit * 4);
 
-    const sql = neon(connStr);
-    let dataRes, countRes;
-    if (state && search) {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, "following", posts_count, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} AND (LOWER(shop_name) LIKE LOWER(${'%'+search+'%'}) OR LOWER(ig_handle) LIKE LOWER(${'%'+search+'%'}) OR LOWER(city) LIKE LOWER(${'%'+search+'%'})) ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
-      countRes = await sql`SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} AND (LOWER(shop_name) LIKE LOWER(${'%'+search+'%'}) OR LOWER(ig_handle) LIKE LOWER(${'%'+search+'%'}) OR LOWER(city) LIKE LOWER(${'%'+search+'%'}))) sub`;
-    } else if (state) {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, "following", posts_count, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state} ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
-      countRes = await sql`SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND import_region = ${state}) sub`;
-    } else if (search) {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, "following", posts_count, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND (LOWER(shop_name) LIKE LOWER(${'%'+search+'%'}) OR LOWER(ig_handle) LIKE LOWER(${'%'+search+'%'}) OR LOWER(city) LIKE LOWER(${'%'+search+'%'})) ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
-      countRes = await sql`SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' AND (LOWER(shop_name) LIKE LOWER(${'%'+search+'%'}) OR LOWER(ig_handle) LIKE LOWER(${'%'+search+'%'}) OR LOWER(city) LIKE LOWER(${'%'+search+'%'}))) sub`;
-    } else {
-      dataRes = await sql`SELECT id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, "following", posts_count, bio FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '' ORDER BY shop_name ASC LIMIT ${fetchLimit} OFFSET ${offset}`;
-      countRes = await sql`SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ig_handle IS NOT NULL AND ig_handle != '') sub`;
+    // Build filter WHERE clause (shared between count + data queries)
+    const wheres: string[] = [`ig_handle IS NOT NULL AND ig_handle != ''`];
+    if (state) wheres.push(`import_region = '${state.replace(/'/g, "''")}'`);
+    if (search) {
+      const s = search.replace(/'/g, "''");
+      wheres.push(`(LOWER(shop_name) LIKE LOWER('%${s}%') OR LOWER(ig_handle) LIKE LOWER('%${s}%') OR LOWER(city) LIKE LOWER('%${s}%'))`);
     }
-    const rawRows = dataRes?.rows || (Array.isArray(dataRes) ? dataRes : []);
+    const whereClause = wheres.join(' AND ');
 
-    // JS 去重
-    const seen = new Set<string>();
-    const deduped: any[] = [];
-    for (const r of rawRows) {
-      const key = String(r.ig_handle || '').toLowerCase();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      deduped.push(r);
-    }
+    // Count: unique ig_handle only
+    const countRows = await neonQuery(connStr, `SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ${whereClause}) sub`);
+    const total = Number(countRows?.[0]?.cnt || 0);
 
-    const total = Number(countRes?.[0]?.cnt || countRes?.rows?.[0]?.cnt || 0);
-    const items = deduped.slice(0, limit);
+    // Data: dedup via GROUP BY, then paginate on deduped rows
+    const cols = `id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, "following", post_count, category`;
+    const dataRows = await neonQuery(connStr,
+      `SELECT ${cols} FROM artists WHERE id IN (
+        SELECT MIN(id) FROM artists WHERE ${whereClause} GROUP BY ig_handle
+        ORDER BY MIN(shop_name) ASC LIMIT ${limit} OFFSET ${offset}
+      ) ORDER BY shop_name ASC`
+    );
+    const items = dataRows || [];
 
-    // 任务状态
+    // 任务状态 — 从 D1 和 Neon 合并
     let taskStatusMap: Record<string, string> = {};
     try {
       const handles = items.map((r: any) => r.ig_handle).filter(Boolean);
       if (handles.length > 0) {
+        // D1 (旧数据)
         const tasks = await c.env.DB.prepare(
           `SELECT DISTINCT payload->>'artistHandle' as handle, status FROM automation_tasks
            WHERE payload->>'artistHandle' IN (${handles.map(() => '?').join(',')})
@@ -1648,13 +1818,31 @@ app.get('/api/automation/artists', async (c) => {
         for (const t of (tasks.results || []) as any) {
           if (t.handle && !taskStatusMap[t.handle]) taskStatusMap[t.handle] = t.status;
         }
+        // Neon (新数据，覆盖 D1 中过时的 pending 状态)
+        try {
+          const connStr = c.env.NEON_DATABASE_URL;
+          if (connStr) {
+            const sql = neonSql(connStr);
+            const handleList = handles.map(h => `'${h.replace(/'/g, "''")}'`).join(',');
+            const neoRows = await neonQuery(connStr,
+              `SELECT DISTINCT payload->>'artistHandle' as handle, status FROM automation_tasks
+               WHERE payload->>'artistHandle' IN (${handleList})
+               AND status IN ('pending','leased','done','failed')`
+            );
+            for (const r of (neoRows || [])) {
+              if (r.handle) taskStatusMap[r.handle] = r.status;
+            }
+          }
+        } catch {}
       }
     } catch {}
 
     return c.json({
       ok: true,
       items: items.map((r: any) => ({ ...r, taskStatus: taskStatusMap[r.ig_handle] || null })),
-      total, page, limit, pages: Math.ceil(total / limit),
+      total, page, limit,
+      pages: Math.max(1, Math.ceil(total / limit)),
+      hasMore: items.length >= limit,
     });
   } catch (e: any) {
     return c.json({ ok: false, error: e.message }, 500);
@@ -1671,21 +1859,26 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
     const ts = Date.now();
     const dedupWindow = ts - 7 * 24 * 60 * 60 * 1000;
 
-    const sql = neon(connStr);
+    const sql = neonSql(connStr);
     // 确保表存在
     await sql`CREATE TABLE IF NOT EXISTS automation_tasks (id TEXT PRIMARY KEY, payload TEXT, status TEXT, run_at BIGINT, lease_until BIGINT, leased_by TEXT, attempts INT DEFAULT 0, max_attempts INT DEFAULT 3, error_reason TEXT, created_at BIGINT, updated_at BIGINT)`.catch(() => {});
 
     // 批量查询所有 artist（1次）
     const ids = artistIds.filter((i: any) => String(i).trim().length > 0);
     if (!ids.length) return c.json({ ok: false, error: 'no valid ids' }, 400);
-    const artistRows = await sql`SELECT id, shop_name, ig_handle, city, state FROM artists WHERE id = ANY(${ids})`;
-    const artists = artistRows?.rows || (Array.isArray(artistRows) ? artistRows : []);
+    const idList = ids.map((i: any) => `'${String(i).replace(/'/g, "''")}'`).join(',');
+    const artistRows = await neonQuery(connStr, `SELECT id, shop_name, ig_handle, city, state FROM artists WHERE id IN (${idList})`);
+    const artists = artistRows || [];
     if (!artists.length) return c.json({ ok: false, error: 'no artists found' }, 404);
 
-    // 批量查已有任务（只跳过的确还在 pending/leased 的，done 的允许重新创建）
+    // 批量查已有任务（7 天内任何状态都跳过，含 done）
     const handles = artists.map((a: any) => a.ig_handle || a.shop_name).filter(Boolean);
-    const existingRows = handles.length ? await sql`SELECT payload->>'artistHandle' as h FROM automation_tasks WHERE payload->>'artistHandle' = ANY(${handles}) AND status IN ('pending','leased') AND updated_at > ${dedupWindow}` : null;
-    const existingSet = new Set(((existingRows?.rows || []) as any[]).map((r: any) => r.h || '').filter(Boolean));
+    let existingRows: any[] = [];
+    if (handles.length) {
+      const handleList = handles.map((h: string) => `'${h.replace(/'/g, "''")}'`).join(',');
+      existingRows = await neonQuery(connStr, `SELECT payload->>'artistHandle' as h FROM automation_tasks WHERE payload->>'artistHandle' IN (${handleList}) AND updated_at > ${dedupWindow}`);
+    }
+    const existingSet = new Set((existingRows || []).map((r: any) => r.h || '').filter(Boolean));
 
     let created = 0, skipped = 0;
     const taskIds: string[] = [], payloads: string[] = [], runAts: number[] = [];
@@ -1764,7 +1957,7 @@ app.post('/api/automation/tasks/inject', async (c) => {
     if (!artistHandles?.length) return c.json({ error: 'artistHandles required' }, 400);
     const ts = Date.now();
     const dedupWindow = ts - 7 * 24 * 60 * 60 * 1000;
-    const sql = neon(connStr);
+    const sql = neonSql(connStr);
     let created = 0, skipped = 0;
 
     for (const handle of artistHandles) {
@@ -1786,6 +1979,25 @@ app.post('/api/automation/tasks/inject', async (c) => {
   }
 });
 
+// ===== Scheduler 日配额查询（ig-scheduler-lite 调用） =====
+app.get('/api/tasks/count', async (c) => {
+  const tokenParam = c.req.query('token');
+  if (tokenParam !== 'vps-bot-secret-2024') return c.json({ error: 'unauthorized' }, 401);
+  const botId = c.req.query('botId') || '';
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
+  try {
+    const sql = neonSql(connStr);
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const rows = await sql`SELECT COUNT(*) as cnt FROM automation_tasks WHERE created_at >= ${startOfDay}`;
+    const todayCount = Number(rows?.[0]?.cnt || 0);
+    return c.json({ ok: true, todayCount });
+  } catch (e: any) {
+    return c.json({ ok: true, todayCount: 0 });
+  }
+});
+
 // ===== Scheduler 批量创建任务（ig-scheduler-lite 调用） =====
 app.post('/api/tasks/create', async (c) => {
   // 支持 ?token= 认证（scheduler 用 query param）
@@ -1796,7 +2008,7 @@ app.post('/api/tasks/create', async (c) => {
   try {
     const { tasks } = await c.req.json();
     if (!Array.isArray(tasks) || !tasks.length) return c.json({ error: 'tasks array required' }, 400);
-    const sql = neon(connStr);
+    const sql = neonSql(connStr);
     const ts = Date.now();
     const dedupWindow = ts - 7 * 24 * 60 * 60 * 1000; // 7-day dedup (match poll)
     let created = 0, skipped = 0;
@@ -1846,7 +2058,7 @@ app.get('/api/automation/task-list', async (c) => {
     const status = String(c.req.query('status') || '').trim();
     const connStr = c.env.NEON_DATABASE_URL;
     if (!connStr) return c.json({ ok: false, error: 'NEON not configured', tasks: [] }, 500);
-    const sql = neon(connStr);
+    const sql = neonSql(connStr);
     let rows;
     if (status) {
       rows = await sql`SELECT id, status, leased_by, payload, error_reason, created_at, updated_at FROM automation_tasks WHERE status = ${status} ORDER BY created_at DESC LIMIT ${limit}`;
@@ -1871,7 +2083,7 @@ app.post('/api/automation/tasks/clear-duplicate-pending', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
   try {
-    const sql = neon(connStr);
+    const sql = neonSql(connStr);
     const dedupWindow = Date.now() - 7 * 24 * 60 * 60 * 1000;
     // 删除 pending 任务，其 handle 已有 done/leased 任务在 dedup 窗口内
     const result = await sql`
@@ -1890,8 +2102,6 @@ app.post('/api/automation/tasks/clear-duplicate-pending', async (c) => {
   }
 });
 
-export default app
-
 // ===== 清空所有 pending 任务 =====
 app.post('/api/automation/tasks/clear-all-pending', async (c) => {
   const tokenParam = c.req.query('token');
@@ -1901,7 +2111,7 @@ app.post('/api/automation/tasks/clear-all-pending', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
   try {
-    const sql = neon(connStr);
+    const sql = neonSql(connStr);
     const delPending = (await sql`DELETE FROM automation_tasks WHERE status = 'pending' RETURNING id`).length || 0;
     const delLeased = (await sql`DELETE FROM automation_tasks WHERE status = 'leased' RETURNING id`).length || 0;
     return c.json({ ok: true, deleted: delPending + delLeased, pending: delPending, leased: delLeased });
@@ -1911,11 +2121,19 @@ app.post('/api/automation/tasks/clear-all-pending', async (c) => {
 });
 
 // ===== Poll 调试端点 =====
+app.post('/api/voice/log', async (c) => {
+  try { const { transcript, parsed_sku, parsed_qty, matched_product, success } = await c.req.json();
+    await c.env.DB.prepare('INSERT INTO voice_logs (transcript,parsed_sku,parsed_qty,matched_product,success,created_at) VALUES (?,?,?,?,?,?)')
+      .bind(transcript||'', parsed_sku||'', parsed_qty||0, matched_product||'', success?1:0, Date.now()).run();
+    return c.json({ ok: true }); }
+  catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
+});
+
 app.get('/api/automation/poll-debug', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
   try {
-    const sql = neon(connStr);
+    const sql = neonSql(connStr);
     const now = Date.now();
     const dedupWindow = now - 7 * 24 * 60 * 60 * 1000;
 
@@ -1944,7 +2162,8 @@ app.get('/api/automation/poll-debug', async (c) => {
           AND (payload->>'artistHandle' IS NULL
             OR NOT EXISTS (
               SELECT 1 FROM automation_tasks d
-              WHERE d.status IN ('pending','leased') AND d.updated_at > ${dedupWindow}
+              WHERE d.id != automation_tasks.id
+                AND d.status IN ('pending','leased') AND d.updated_at > ${dedupWindow}
                 AND d.payload->>'artistHandle' = automation_tasks.payload->>'artistHandle'
             ))
         ORDER BY run_at ASC LIMIT ${limit}
@@ -1992,3 +2211,194 @@ app.get('/api/automation/poll-debug', async (c) => {
     return c.json({ error: e.message, stack: e.stack?.slice(0, 500) }, 500);
   }
 });
+
+// ============ AMAZON INTEL ROUTES ============
+
+// Ensure Amazon tables exist in D1
+async function ensureAmazonTables(db: D1Database) {
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS amazon_products (
+    asin TEXT PRIMARY KEY, title TEXT NOT NULL, price TEXT, currency TEXT DEFAULT 'USD',
+    rating REAL DEFAULT 0, review_count INTEGER DEFAULT 0, image_url TEXT,
+    product_url TEXT, domain TEXT DEFAULT 'www.amazon.com', search_keyword TEXT,
+    category TEXT, scraped_at INTEGER, created_at INTEGER
+  )`).run(); } catch {}
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS amazon_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, asin TEXT NOT NULL, product_title TEXT,
+    domain TEXT DEFAULT 'www.amazon.com', reviewer_name TEXT, reviewer_url TEXT,
+    rating INTEGER, title TEXT, review_text TEXT, review_date TEXT,
+    verified INTEGER DEFAULT 0, helpful_count INTEGER DEFAULT 0,
+    images TEXT, review_url TEXT, scraped_at INTEGER, created_at INTEGER
+  )`).run(); } catch {}
+  try { await db.prepare(`CREATE INDEX IF NOT EXISTS idx_amz_r_asin ON amazon_reviews(asin)`).run(); } catch {}
+  try { await db.prepare(`CREATE INDEX IF NOT EXISTS idx_amz_r_domain ON amazon_reviews(domain)`).run(); } catch {}
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS amazon_tasks (
+    id TEXT PRIMARY KEY, type TEXT NOT NULL, user_id TEXT DEFAULT 'system',
+    params TEXT, status TEXT DEFAULT 'pending', progress TEXT,
+    result_summary TEXT, error_message TEXT, created_at INTEGER,
+    updated_at INTEGER, completed_at INTEGER
+  )`).run(); } catch {}
+  try { await db.prepare(`CREATE INDEX IF NOT EXISTS idx_amz_t_status ON amazon_tasks(status)`).run(); } catch {}
+}
+
+// POST /api/amazon/search - create product search task
+app.post('/api/amazon/search', async (c) => {
+  const user = c.get('user');
+  const { keyword, domain } = await c.req.json();
+  if (!keyword) return c.json({ error: 'keyword required' }, 400);
+  await ensureAmazonTables(c.env.DB);
+  const now = Date.now();
+  const taskId = 'amz-search-' + now + '-' + Math.random().toString(36).slice(2, 6);
+  await c.env.DB.prepare('INSERT INTO amazon_tasks (id, type, user_id, params, status, created_at, updated_at) VALUES (?, ?, ?, ?, "pending", ?, ?)')
+    .bind(taskId, 'search', (user?.uid || 'system'), JSON.stringify({ keyword, domain: domain || 'www.amazon.com' }), now, now).run();
+  return c.json({ ok: true, taskId, message: 'Search task created. VPS will process shortly.' });
+});
+
+// POST /api/amazon/scrape - create review scrape task
+app.post('/api/amazon/scrape', async (c) => {
+  const user = c.get('user');
+  const { asins, domains, minStars, maxStars, maxPages } = await c.req.json();
+  if (!asins?.length) return c.json({ error: 'asins array required' }, 400);
+  await ensureAmazonTables(c.env.DB);
+  const now = Date.now();
+  const results: any[] = [];
+  for (const asin of asins) {
+    const taskId = 'amz-scrape-' + now + '-' + Math.random().toString(36).slice(2, 6);
+    const asinCode = typeof asin === 'object' ? asin.asin : asin;
+    const productName = typeof asin === 'object' ? asin.name : asin;
+    await c.env.DB.prepare('INSERT INTO amazon_tasks (id, type, user_id, params, status, created_at, updated_at) VALUES (?, "scrape", ?, ?, "pending", ?, ?)')
+      .bind(taskId, (user?.uid || 'system'),
+        JSON.stringify({ asin: asinCode, productName, domains: domains || ['www.amazon.com'], minStars: minStars ?? 1, maxStars: maxStars ?? 5, maxPages: maxPages ?? 3 }),
+        now, now).run();
+    results.push({ asin: asinCode, taskId });
+  }
+  return c.json({ ok: true, count: asins.length, tasks: results, message: asins.length + ' scrape tasks created.' });
+});
+
+// GET /api/amazon/products - query searched products
+app.get('/api/amazon/products', async (c) => {
+  try {
+    await ensureAmazonTables(c.env.DB);
+    const keyword = c.req.query('keyword') || '';
+    const page = Math.max(1, parseInt(c.req.query('page') || '1'));
+    const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '20')));
+    const offset = (page - 1) * limit;
+    let sql = 'SELECT * FROM amazon_products WHERE 1=1';
+    const binds: any[] = [];
+    if (keyword) { sql += ' AND search_keyword = ?'; binds.push(keyword); }
+    sql += ' ORDER BY review_count DESC LIMIT ? OFFSET ?';
+    binds.push(limit, offset);
+    const rows = await c.env.DB.prepare(sql).bind(...binds).all();
+    const total = await c.env.DB.prepare('SELECT COUNT(*) as c FROM amazon_products' + (keyword ? ' WHERE search_keyword = ?' : ''))
+      .bind(...(keyword ? [keyword] : [])).first();
+    return c.json({ ok: true, items: rows.results || [], total: (total as any)?.c || 0, page, limit });
+  } catch (e: any) { return c.json({ ok: false, error: e.message, items: [] }, 500); }
+});
+
+// GET /api/amazon/reviews - query scraped reviews
+app.get('/api/amazon/reviews', async (c) => {
+  try {
+    await ensureAmazonTables(c.env.DB);
+    const asin = c.req.query('asin') || '';
+    const domain = c.req.query('domain') || '';
+    const minRating = parseInt(c.req.query('minRating') || '0');
+    const maxRating = parseInt(c.req.query('maxRating') || '5');
+    const search = c.req.query('search') || '';
+    const page = Math.max(1, parseInt(c.req.query('page') || '1'));
+    const limit = Math.min(200, Math.max(1, parseInt(c.req.query('limit') || '50')));
+    const offset = (page - 1) * limit;
+    let sql = 'SELECT * FROM amazon_reviews WHERE 1=1';
+    const wheres: string[] = [];
+    const binds: any[] = [];
+    if (asin) { wheres.push('asin = ?'); binds.push(asin); }
+    if (domain) { wheres.push('domain = ?'); binds.push(domain); }
+    if (minRating > 0) { wheres.push('rating >= ?'); binds.push(minRating); }
+    if (maxRating < 5) { wheres.push('rating <= ?'); binds.push(maxRating); }
+    if (search) { wheres.push('(review_text LIKE ? OR title LIKE ?)'); binds.push('%' + search + '%', '%' + search + '%'); }
+    const wc = wheres.length ? ' AND ' + wheres.join(' AND ') : '';
+    const rows = await c.env.DB.prepare(sql + wc + ' ORDER BY scraped_at DESC LIMIT ? OFFSET ?').bind(...binds, limit, offset).all();
+    const total = await c.env.DB.prepare('SELECT COUNT(*) as c FROM amazon_reviews WHERE 1=1' + wc).bind(...binds).first();
+    const items = (rows.results || []).map((r: any) => ({ ...r, images: r.images ? JSON.parse(r.images) : [] }));
+    return c.json({ ok: true, items, total: (total as any)?.c || 0, page, limit });
+  } catch (e: any) { return c.json({ ok: false, error: e.message, items: [] }, 500); }
+});
+
+// GET /api/amazon/tasks - query task status
+app.get('/api/amazon/tasks', async (c) => {
+  try {
+    await ensureAmazonTables(c.env.DB);
+    const type = c.req.query('type') || '';
+    const status = c.req.query('status') || '';
+    const page = Math.max(1, parseInt(c.req.query('page') || '1'));
+    const limit = Math.min(50, Math.max(1, parseInt(c.req.query('limit') || '20')));
+    const offset = (page - 1) * limit;
+    let sql = 'SELECT * FROM amazon_tasks WHERE 1=1';
+    const binds: any[] = [];
+    if (type) { sql += ' AND type = ?'; binds.push(type); }
+    if (status) { sql += ' AND status = ?'; binds.push(status); }
+    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    binds.push(limit, offset);
+    const rows = await c.env.DB.prepare(sql).bind(...binds).all();
+    return c.json({ ok: true, items: rows.results || [], page, limit });
+  } catch (e: any) { return c.json({ ok: false, error: e.message, items: [] }, 500); }
+});
+
+// DELETE /api/amazon/reviews - clear reviews for an ASIN
+app.delete('/api/amazon/reviews', async (c) => {
+  const asin = c.req.query('asin') || '';
+  if (!asin) return c.json({ error: 'asin required' }, 400);
+  try {
+    await ensureAmazonTables(c.env.DB);
+    await c.env.DB.prepare('DELETE FROM amazon_reviews WHERE asin = ?').bind(asin).run();
+    return c.json({ ok: true, message: 'Deleted reviews for ' + asin });
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
+});
+
+// --- VPS POLL / REPORT ENDPOINTS ---
+
+// GET /api/amazon/pending - VPS polls pending tasks
+app.get('/api/amazon/pending', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  try {
+    await ensureAmazonTables(c.env.DB);
+    const type = c.req.query('type') || '';
+    const limit = Math.min(5, Math.max(1, Number(c.req.query('limit')) || 3));
+    let sql = 'SELECT * FROM amazon_tasks WHERE status = "pending"';
+    const binds: any[] = [];
+    if (type) { sql += ' AND type = ?'; binds.push(type); }
+    sql += ' ORDER BY created_at ASC LIMIT ?';
+    binds.push(limit);
+    const rows = await c.env.DB.prepare(sql).bind(...binds).all();
+    const items = (rows.results || []).map((r: any) => ({ ...r, params: r.params ? JSON.parse(r.params) : {} }));
+    return c.json({ ok: true, items });
+  } catch (e: any) { return c.json({ ok: false, error: e.message, items: [] }, 500); }
+});
+
+// POST /api/amazon/report - VPS reports task results
+app.post('/api/amazon/report', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  const { taskId, status, products, reviews, error } = await c.req.json();
+  if (!taskId || !status) return c.json({ error: 'taskId and status required' }, 400);
+  const now = Date.now();
+  try {
+    await ensureAmazonTables(c.env.DB);
+    await c.env.DB.prepare(
+      'UPDATE amazon_tasks SET status = ?, updated_at = ?, completed_at = ?, error_message = ?, result_summary = ? WHERE id = ?'
+    ).bind(status, now, status === 'completed' ? now : null, error || null,
+      JSON.stringify({ productsCount: products?.length || 0, reviewsCount: reviews?.length || 0 }), taskId).run();
+    if (products?.length) {
+      const stmt = c.env.DB.prepare('INSERT OR REPLACE INTO amazon_products (asin, title, price, currency, rating, review_count, image_url, product_url, domain, search_keyword, scraped_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      for (const p of products) {
+        await stmt.bind(p.asin, p.title, p.price || '', p.currency || 'USD', p.rating || 0, p.reviewCount || 0, p.imageUrl || '', p.productUrl || '', p.domain || 'www.amazon.com', p.searchKeyword || '', now, now).run();
+      }
+    }
+    if (reviews?.length) {
+      const stmt = c.env.DB.prepare('INSERT INTO amazon_reviews (asin, product_title, domain, reviewer_name, reviewer_url, rating, title, review_text, review_date, verified, helpful_count, images, review_url, scraped_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      for (const r of reviews) {
+        await stmt.bind(r.asin, r.productTitle || '', r.domain || 'www.amazon.com', r.reviewerName || '', r.reviewerUrl || '', r.rating, r.title || '', r.text || '', r.date || '', r.verified ? 1 : 0, r.helpfulCount || 0, r.images?.length ? JSON.stringify(r.images) : '[]', r.reviewUrl || '', now, now).run();
+      }
+    }
+    return c.json({ ok: true, taskId, status, stored: { products: products?.length || 0, reviews: reviews?.length || 0 } });
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
+});
+
+export default app

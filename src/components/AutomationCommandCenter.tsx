@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Shield, 
   Zap, 
@@ -44,8 +44,42 @@ const StatusBadge = ({ status }: { status: InstagramAccount['status'] }) => {
 };
 
 export default function AutomationCommandCenter() {
-  const { accounts, assignments, artists, assignTaskToAccount, startAutomationSequence } = useCRM();
+  const { accounts: crmAccounts, assignments, artists, assignTaskToAccount, startAutomationSequence } = useCRM();
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [d1Accounts, setD1Accounts] = useState<any[]>([]);
+
+  // 从 D1 加载 bot 账号（Firestore 配额超限时兜底）
+  const [d1Error, setD1Error] = useState('');
+  useEffect(() => {
+    fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/automation/bot-config')
+      .then(async r => {
+        if (!r.ok) { setD1Error(`HTTP ${r.status}: ${await r.text().catch(()=>'')}`); return; }
+        const d = await r.json();
+        if (d.ok) setD1Accounts(d.items || []);
+        else setD1Error(d.error || 'unknown');
+      })
+      .catch((e: any) => { setD1Error(e?.message || String(e)); });
+  }, []);
+
+  // 合并 CRM 账号和 D1 账号（去重）
+  const accounts = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const a of crmAccounts) map.set(a.id || a.account_id, a);
+    for (const a of d1Accounts) {
+      const key = a.account_id || a.id;
+      if (!map.has(key)) map.set(key, {
+        id: key,
+        username: a.ig_handle || key,
+        status: 'active',
+        behaviorProfile: 'balanced',
+        dailyActionCount: 0,
+        proxyIp: a.proxy || '',
+        igHandle: a.ig_handle,
+        createdAt: a.created_at,
+      });
+    }
+    return [...map.values()];
+  }, [crmAccounts, d1Accounts]);
 
   const activeAssignments = useMemo(() => {
     return assignments.filter(a => a.status === 'pending');
@@ -99,11 +133,36 @@ export default function AutomationCommandCenter() {
                 <p className="text-xs text-zinc-500 font-medium">AdsPower / Playwright Orchestration</p>
               </div>
             </div>
-            <button className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold rounded-xl transition-colors">
+            <button onClick={async () => {
+              const name = prompt('Enter bot ID (e.g. bot_ig_01):');
+              if (!name) return;
+              const handle = prompt('Enter IG handle (optional):');
+              try {
+                const r = await fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/automation/bot-account', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ account_id: name, ig_handle: handle || '' }),
+                });
+                const d = await r.json();
+                if (d.ok) { alert('✅ 已添加'); window.location.reload(); }
+                else alert('❌ ' + (d.error || 'failed'));
+              } catch(e: any) { alert('❌ ' + e.message); }
+            }} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold rounded-xl transition-colors">
               Add Account
             </button>
           </div>
 
+          {/* D1 账号调试信息 */}
+          {d1Error && (
+            <div className="col-span-2 text-[10px] text-red-500 p-2 bg-zinc-900 rounded-xl">
+              D1 Error: {d1Error}
+            </div>
+          )}
+          {d1Accounts.length > 0 && (
+            <div className="col-span-2 text-[10px] text-zinc-400 p-2 bg-zinc-900 rounded-xl">
+              ✅ D1: {d1Accounts.map((a: any) => a.account_id || a.ig_handle).join(', ')}
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {accounts.map(account => (
               <div 
@@ -145,11 +204,37 @@ export default function AutomationCommandCenter() {
                 <div className="mt-4 pt-4 border-t border-zinc-800/50 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Globe className="w-3 h-3 text-zinc-600" />
-                    <span className="text-[10px] font-medium text-zinc-500">Proxy: {account.proxyIp || 'None'}</span>
+                    <span className="text-[10px] font-medium text-zinc-500">
+                      {account.createdAt ? `📅 ${new Date(account.createdAt).toLocaleDateString()}` : 'Proxy: ' + (account.proxyIp || 'None')}
+                    </span>
                   </div>
-                  <button className="text-zinc-500 hover:text-white transition-colors">
-                    <Settings className="w-4 h-4" />
-                  </button>
+                  <div className="flex gap-2">
+                    <button onClick={async (e) => {
+                      e.stopPropagation();
+                      const newHandle = prompt('修改 IG 账号:', account.igHandle || account.username);
+                      if (!newHandle) return;
+                      try {
+                        const r = await fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/automation/bot-account?botId=' + account.id + '&igHandle=' + encodeURIComponent(newHandle));
+                        const d = await r.json();
+                        if (d.ok) window.location.reload();
+                        else alert('❌ ' + (d.error || 'failed'));
+                      } catch(e: any) { alert('❌ ' + e.message); }
+                    }} className="text-zinc-500 hover:text-blue-400 transition-colors" title="编辑">
+                      ✏️
+                    </button>
+                    <button onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!confirm(`删除账号 ${account.id}？`)) return;
+                      try {
+                        const r = await fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/automation/bot-account/delete?botId=' + account.id);
+                        const d = await r.json();
+                        if (d.ok) window.location.reload();
+                        else alert('❌ ' + (d.error || 'failed'));
+                      } catch(e: any) { alert('❌ ' + e.message); }
+                    }} className="text-zinc-500 hover:text-red-400 transition-colors" title="删除">
+                      🗑️
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

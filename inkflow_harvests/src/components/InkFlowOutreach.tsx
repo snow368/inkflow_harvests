@@ -26,6 +26,9 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
+import SeoKeywordTool from './SeoKeywordTool';
+import OgChecker from './OgChecker';
+import ContentGapAnalyzer from './ContentGapAnalyzer';
 
 const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30',
@@ -113,6 +116,8 @@ function DMTemplateSection({ target }: { target: any }) {
 }
 
 export default function InkFlowOutreach() {
+  const [section, setSection] = useState<'outreach' | 'seo'>('outreach');
+  const [seoTool, setSeoTool] = useState<'keyword-cluster' | 'og-checker' | 'content-gap'>('keyword-cluster');
   const [activeView, setActiveView] = useState<'stats' | 'candidates' | 'targets' | 'target-detail'>('stats');
   const [candidates, setCandidates] = useState<any[]>([]);
   const [targets, setTargets] = useState<any[]>([]);
@@ -250,10 +255,56 @@ export default function InkFlowOutreach() {
     return lastLog?.message || null;
   };
 
+  // ---- SECTION TABS ----
+  const sectionTabs = (
+    <div className="flex gap-1 bg-slate-800/50 rounded-lg p-1 border border-slate-700/50 w-fit mb-4">
+      <button onClick={() => setSection('outreach')}
+        className={cn('px-4 py-1.5 text-xs font-semibold rounded-md transition-colors',
+          section === 'outreach' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}>
+        📡 获客
+      </button>
+      <button onClick={() => setSection('seo')}
+        className={cn('px-4 py-1.5 text-xs font-semibold rounded-md transition-colors',
+          section === 'seo' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}>
+        🔍 SEO 工具
+      </button>
+    </div>
+  );
+
+  if (section === 'seo') {
+    return (
+      <div className="space-y-4">
+        {sectionTabs}
+        {/* SEO Tool sub-tabs */}
+        <div className="flex gap-1 bg-slate-800/30 rounded-lg p-0.5 border border-slate-700/30 w-fit flex-wrap">
+          <button onClick={() => setSeoTool('keyword-cluster')}
+            className={cn('px-3 py-1 text-[10px] font-semibold rounded-md transition-colors',
+              seoTool === 'keyword-cluster' ? 'bg-rose-600/30 text-rose-400' : 'text-slate-500 hover:text-slate-300')}>
+            🏷️ Topical Authority
+          </button>
+          <button onClick={() => setSeoTool('og-checker')}
+            className={cn('px-3 py-1 text-[10px] font-semibold rounded-md transition-colors',
+              seoTool === 'og-checker' ? 'bg-rose-600/30 text-rose-400' : 'text-slate-500 hover:text-slate-300')}>
+            🔍 OG Checker
+          </button>
+          <button onClick={() => setSeoTool('content-gap')}
+            className={cn('px-3 py-1 text-[10px] font-semibold rounded-md transition-colors',
+              seoTool === 'content-gap' ? 'bg-rose-600/30 text-rose-400' : 'text-slate-500 hover:text-slate-300')}>
+            📊 Content Gap
+          </button>
+        </div>
+        {seoTool === 'keyword-cluster' ? <SeoKeywordTool /> :
+         seoTool === 'og-checker' ? <OgChecker /> :
+         <ContentGapAnalyzer />}
+      </div>
+    );
+  }
+
   // ---- STATS VIEW ----
   if (activeView === 'stats') {
     return (
       <div className="space-y-6">
+        {sectionTabs}
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-slate-100">InkFlow 获客系统</h2>
@@ -389,6 +440,7 @@ export default function InkFlowOutreach() {
   if (activeView === 'candidates') {
     return (
       <div className="space-y-4">
+        {sectionTabs}
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-bold text-slate-100">共享候选池 ({candidatesTotal} 条)</h2>
           <div className="flex gap-2">
@@ -445,6 +497,7 @@ export default function InkFlowOutreach() {
 
     return (
       <div className="space-y-4">
+        {sectionTabs}
         <div className="flex items-center gap-2">
           <button onClick={() => { setActiveView('targets'); setSelectedTarget(null); }} className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">← 返回列表</button>
           <h2 className="text-xl font-bold text-slate-100">@{selectedTarget.ig_handle}</h2>
@@ -579,6 +632,7 @@ export default function InkFlowOutreach() {
   // ---- TARGETS LIST ----
   return (
     <div className="space-y-4">
+      {sectionTabs}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-slate-100">InkFlow 目标 ({targetsTotal} 个)</h2>
         <div className="flex gap-2">

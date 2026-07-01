@@ -6,6 +6,17 @@ import { Loader2, Search, Database, CheckSquare, Square, Filter, ChevronLeft, Ch
 
 const API = 'https://harvests-cloud-api.inkflowapp.workers.dev/api/automation';
 
+const CATEGORIES = ['tattoo', 'piercing', 'nail', 'barber', 'esthetician', 'massage', 'salon'] as const;
+const CATEGORY_BADGES: Record<string, { label: string; emoji: string; color: string }> = {
+  tattoo:     { label: '纹身',     emoji: '🎨', color: 'text-rose-400 bg-rose-500/10' },
+  piercing:   { label: '穿环',     emoji: '🔱', color: 'text-purple-400 bg-purple-500/10' },
+  nail:       { label: '美甲',     emoji: '💅', color: 'text-pink-400 bg-pink-500/10' },
+  barber:     { label: '理发',     emoji: '💈', color: 'text-blue-400 bg-blue-500/10' },
+  esthetician:{ label: '美容',     emoji: '✨', color: 'text-amber-400 bg-amber-500/10' },
+  massage:    { label: '按摩',     emoji: '💆', color: 'text-teal-400 bg-teal-500/10' },
+  salon:      { label: '沙龙',     emoji: '💇', color: 'text-violet-400 bg-violet-500/10' },
+};
+
 export default function DataDashboard() {
   const filtersRef = useRef({ state: '', search: '', page: 1 });
   const [artists, setArtists] = useState<any[]>([]);
@@ -13,6 +24,7 @@ export default function DataDashboard() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const [total, setTotal] = useState(0);
   const [stateFilter, setStateFilter] = useState('');
   const [search, setSearch] = useState('');
@@ -20,6 +32,7 @@ export default function DataDashboard() {
   const [creating, setCreating] = useState(false);
   const [states, setStates] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [error, setError] = useState('');
   const [debug, setDebug] = useState('');
   const [taskCounts, setTaskCounts] = useState<any>({});
@@ -55,6 +68,7 @@ export default function DataDashboard() {
       if (data.ok) {
         setArtists(data.items || []);
         setPages(data.pages || 1);
+        setHasMore(data.hasMore ?? true);
         setTotal(data.total || 0);
         setError('');
         setDebug(`OK: ${data.total} items, page ${data.page}/${data.pages}`);
@@ -77,7 +91,12 @@ export default function DataDashboard() {
   const handleSearch = (val: string) => {
     setSearch(val);
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => { setPage(1); loadArtists(); }, 500);
+    // 只在真的有搜索内容时才延迟刷新，翻页不被搜索定时器打断
+    if (val.trim()) {
+      searchTimer.current = setTimeout(() => { setPage(1); loadArtists(); }, 500);
+    } else {
+      setPage(1); loadArtists();
+    }
   };
 
   const toggleSelect = (id: number) => {
@@ -195,22 +214,20 @@ export default function DataDashboard() {
         </div>
         <select
           value={stateFilter}
-          onChange={async e => {
-            const v = e.target.value;
-            setStateFilter(v);
-            setPage(1);
-            try {
-              const r = await fetch(`${API}/artists?page=1&limit=50${v ? '&state='+v : ''}`);
-              const d = await r.json();
-              if (d.ok) { setArtists(d.items||[]); setTotal(d.total||0); setPages(d.pages||1); }
-              else setError(d.error);
-            } catch(ex:any) { setError(ex.message); }
-          }}
+          onChange={e => { setStateFilter(e.target.value); setPage(1); }}
           className="px-3 py-2 text-xs bg-zinc-900 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-emerald-500/50"
         >
           <option value="">全部州</option>
           {states.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+        {/* 类目筛选 */}
+        <div className="flex items-center gap-1">
+          <button onClick={() => setCategoryFilter('')} className={cn("px-2 py-1.5 text-[10px] font-bold rounded-lg transition-all whitespace-nowrap", !categoryFilter ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-zinc-900 text-zinc-500 border border-zinc-800 hover:text-white")}>全部</button>
+          {CATEGORIES.map(c => {
+            const b = CATEGORY_BADGES[c];
+            return <button key={c} onClick={() => setCategoryFilter(c)} className={cn("px-2 py-1.5 text-[10px] font-bold rounded-lg transition-all whitespace-nowrap", categoryFilter === c ? "bg-white/10 text-white border border-white/20" : `${b.color} border border-transparent hover:opacity-80`)}>{b.emoji} {b.label}</button>;
+          })}
+        </div>
         <button
           onClick={createTasks}
           disabled={!selected.size || creating}
@@ -246,20 +263,22 @@ export default function DataDashboard() {
               </th>
               <th className="text-left py-2 pr-2 font-medium">店铺</th>
               <th className="text-left py-2 pr-2 font-medium">IG</th>
+              <th className="text-left py-2 pr-2 font-medium">类目</th>
               <th className="text-right py-2 pr-2 font-medium">粉丝</th>
+              <th className="text-right py-2 pr-2 font-medium">关注</th>
+              <th className="text-right py-2 pr-2 font-medium">帖子</th>
               <th className="text-right py-2 pr-2 font-medium">评价数</th>
               <th className="text-left py-2 pr-2 font-medium">城市</th>
               <th className="text-left py-2 pr-2 font-medium">地区</th>
-              <th className="text-left py-2 pr-2 font-medium">来源</th>
               <th className="text-left py-2 pr-2 font-medium">状态</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} className="py-12 text-center text-zinc-600"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></td></tr>
+              <tr><td colSpan={11} className="py-12 text-center text-zinc-600"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></td></tr>
             ) : artists.length === 0 ? (
-              <tr><td colSpan={9} className="py-12 text-center text-zinc-600">暂无数据</td></tr>
-            ) : artists.map(a => (
+              <tr><td colSpan={11} className="py-12 text-center text-zinc-600">暂无数据</td></tr>
+            ) : artists.filter(a => !categoryFilter || a.category === categoryFilter).map(a => (
               <tr key={a.id} className="border-b border-zinc-800/20 hover:bg-zinc-900/30 transition-colors">
                 <td className="py-2 pr-2">
                   <button onClick={() => toggleSelect(a.id)} className="hover:text-white transition-colors">
@@ -268,7 +287,10 @@ export default function DataDashboard() {
                 </td>
                 <td className="py-2 pr-2 text-zinc-300 font-medium max-w-[200px] truncate">{a.shop_name || '—'}</td>
                 <td className="py-2 pr-2 text-zinc-400">{a.ig_handle || '—'}</td>
+                <td className="py-2 pr-2">{a.category && CATEGORY_BADGES[a.category] ? <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${CATEGORY_BADGES[a.category].color}`}>{CATEGORY_BADGES[a.category].emoji} {CATEGORY_BADGES[a.category].label}</span> : <span className="text-zinc-600">—</span>}</td>
                 <td className="py-2 pr-2 text-right text-zinc-300 font-medium">{a.followers != null ? Number(a.followers).toLocaleString() : '—'}</td>
+                <td className="py-2 pr-2 text-right text-zinc-400">{a.following != null ? Number(a.following).toLocaleString() : '—'}</td>
+                <td className="py-2 pr-2 text-right text-zinc-400">{a.post_count != null ? Number(a.post_count).toLocaleString() : '—'}</td>
                 <td className="py-2 pr-2 text-right text-zinc-400">{a.reviews != null ? Number(a.reviews).toLocaleString() : '—'}</td>
                 <td className="py-2 pr-2 text-zinc-400">{a.city || '—'}</td>
                 <td className="py-2 pr-2"><span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-800 text-zinc-400">{a.import_region || '—'}</span></td>
@@ -297,7 +319,7 @@ export default function DataDashboard() {
               className="px-3 py-1.5 text-xs rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
             ><ChevronLeft className="w-3 h-3" /></button>
             <button
-              disabled={page >= pages}
+              disabled={!hasMore}
               onClick={() => setPage(p => Math.min(pages, p + 1))}
               className="px-3 py-1.5 text-xs rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
             ><ChevronRight className="w-3 h-3" /></button>

@@ -648,13 +648,13 @@ export default function BotWorkerManager() {
   const fetchData = useCallback(async () => {
     try {
       const [fnRes, wRes, learnRes, dmStatsRes, neonRes] = await Promise.all([
-        fetch('/api/bot/functions'),
-        fetch('/api/bot/workers'),
-        apiFetch('/api/bot/learn/status'),
-        fetch('/api/marketing/tasks/stats'),
-        fetch('/api/automation/neon-tasks?limit=50').catch(() => null),
+        fetch('/api/bot/functions').catch(() => null),
+        fetch('/api/bot/workers').catch(() => null),
+        apiFetch('/api/bot/learn/status').catch(() => null),
+        fetch('/api/marketing/tasks/stats').catch(() => null),
+        fetch('https://harvests-api.inkflowapp.workers.dev/api/automation/neon-tasks?limit=100').catch(() => null),
       ]);
-      if (fnRes.ok) {
+      if (fnRes?.ok) {
         const fnData = await fnRes.json();
         setFunctions(fnData.functions || []);
         setConfigs(prev => {
@@ -670,7 +670,7 @@ export default function BotWorkerManager() {
           return next;
         });
       }
-      if (wRes.ok) {
+      if (wRes?.ok) {
         const wData = await wRes.json();
         setWorkers(wData.workers || []);
       }
@@ -755,6 +755,18 @@ export default function BotWorkerManager() {
       toast.error(`停止 ${botId} 失败`, { description: e.message });
     } finally {
       setStopping(prev => { const n = new Set(prev); n.delete(botId); return n; });
+    }
+  };
+
+  // 置顶任务（立即执行）
+  const prioritizeTask = async (taskId: string | number) => {
+    try {
+      const res = await fetch('https://harvests-api.inkflowapp.workers.dev/api/automation/tasks/prioritize/' + taskId, { method: 'POST' });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      toast.success('✅ 任务 #' + taskId + ' 已置顶');
+      fetchData();
+    } catch (e: any) {
+      toast.error('置顶失败', { description: e.message });
     }
   };
 
@@ -1036,6 +1048,7 @@ export default function BotWorkerManager() {
                   <th className="text-left py-2 pr-2 font-medium">Target</th>
                   <th className="text-left py-2 pr-2 font-medium">Status</th>
                   <th className="text-left py-2 pr-2 font-medium">Since</th>
+                  <th className="text-right py-2 font-medium">Act</th>
                 </tr>
               </thead>
               <tbody>
@@ -1053,7 +1066,16 @@ export default function BotWorkerManager() {
                       }`}>{t.status}</span>
                     </td>
                     <td className="py-1.5 text-zinc-500">
-                      {t.createdAt ? Math.floor((Date.now() - t.createdAt) / 60000) + 'm ago' : '-'}
+                      {t.createdAt ? Math.floor((Date.now() - t.createdAt) / 60000) + 'm' : '-'}
+                    </td>
+                    <td className="py-1.5 text-right">
+                      {t.status === 'pending' && (
+                        <button
+                          onClick={() => prioritizeTask(t.id)}
+                          className="px-2 py-0.5 text-[10px] font-semibold rounded bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors"
+                          title="立即执行此任务"
+                        >▶ 执行</button>
+                      )}
                     </td>
                   </tr>
                 ))}

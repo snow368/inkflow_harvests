@@ -5,20 +5,21 @@ import { toast } from 'sonner';
 import { processArtistBatchAI, setMockMode as setGeminiMockMode } from '../lib/gemini';
 import { db, auth, signInWithGoogle, logoutUser } from '../lib/firebase';
 import localforage from 'localforage';
-import { 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
-  doc, 
-  setDoc, 
-  writeBatch, 
+import {
+  collection,
+  query,
+  where,
+  onSnapshot,
+  doc,
+  setDoc,
+  writeBatch,
   getDocs,
   deleteDoc,
   Timestamp
 } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { safeJsonParse } from '../lib/gemini';
+import { handleRedirectResult } from '../lib/firebase';
 
 // Helper to sanitize data for Firestore
 const sanitizeForFirestore = (obj: any): any => {
@@ -162,16 +163,23 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [pagination, setPagination] = useState({ total: 0, page: 1, totalPages: 1 });
   const [globalStats, setGlobalStats] = useState<any[]>([]);
 
-  // Auth Listener
+  // Auth Listener — 5s timeout for Chinese networks where Google is blocked
   useEffect(() => {
+    /* Handle iOS redirect sign-in result (popup is blocked on iOS) */
+    handleRedirectResult().then(() => {
+      /* After redirect completes, onAuthStateChanged will fire with the user */
+    });
+
+    const t = setTimeout(() => {
+      if (!user) { console.log('[auth] timeout — proceeding without auth'); setIsAuthReady(true); }
+    }, 5000);
     const unsubscribe = onAuthStateChanged(auth, (u) => {
+      clearTimeout(t);
       setUser(u);
       setIsAuthReady(true);
-      if (u) {
-        console.log("User authenticated:", u.email);
-      }
+      if (u) { console.log("User authenticated:", u.email); }
     });
-    return () => unsubscribe();
+    return () => { clearTimeout(t); unsubscribe(); };
   }, []);
 
   const login = async () => {

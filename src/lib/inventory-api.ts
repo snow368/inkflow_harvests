@@ -1,5 +1,5 @@
-// Inventory API service — calls backend server.ts endpoints
-const API = '/api';
+// Inventory API service — calls cloud-api Worker
+const API = 'https://harvests-cloud-api.inkflowapp.workers.dev/api';
 
 export interface Product {
   sku: string;
@@ -25,23 +25,47 @@ export interface Product {
 export interface InboundRecord {
   id: number;
   product_sku: string;
+  product_name?: string;
   quantity: number;
+  large_case_qty: number;
+  small_box_qty: number;
   po_number: string;
   inbound_date: string;
+  sterilized: number;
   note: string;
   created_at: number;
+}
+
+export interface InboundSummary {
+  inbound_date: string;
+  product_sku: string;
+  product_name: string;
+  sterilized: number;
+  total_qty: number;
+  total_cases: number;
+  total_boxes: number;
+  batch_count: number;
 }
 
 export interface OutboundRecord {
   id: number;
   product_sku: string;
+  product_name?: string;
   quantity: number;
-  channel: 'B2C' | 'B2B';
+  channel: 'B2C' | 'B2B' | 'sample_b2b' | 'sample_b2c';
   customer_name: string;
   shopify_order_id: string;
   outbound_date: string;
   note: string;
   created_at: number;
+}
+
+export interface OutboundSummary {
+  customer_name: string;
+  channel: string;
+  total_orders: number;
+  total_qty: number;
+  last_date: string;
 }
 
 export interface Customer {
@@ -114,7 +138,7 @@ export async function deleteProduct(sku: string) {
   return res.json();
 }
 
-export async function recordInbound(data: { product_sku: string; quantity: number; po_number: string; inbound_date: string; note: string }) {
+export async function recordInbound(data: { product_sku: string; quantity?: number; large_case_qty?: number; small_box_qty?: number; po_number: string; inbound_date: string; note: string; sterilized?: boolean }) {
   const res = await fetch(`${API}/inventory/inbound`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -134,6 +158,18 @@ export async function recordOutbound(data: { product_sku: string; quantity: numb
 
 export async function getInbounds(): Promise<InboundRecord[]> {
   const res = await fetch(`${API}/inventory/inbounds`);
+  const data = await res.json();
+  return data.items || [];
+}
+
+export async function getOutboundSummary(): Promise<OutboundSummary[]> {
+  const res = await fetch(`${API}/inventory/outbound-summary`);
+  const data = await res.json();
+  return data.items || [];
+}
+
+export async function getInboundSummary(): Promise<InboundSummary[]> {
+  const res = await fetch(`${API}/inventory/inbound-summary`);
   const data = await res.json();
   return data.items || [];
 }
@@ -167,6 +203,12 @@ export async function importDistributor(artistId: string) {
     body: JSON.stringify({ artistId }),
   });
   return res.json();
+}
+
+export async function getCustomerOrders(name: string): Promise<{items: any[]; details: any[]}> {
+  const res = await fetch(`${API}/inventory/customer-orders/${encodeURIComponent(name)}`);
+  const data = await res.json();
+  return { items: data.items || [], details: data.details || [] };
 }
 
 export async function getCustomers(): Promise<Customer[]> {
@@ -203,4 +245,44 @@ export async function getPOItems(id: number) {
   const res = await fetch(`${API}/inventory/po/${id}/items`);
   const data = await res.json();
   return data.items || [];
+}
+
+// ── Stocktake ──
+export interface StocktakeRecord {
+  id: number;
+  location: string;
+  sku: string;
+  product_name?: string;
+  expected_qty: number;
+  actual_qty: number;
+  difference: number;
+  notes: string;
+  created_at: number;
+}
+
+export async function saveStocktake(data: { location: string; sku: string; expected_qty: number; actual_qty: number; notes?: string; clear?: boolean }) {
+  const res = await fetch(`${API}/inventory/stocktake`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+  });
+  return res.json();
+}
+export async function saveStocktakeBatch(records: { location: string; sku: string; expected_qty: number; actual_qty: number; notes?: string }[]) {
+  const res = await fetch(`${API}/inventory/stocktake/batch`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ records }),
+  });
+  return res.json();
+}
+export async function getStocktakes(location?: string): Promise<StocktakeRecord[]> {
+  const url = location ? `${API}/inventory/stocktake?location=${encodeURIComponent(location)}` : `${API}/inventory/stocktake`;
+  const res = await fetch(url);
+  const data = await res.json();
+  return data.items || [];
+}
+export async function clearStocktakes() {
+  const res = await fetch(`${API}/inventory/stocktake`, { method: 'DELETE' });
+  return res.json();
+}
+export async function deleteStocktake(id: number) {
+  const res = await fetch(`${API}/inventory/stocktake/${id}`, { method: 'DELETE' });
+  return res.json();
 }

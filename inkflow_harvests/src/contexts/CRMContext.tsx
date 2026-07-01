@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import { CRMArtist, CRMStage, AIPersona, CRMInteraction, CRMOrder, InstagramAccount, TaskAssignment, AccountBehavior } from '../types/crm';
 import { toast } from 'sonner';
 import { processArtistBatchAI, setMockMode as setGeminiMockMode } from '../lib/gemini';
-import { db, auth, signInWithGoogle, logoutUser } from '../lib/firebase';
+import { db, auth, signInWithGoogle, logoutUser, handleRedirectResult } from '../lib/firebase';
 import localforage from 'localforage';
 import { 
   collection, 
@@ -168,6 +168,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Auth Listener
   useEffect(() => {
+    /* Handle redirect sign-in result (iOS fallback when popup is blocked) */
+    handleRedirectResult();
+
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setIsAuthReady(true);

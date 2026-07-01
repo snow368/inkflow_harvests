@@ -112,8 +112,8 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
   };
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-64 bg-[#111] border-r border-zinc-800/50 z-50 flex flex-col">
-      <div className="flex-1 p-6 overflow-y-auto scrollbar-hide min-h-0">
+    <aside className="fixed left-0 top-0 bottom-0 w-64 bg-[#111] border-r border-zinc-800/50 z-50" style={{ display: 'flex', flexDirection: 'column' }}>
+      <div className="p-6" style={{ flex: 1, overflowY: 'auto' }}>
         <div className="flex items-center gap-3 mb-10">
           <div className="w-10 h-10 bg-rose-600 rounded-xl flex items-center justify-center shadow-lg shadow-rose-600/20">
             <ShoppingBag className="w-6 h-6 text-white" />
@@ -155,7 +155,7 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
         </div>
       </div>
 
-      <div className="flex-shrink-0 p-6 border-t border-zinc-800/50 bg-[#111]">
+      <div style={{ flexShrink: 0 }} className="p-6 border-t border-zinc-800/50 bg-[#111]">
         <div className="flex items-center gap-3 p-3 bg-zinc-900/50 rounded-xl border border-zinc-800/50 mb-3">
           <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-400 overflow-hidden">
             {user?.photoURL ? (
@@ -170,9 +170,11 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
           </div>
         </div>
         
-        <button 
+        <button
           onClick={logout}
+          onTouchEnd={(e) => { e.preventDefault(); logout(); }}
           className="w-full flex items-center gap-3 px-4 py-2 text-zinc-500 hover:text-rose-500 hover:bg-rose-500/5 rounded-lg transition-all group"
+          style={{ touchAction: 'manipulation' }}
         >
           <LogOut className="w-4 h-4 group-hover:rotate-12 transition-transform" />
           <span className="text-xs font-bold uppercase tracking-wider">Sign Out</span>

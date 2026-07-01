@@ -761,8 +761,8 @@ function BotConfigSection() {
       ) : bots.length === 0 ? (
         <div className="py-10 text-center">
           <p className="text-xs text-zinc-600 font-medium mb-3">暂无 Bot 配置</p>
-          <a href={`${API_BASE}/admin`} target="_blank" rel="noopener" className="inline-flex items-center gap-1 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-[10px] font-bold rounded-xl transition-colors">
-            <Settings className="w-3 h-3" /> 打开配置面板
+          <a href={`http://163.245.212.169:3000/admin`} target="_blank" rel="noopener" className="inline-flex items-center gap-1 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-[10px] font-bold rounded-xl transition-colors">
+            <Settings className="w-3 h-3" /> 打开配置面板(VPS)
           </a>
         </div>
       ) : (
