@@ -47,6 +47,7 @@ import PublishCalendar from './components/PublishCalendar';
 import BotWorkerManager from './components/BotWorkerManager';
 import BacklinkManager from './components/BacklinkManager';
 import InkFlowOutreach from './components/InkFlowOutreach';
+import EmailAuthForm from './components/EmailAuthForm';
 
 type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'automation' | 'settings' | 'inventory' | 'orders' | 'tasks' | 'publish' | 'botworkers' | 'backlinks' | 'inkflow-outreach';
 
@@ -164,6 +165,7 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
 
 const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (tab: Tab) => void }) => {
   const { user, login, isAuthReady } = useCRM();
+  const [useEmail, setUseEmail] = useState(false);
 
   if (!isAuthReady) {
     return (
@@ -183,13 +185,41 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
         <p className="text-zinc-500 text-center max-w-md mb-12 font-medium leading-relaxed">
           Welcome back. Please sign in to access your CRM data and cloud-synced outreach pipeline.
         </p>
-        <button
-          onClick={login}
-          className="flex items-center gap-4 px-10 py-5 bg-white text-black rounded-[2rem] font-black text-lg hover:bg-zinc-200 transition-all shadow-xl shadow-white/5"
-        >
-          <LogIn className="w-6 h-6" />
-          Sign in with Google
-        </button>
+
+        {useEmail ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', maxWidth: 360 }}>
+            <EmailAuthForm
+              onBackToGoogle={() => setUseEmail(false)}
+              onSuccess={() => {}}
+            />
+          </div>
+        ) : (
+          <>
+            <button
+              onClick={login}
+              className="flex items-center gap-4 px-10 py-5 bg-white text-black rounded-[2rem] font-black text-lg hover:bg-zinc-200 transition-all shadow-xl shadow-white/5"
+            >
+              <LogIn className="w-6 h-6" />
+              Sign in with Google
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 20, width: '100%', maxWidth: 360 }}>
+              <div style={{ flex: 1, height: 1, background: '#27272a' }} />
+              <span style={{ fontSize: 11, color: '#52525b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em' }}>or</span>
+              <div style={{ flex: 1, height: 1, background: '#27272a' }} />
+            </div>
+
+            <button
+              onClick={() => setUseEmail(true)}
+              className="flex items-center gap-4 px-10 py-5 bg-transparent text-zinc-400 rounded-[2rem] font-black text-lg border border-zinc-800 hover:border-zinc-600 hover:text-zinc-200 transition-all mt-4"
+              style={{ border: '1px solid #27272a' }}
+            >
+              <LogIn className="w-6 h-6" />
+              Sign in with Email
+            </button>
+          </>
+        )}
+
         <p className="mt-8 text-zinc-600 text-[10px] uppercase tracking-[0.2em] font-black">
           Secure Cloud Persistence Enabled
         </p>

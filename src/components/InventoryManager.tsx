@@ -25,6 +25,7 @@ export default function InventoryManager() {
   const [scanCustomer, setScanCustomer] = useState('');
   const [scanNote, setScanNote] = useState('');
   const [scanBarcode, setScanBarcode] = useState('');
+  const [scanPackSource, setScanPackSource] = useState<'20pack' | '10pack'>('20pack');
   const [scanSterilized, setScanSterilized] = useState(true);
   const [scanLargeCase, setScanLargeCase] = useState(0);
   const [scanSmallBox, setScanSmallBox] = useState(0);
@@ -221,6 +222,16 @@ export default function InventoryManager() {
                 </datalist>
               </div>
             )}
+            {scanMode === 'outbound' && scanCustomer && scanCustomer !== 'B2C' && (
+              <div>
+                <label style={{ fontSize: 11, color: '#71717a', display: 'block', marginBottom: 2 }}>包装来源</label>
+                <select value={scanPackSource} onChange={e => setScanPackSource(e.target.value as '20pack' | '10pack')}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #27272a', background: '#0c0c0e', color: '#fafafa', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}>
+                  <option value="20pack">20只装（拆箱）</option>
+                  <option value="10pack">10只装（专用包装）</option>
+                </select>
+              </div>
+            )}
             {scanMode === 'inbound' && (
               <div>
                 <label style={{ fontSize: 11, color: '#71717a', display: 'block', marginBottom: 2 }}>消毒</label>
@@ -269,11 +280,12 @@ export default function InventoryManager() {
               await api.recordOutbound({
                 product_sku: scanSku, quantity: scanQty, channel: scanCustomer && scanCustomer !== 'B2C' ? 'B2B' : 'B2C',
                 customer_name: scanCustomer === 'B2C' ? '' : scanCustomer, shopify_order_id: '', outbound_date: now, note: scanNote,
+                pack_source: scanCustomer && scanCustomer !== 'B2C' ? scanPackSource : '20pack',
               });
             }
             setMessage(`${scanMode === 'inbound' ? 'Inbound' : 'Outbound'} recorded: ${scanSku} x${scanQty}`);
             setTimeout(() => setMessage(''), 3000);
-            setScanBarcode(''); setScanSku(''); setScanQty(1); setScanCustomer(''); setScanNote(''); setScanSterilized(true); setScanLargeCase(0); setScanSmallBox(0);
+            setScanBarcode(''); setScanSku(''); setScanQty(1); setScanCustomer(''); setScanNote(''); setScanPackSource('20pack'); setScanSterilized(true); setScanLargeCase(0); setScanSmallBox(0);
             loadAll();
           }} disabled={!scanSku || !scanQty}
             style={{ width: '100%', padding: 12, borderRadius: 8, border: 'none', background: !scanSku || !scanQty ? '#27272a' : scanMode === 'inbound' ? '#22c55e' : '#f59e0b', color: 'white', fontSize: 14, fontWeight: 700, cursor: !scanSku || !scanQty ? 'not-allowed' : 'pointer' }}>
@@ -313,8 +325,50 @@ function StockTab({ products, onRefresh }: { products: Product[]; onRefresh: () 
   const [outSku, setOutSku] = useState('');
   const [outQty, setOutQty] = useState(1);
   const [outSaving, setOutSaving] = useState(false);
+  const [editingField, setEditingField] = useState<{ sku: string; field: string } | null>(null);
+  const [editValue, setEditValue] = useState('');
 
+  const startEdit = (sku: string, field: string, currentVal: any) => {
+    setEditingField({ sku, field });
+    setEditValue(String(currentVal ?? 0));
+  };
+  const saveEdit = async () => {
+    if (!editingField) return;
+    const { sku, field } = editingField;
+    const numVal = field === 'name' ? editValue : Number(editValue);
+    await api.updateProductField(sku, field, numVal);
+    setEditingField(null);
+    onRefresh();
+  };
+  const cancelEdit = () => { setEditingField(null); };
+  const isEditing = (sku: string, field: string) => editingField?.sku === sku && editingField?.field === field;
 
+  const InlineEditCell = ({ sku, field, value, style: cellStyle }: { sku: string; field: string; value: any; style?: React.CSSProperties }) => {
+    if (isEditing(sku, field)) {
+      return (
+        <td style={{ padding: '8px 12px' }}>
+          <input
+            type={field === 'name' ? 'text' : 'number'}
+            value={editValue}
+            onChange={e => setEditValue(e.target.value)}
+            onBlur={saveEdit}
+            onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
+            autoFocus
+            style={{ width: field === 'name' ? 140 : 70, padding: '4px 6px', borderRadius: 4, border: '1px solid #06b6d4', background: '#0c0c0e', color: '#fafafa', fontSize: 12, fontWeight: 700, outline: 'none' }}
+          />
+        </td>
+      );
+    }
+    return (
+      <td
+        style={{ padding: '8px 12px', cursor: 'pointer', ...cellStyle }}
+        onDoubleClick={() => startEdit(sku, field, value)}
+        title="双击编辑"
+      >
+        {value ?? 0}
+      </td>
+    );
+  };
 
   const filtered = search ? products.filter(p =>
     p.sku.toLowerCase().includes(search.toLowerCase()) || p.name.toLowerCase().includes(search.toLowerCase())
@@ -454,9 +508,9 @@ function StockTab({ products, onRefresh }: { products: Product[]; onRefresh: () 
                     }).map(p => (
                       <tr key={p.sku} style={{ borderBottom: '1px solid #18181b' }}>
                         <td style={{ padding: '8px 12px' }}><code style={{ color: '#60a5fa' }}>{p.sku}</code></td>
-                        <td style={{ padding: '8px 12px', fontWeight: 500 }}>{p.name}</td>
+                        <InlineEditCell sku={p.sku} field="name" value={p.name} style={{ fontWeight: 500 }} />
                         <td style={{ padding: '8px 12px', color: sc }}>{p.category}</td>
-                        <td style={{ padding: '8px 12px', fontWeight: 700 }}>{p.current_stock ?? 0}</td>
+                        <InlineEditCell sku={p.sku} field="current_stock" value={p.current_stock ?? 0} style={{ fontWeight: 700 }} />
                         <td style={{ padding: '8px 12px', color: '#22c55e' }}>{p.total_inbound ?? 0}</td>
                         <td style={{ padding: '8px 12px', color: '#f59e0b' }}>{p.total_outbound ?? 0}</td>
                         <td style={{ padding: '8px 12px' }}>
@@ -690,14 +744,15 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh }: { o
   const [sku, setSku] = useState(''); const [qty, setQty] = useState(0);
   const [channel, setChannel] = useState<'B2C'|'B2B'|'sample_b2b'|'sample_b2c'>('B2C');
   const [customerName, setCustomerName] = useState(''); const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); const [note, setNote] = useState('');
+  const [packSource, setPackSource] = useState<'20pack' | '10pack'>('20pack');
   const [selectedCustomer, setSelectedCustomer] = useState<string|null>(null);
   const [customerOrders, setCustomerOrders] = useState<any[]>([]);
   const [customerDetails, setCustomerDetails] = useState<any[]>([]);
 
   const record = async () => {
     if (!sku || !qty) return;
-    await api.recordOutbound({ product_sku: sku, quantity: qty, channel, customer_name: customerName, shopify_order_id: '', outbound_date: date, note });
-    setSku(''); setQty(0); setNote('');
+    await api.recordOutbound({ product_sku: sku, quantity: qty, channel, customer_name: customerName, shopify_order_id: '', outbound_date: date, note, pack_source: needsCustomer ? packSource : '20pack' });
+    setSku(''); setQty(0); setNote(''); setPackSource('20pack');
     onRefresh();
   };
 
@@ -766,6 +821,16 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh }: { o
               <input list="cust-list" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="选择或输入客户"
                 style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #27272a', background: '#0c0c0e', color: '#fafafa', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
               <datalist id="cust-list">{customers.map(c => <option key={c.id} value={c.name} />)}</datalist>
+            </div>
+          )}
+          {needsCustomer && (
+            <div>
+              <label style={{ fontSize: 11, color: '#71717a', display: 'block', marginBottom: 2 }}>包装来源</label>
+              <select value={packSource} onChange={e => setPackSource(e.target.value as '20pack' | '10pack')}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #27272a', background: '#0c0c0e', color: '#fafafa', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}>
+                <option value="20pack">20只装（拆箱）</option>
+                <option value="10pack">10只装（专用）</option>
+              </select>
             </div>
           )}
           <div style={{ gridColumn: needsCustomer ? 'span 1' : 'span 3' }}>

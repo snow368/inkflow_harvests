@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import { CRMArtist, CRMStage, AIPersona, CRMInteraction, CRMOrder, InstagramAccount, TaskAssignment, AccountBehavior } from '../types/crm';
 import { toast } from 'sonner';
 import { processArtistBatchAI, setMockMode as setGeminiMockMode } from '../lib/gemini';
-import { db, auth, signInWithGoogle, logoutUser, handleRedirectResult } from '../lib/firebase';
+import { db, auth, signInWithGoogle, logoutUser, handleRedirectResult, getStoredEmailAuth, clearStoredEmailAuth, type EmailAuthUser } from '../lib/firebase';
 import localforage from 'localforage';
 import { 
   collection, 
@@ -88,7 +88,7 @@ interface CRMContextType {
   seedTestData: () => Promise<void>;
   globalWeights: Record<string, number>;
   harvestList: CRMArtist[];
-  user: User | null;
+  user: User | EmailAuthUser | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
   isAuthReady: boolean;
@@ -118,7 +118,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     rawArtistsRef.current = rawArtists;
   }, [rawArtists]);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | EmailAuthUser | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [persona, setPersona] = useState<AIPersona>('professional');
   const [isScanning, setIsScanning] = useState(false);
@@ -166,19 +166,34 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [pagination, setPagination] = useState({ total: 0, page: 1, totalPages: 1 });
   const [globalStats, setGlobalStats] = useState<any[]>([]);
 
-  // Auth Listener
+  // Auth Listener — supports both Firebase (Google) and Email Auth proxy
   useEffect(() => {
-    /* Handle redirect sign-in result (iOS fallback when popup is blocked) */
+    const t = setTimeout(() => {
+      if (!user) { console.log('[auth] timeout — proceeding without auth'); setIsAuthReady(true); }
+    }, 5000);
+
     handleRedirectResult();
 
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
+    // Check for stored email auth (bypasses Firebase SDK for GFW users)
+    const stored = getStoredEmailAuth();
+    if (stored) {
+      setUser(stored);
       setIsAuthReady(true);
+      console.log("Email auth user:", stored.email);
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      clearTimeout(t);
       if (u) {
+        clearStoredEmailAuth();
+        setUser(u);
         console.log("User authenticated:", u.email);
+      } else if (!getStoredEmailAuth()) {
+        setUser(null);
       }
+      setIsAuthReady(true);
     });
-    return () => unsubscribe();
+    return () => { clearTimeout(t); unsubscribe(); };
   }, []);
 
   const login = async () => {
@@ -346,15 +361,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const cloudData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InstagramAccount));
         setAccounts(cloudData);
         
-        if (cloudData.length === 0) {
-          const mockAccounts: InstagramAccount[] = [
-            { id: 'acc_1', username: 'inkflow_bot_1', behaviorProfile: 'observer', status: 'idle', dailyActionCount: 0 },
-            { id: 'acc_2', username: 'inkflow_bot_2', behaviorProfile: 'active', status: 'idle', dailyActionCount: 0 }
-          ];
-          mockAccounts.forEach(acc => {
-            setDoc(doc(db, 'accounts', acc.id), { ...acc, uid: user.uid });
-          });
-        }
+        // 不再自动创建 mock accounts — 用户自己管理
       });
 
       // 6. Sync Assignments from Firestore

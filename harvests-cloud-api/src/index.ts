@@ -1,13 +1,13 @@
-import { Hono } from 'hono'
+﻿import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
-// Neon 数据库查询 — 使用 HTTP 协议（/sql endpoint），避免 WebSocket 在 Worker 中不稳定
-// @neondatabase/serverless 的 neon() 函数基于 WebSocket，在 Cloudflare Worker 中时好时坏
-// 改用 HTTP neonQuery，已验证可用
+// Neon Êý¾Ý¿â²éÑ¯ ¡ª Ê¹ÓÃ HTTP Ð­Òé£¨/sql endpoint£©£¬±ÜÃâ WebSocket ÔÚ Worker ÖÐ²»ÎÈ¶¨
+// @neondatabase/serverless µÄ neon() º¯Êý»ùÓÚ WebSocket£¬ÔÚ Cloudflare Worker ÖÐÊ±ºÃÊ±»µ
+// ¸ÄÓÃ HTTP neonQuery£¬ÒÑÑéÖ¤¿ÉÓÃ
 
 type UserInfo = { uid: string; email?: string }
 
-// Neon HTTP query helper — uses Neon SQL-over-HTTP API (new /sql endpoint)
+// Neon HTTP query helper ¡ª uses Neon SQL-over-HTTP API (new /sql endpoint)
 async function neonQuery(connStr: string, query: string, params?: any[]): Promise<any[]> {
   if (!connStr) throw new Error('NEON_DATABASE_URL not configured');
   const m = connStr.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^/]+)\/([^?]+)/);
@@ -26,7 +26,7 @@ async function neonQuery(connStr: string, query: string, params?: any[]): Promis
   return data.rows || data;
 }
 
-// 兼容 neon() 模板语法的 SQL 标签函数 — 底层走 HTTP
+// ¼æÈÝ neon() Ä£°åÓï·¨µÄ SQL ±êÇ©º¯Êý ¡ª µ×²ã×ß HTTP
 function neonSql(connStr: string) {
   return async (strings: TemplateStringsArray, ...values: any[]): Promise<{rows: any[]}> => {
     let query = strings[0];
@@ -43,7 +43,7 @@ function neonSql(connStr: string) {
   };
 }
 
-// Bot token verification — shared between bot endpoints
+// Bot token verification ¡ª shared between bot endpoints
 const BOT_SECRET = 'vps-bot-secret-2024';
 function checkBotToken(c: any): boolean {
   const auth = c.req.header('Authorization') || '';
@@ -82,11 +82,11 @@ type Variables = {
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 app.use('/*', cors())
 
-// Health check — no DB dependency
+// Health check ¡ª no DB dependency
 app.get('/_health', (c) => c.json({ ok: true, time: Date.now() }))
 app.get('/_ver', (c) => c.json({ ver: 'final-v2', time: Date.now() }))
 
-// ── Firebase JWT verification ──
+// ©¤©¤ Firebase JWT verification ©¤©¤
 const FIREBASE_PROJECT_ID = 'harvests-3b238'
 const JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'
 const JWKS = createRemoteJWKSet(new URL(JWKS_URL))
@@ -101,7 +101,7 @@ async function verifyToken(token: string): Promise<UserInfo | null> {
   } catch { return null }
 }
 
-// ── Auth middleware (protects /api/* except whitelisted paths) ──
+// ©¤©¤ Auth middleware (protects /api/* except whitelisted paths) ©¤©¤
 const PUBLIC_PATHS = new Set([
   '/api/shopify/webhook/orders-create',
   '/api/fulfillment/shopify/callback',
@@ -145,6 +145,7 @@ const PUBLIC_PATHS = new Set([
   '/api/inventory/product',
   '/api/inventory/customer',
   '/api/inventory/customer-orders',
+  '/api/inventory/picked',
   '/api/inventory/distributor-candidates',
   '/api/inventory/import-distributor',
   '/api/inventory/trends',
@@ -153,16 +154,16 @@ const PUBLIC_PATHS = new Set([
 
 app.use('/api/*', async (c, next) => {
   const path = new URL(c.req.url).pathname
-  if (PUBLIC_PATHS.has(path)) return next()
+  if ([...PUBLIC_PATHS].some(p => path === p || path.startsWith(p + '/'))) return next()
   if (path === '/api/shopify/status' || path === '/api/shopify/orders/deduct') return next()
 
   const auth = c.req.header('Authorization')
   if (!auth?.startsWith('Bearer ')) {
-    return c.json({ error: 'Unauthorized — missing token' }, 401)
+    return c.json({ error: 'Unauthorized ¡ª missing token' }, 401)
   }
   const user = await verifyToken(auth.slice(7))
   if (!user) {
-    return c.json({ error: 'Unauthorized — invalid token' }, 401)
+    return c.json({ error: 'Unauthorized ¡ª invalid token' }, 401)
   }
   c.set('user', user)
 
@@ -272,13 +273,13 @@ app.post('/api/inventory/product', async (c) => {
 app.post('/api/inventory/product/:sku/field', async (c) => {
   const sku = c.req.param('sku')
   const { field, value } = await c.req.json()
-  const allowed = ['name','category','vendor','unit','unit_price','reorder_point','reorder_qty','lead_time_days','moq','carton_qty','source','barcode','image_url']
+  const allowed = ['name','category','vendor','unit','unit_price','reorder_point','reorder_qty','lead_time_days','moq','carton_qty','source','barcode','image_url','current_stock','status']
   if (!allowed.includes(field)) return c.json({ error: 'invalid field' }, 400)
   await c.env.DB.prepare(`UPDATE inventory_products SET ${field}=?, updated_at=? WHERE sku=?`).bind(value, Date.now(), sku).run()
   return c.json({ ok: true })
 })
 
-// ── Stocktake API (D1 persistent) ──
+// ©¤©¤ Stocktake API (D1 persistent) ©¤©¤
 app.post('/api/inventory/stocktake', async (c) => {
   try {
     const { location, sku, expected_qty, actual_qty, notes, clear } = await c.req.json();
@@ -348,11 +349,11 @@ app.delete('/api/inventory/product/:sku', async (c) => {
 app.post('/api/inventory/inbound', async (c) => {
   const { product_sku, quantity, large_case_qty, small_box_qty, po_number, inbound_date, note, sterilized } = await c.req.json()
   if (!product_sku || !inbound_date) return c.json({ error: 'product_sku, inbound_date required' }, 400)
-  // 自动算总数量：1大箱=2小箱=100盒，1小箱=50盒
+  // ×Ô¶¯Ëã×ÜÊýÁ¿£º1´óÏä=2Ð¡Ïä=100ºÐ£¬1Ð¡Ïä=50ºÐ
   const lq = Math.max(0, parseInt(large_case_qty) || 0)
   const sq = Math.max(0, parseInt(small_box_qty) || 0)
   const totalQty = lq * 100 + sq * 50 + (parseInt(quantity) || 0)
-  if (totalQty <= 0) return c.json({ error: '总数量必须大于0' }, 400)
+  if (totalQty <= 0) return c.json({ error: '×ÜÊýÁ¿±ØÐë´óÓÚ0' }, 400)
   try { await c.env.DB.prepare(`ALTER TABLE inventory_inbounds ADD COLUMN sterilized INTEGER DEFAULT 0`).run() } catch {}
   try { await c.env.DB.prepare(`ALTER TABLE inventory_inbounds ADD COLUMN large_case_qty INTEGER DEFAULT 0`).run() } catch {}
   try { await c.env.DB.prepare(`ALTER TABLE inventory_inbounds ADD COLUMN small_box_qty INTEGER DEFAULT 0`).run() } catch {}
@@ -364,19 +365,76 @@ app.post('/api/inventory/inbound', async (c) => {
 const VALID_CHANNELS = ['B2C','B2B','sample_b2b','sample_b2c']
 
 app.post('/api/inventory/outbound', async (c) => {
-  const { product_sku, quantity, channel, customer_name, shopify_order_id, outbound_date, note } = await c.req.json()
-  if (!product_sku || !quantity || !channel || !outbound_date) return c.json({ error: 'product_sku, quantity, channel, outbound_date required' }, 400)
-  if (!VALID_CHANNELS.includes(channel)) return c.json({ error: `channel must be one of: ${VALID_CHANNELS.join(', ')}` }, 400)
-  await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-    .bind(product_sku, quantity, channel, customer_name||'', shopify_order_id||'', outbound_date, note||'', Date.now()).run()
-  if ((channel === 'B2B' || channel === 'sample_b2b') && customer_name) {
-    const now = Date.now()
-    try {
-      await c.env.DB.prepare('INSERT INTO inventory_customers (name,updated_at,created_at) VALUES (?,?,?) ON CONFLICT(name) DO UPDATE SET updated_at=?')
-        .bind(customer_name, now, now, now).run()
-    } catch {}
+  try {
+    const { product_sku, quantity, channel, customer_name, shopify_order_id, outbound_date, note, pack_source } = await c.req.json()
+    if (!product_sku || !quantity || !channel || !outbound_date) return c.json({ error: 'product_sku, quantity, channel, outbound_date required' }, 400)
+    if (!VALID_CHANNELS.includes(channel)) return c.json({ error: `channel must be one of: ${VALID_CHANNELS.join(', ')}` }, 400)
+    try { await c.env.DB.prepare(`ALTER TABLE inventory_outbounds ADD COLUMN pack_source TEXT DEFAULT ''`).run() } catch {}
+    await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,pack_source,created_at) VALUES (?,?,?,?,?,?,?,?,?)')
+      .bind(product_sku, quantity, channel, customer_name||'', shopify_order_id||'', outbound_date, note||'', pack_source||'', Date.now()).run()
+    if ((channel === 'B2B' || channel === 'sample_b2b') && customer_name) {
+      const now = Date.now()
+      try { await c.env.DB.prepare('INSERT INTO inventory_customers (name,updated_at,created_at) VALUES (?,?,?) ON CONFLICT(name) DO UPDATE SET updated_at=?').bind(customer_name, now, now, now).run() } catch {}
+    }
+    return c.json({ ok: true })
+  } catch (e: any) {
+    console.error('[outbound] error:', e?.message || e)
+    return c.json({ ok: false, error: e?.message || String(e) }, 500)
   }
-  return c.json({ ok: true })
+})
+
+app.put('/api/inventory/outbound/:id', async (c) => {
+  try {
+    const id = c.req.param('id'); const data = await c.req.json()
+    const sets: string[] = []; const vals: any[] = []
+    for (const [key, val] of Object.entries(data)) {
+      if (['product_sku','quantity','channel','customer_name','shopify_order_id','outbound_date','note','pack_source'].includes(key)) {
+        sets.push(`${key}=?`); vals.push(val)
+      }
+    }
+    if (!sets.length) return c.json({ error: 'no valid fields' }, 400)
+    vals.push(id); await c.env.DB.prepare(`UPDATE inventory_outbounds SET ${sets.join(',')} WHERE id=?`).bind(...vals).run()
+    return c.json({ ok: true })
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
+})
+
+app.delete('/api/inventory/outbound/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    await c.env.DB.prepare('DELETE FROM inventory_outbounds WHERE id=?').bind(id).run()
+    return c.json({ ok: true })
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
+})
+
+app.put('/api/inventory/inbound/:id', async (c) => {
+  try {
+    const id = c.req.param('id'); const data = await c.req.json()
+    const sets: string[] = []; const vals: any[] = []
+    for (const [key, val] of Object.entries(data)) {
+      if (['product_sku','quantity','large_case_qty','small_box_qty','po_number','inbound_date','note','sterilized'].includes(key)) {
+        sets.push(`${key}=?`); vals.push(val)
+      }
+    }
+    if (!sets.length) return c.json({ error: 'no valid fields' }, 400)
+    vals.push(id); await c.env.DB.prepare(`UPDATE inventory_inbounds SET ${sets.join(',')} WHERE id=?`).bind(...vals).run()
+    return c.json({ ok: true })
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
+})
+
+app.delete('/api/inventory/inbound/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    await c.env.DB.prepare('DELETE FROM inventory_inbounds WHERE id=?').bind(id).run()
+    return c.json({ ok: true })
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
+})
+
+app.delete('/api/inventory/outbounds/:customer_name', async (c) => {
+  try {
+    const name = c.req.param('customer_name')
+    await c.env.DB.prepare('DELETE FROM inventory_outbounds WHERE customer_name=?').bind(name).run()
+    return c.json({ ok: true, deleted: true })
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
 })
 
 app.get('/api/inventory/inbounds', async (c) => {
@@ -384,7 +442,7 @@ app.get('/api/inventory/inbounds', async (c) => {
   return c.json({ ok: true, items: rows.results || [] })
 })
 
-// 入库汇总：按日期+型号+消毒 分组统计
+// Èë¿â»ã×Ü£º°´ÈÕÆÚ+ÐÍºÅ+Ïû¶¾ ·Ö×éÍ³¼Æ
 app.get('/api/inventory/inbound-summary', async (c) => {
   const rows = await c.env.DB.prepare(`
     SELECT inbound_date, product_sku, p.name as product_name, sterilized,
@@ -399,7 +457,7 @@ app.get('/api/inventory/inbound-summary', async (c) => {
   return c.json({ ok: true, items: rows.results || [] })
 })
 
-// 单个客户各型号具体盒数
+// µ¥¸ö¿Í»§¸÷ÐÍºÅ¾ßÌåºÐÊý
 app.get('/api/inventory/customer-orders/:name', async (c) => {
   const name = c.req.param('name')
   const rows = await c.env.DB.prepare(`
@@ -412,7 +470,7 @@ app.get('/api/inventory/customer-orders/:name', async (c) => {
     ORDER BY total_qty DESC
   `).bind(name).all()
   const details = await c.env.DB.prepare(`
-    SELECT product_sku, quantity, channel, outbound_date, note
+    SELECT id, product_sku, quantity, channel, outbound_date, note, pack_source, shopify_order_id
     FROM inventory_outbounds
     WHERE customer_name = ?
     ORDER BY outbound_date DESC
@@ -421,13 +479,14 @@ app.get('/api/inventory/customer-orders/:name', async (c) => {
   return c.json({ ok: true, items: rows.results || [], details: details.results || [] })
 })
 
-// 出库汇总：按客户+渠道统计
+// ³ö¿â»ã×Ü£º°´¿Í»§+ÇþµÀÍ³¼Æ
 app.get('/api/inventory/outbound-summary', async (c) => {
   const rows = await c.env.DB.prepare(`
-    SELECT customer_name, channel, COUNT(*) as total_orders, SUM(quantity) as total_qty, MAX(outbound_date) as last_date
-    FROM inventory_outbounds
-    WHERE customer_name != ''
-    GROUP BY customer_name, channel
+    SELECT o.customer_name, o.channel, COUNT(*) as total_orders, SUM(o.quantity) as total_qty, MAX(o.outbound_date) as last_date,
+           COALESCE((SELECT SUM(oi.quantity) FROM order_items oi JOIN orders ord ON oi.order_id = ord.id WHERE ord.customer_name = o.customer_name), 0) as total_order_qty
+    FROM inventory_outbounds o
+    WHERE o.customer_name != ''
+    GROUP BY o.customer_name, o.channel
     ORDER BY total_qty DESC
     LIMIT 500
   `).all()
@@ -487,6 +546,42 @@ app.post('/api/inventory/customers/sync', async (c) => {
     count++
   }
   return c.json({ ok: true, synced: count })
+})
+
+// ©¤©¤ Picked SKUs tracking (database-backed) ©¤©¤
+app.post('/api/inventory/picked', async (c) => {
+  try {
+    const { customer_name, product_sku } = await c.req.json()
+    if (!customer_name || !product_sku) return c.json({ error: 'customer_name and product_sku required' }, 400)
+    try { await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS inventory_picked_skus (customer_name TEXT, product_sku TEXT, picked_at INTEGER, created_at INTEGER, PRIMARY KEY (customer_name, product_sku))`).run() } catch {}
+    await c.env.DB.prepare('INSERT OR IGNORE INTO inventory_picked_skus (customer_name, product_sku, picked_at, created_at) VALUES (?,?,?,?)')
+      .bind(customer_name, product_sku, Date.now(), Date.now()).run()
+    return c.json({ ok: true })
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
+})
+
+app.delete('/api/inventory/picked/:customer_name/:product_sku', async (c) => {
+  try {
+    const cn = c.req.param('customer_name'); const sku = c.req.param('product_sku')
+    await c.env.DB.prepare('DELETE FROM inventory_picked_skus WHERE customer_name=? AND product_sku=?').bind(cn, sku).run()
+    return c.json({ ok: true })
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
+})
+
+app.get('/api/inventory/picked/:customer_name', async (c) => {
+  try {
+    const cn = c.req.param('customer_name')
+    const rows = await c.env.DB.prepare('SELECT product_sku FROM inventory_picked_skus WHERE customer_name=?').bind(cn).all()
+    return c.json({ ok: true, skus: (rows.results || []).map(r => r.product_sku) })
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
+})
+
+app.delete('/api/inventory/picked/reset/:customer_name', async (c) => {
+  try {
+    const cn = c.req.param('customer_name')
+    await c.env.DB.prepare('DELETE FROM inventory_picked_skus WHERE customer_name=?').bind(cn).run()
+    return c.json({ ok: true, reset: true })
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
 })
 
 // ============ PURCHASE ORDERS ============
@@ -615,7 +710,7 @@ app.delete('/api/fulfillment/orders/:id', async (c) => {
 const parseNote = (note: string): any[] => {
   try {
     const gifts: any[] = []
-    const needleRegex = /(\d{3,4})(RL|RS|RG|RT|F|M)\s*[xX*×]?\s*(\d+)?\s*(盒|箱)?/gi
+    const needleRegex = /(\d{3,4})(RL|RS|RG|RT|F|M)\s*[xX*¡Á]?\s*(\d+)?\s*(ºÐ|Ïä)?/gi
     const seen = new Set<string>()
     let match
     while ((match = needleRegex.exec(note)) !== null) {
@@ -633,8 +728,8 @@ const parseNote = (note: string): any[] => {
       seen.add(label)
       gifts.push({ type: 'needle', label, quantity: 1 })
     }
-    const posterMatch = note.match(/(小海报|大海报|海报)[\sxX*×]*(\d+)?/i)
-    if (posterMatch) gifts.push({ type: 'poster', label: '海报', quantity: parseInt(posterMatch[2] || '1', 10) })
+    const posterMatch = note.match(/(Ð¡º£±¨|´óº£±¨|º£±¨)[\sxX*¡Á]*(\d+)?/i)
+    if (posterMatch) gifts.push({ type: 'poster', label: 'º£±¨', quantity: parseInt(posterMatch[2] || '1', 10) })
     return gifts
   } catch { return [] }
 }
@@ -643,7 +738,7 @@ const parseGiftSkus = (note: string): Array<{ sku: string; qty: number; name: st
   return parseNote(note).map(g => ({
     sku: g.type === 'needle' ? g.label : 'POSTER',
     qty: g.quantity,
-    name: g.type === 'needle' ? g.label : '海报'
+    name: g.type === 'needle' ? g.label : 'º£±¨'
   }))
 }
 
@@ -702,8 +797,8 @@ app.post('/api/shopify/orders/deduct', async (c) => {
         if (!product) continue
         const outboundDate = new Date().toISOString().split('T')[0]
         const noteParts = [`Shopify Order #${orderName}`]
-        if (customerNote) noteParts.push(`客户留言: ${customerNote}`)
-        if (item.title) noteParts.push(`商品: ${item.title}`)
+        if (customerNote) noteParts.push(`¿Í»§ÁôÑÔ: ${customerNote}`)
+        if (item.title) noteParts.push(`ÉÌÆ·: ${item.title}`)
         await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
           .bind(sku, qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, noteParts.join(' | '), now).run()
         deductedItems.push({ sku, qty, order: orderName })
@@ -716,8 +811,8 @@ app.post('/api/shopify/orders/deduct', async (c) => {
           if (!gp) continue
           const outboundDate = new Date().toISOString().split('T')[0]
           await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-            .bind(gift.sku, gift.qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | 赠送品: ${gift.name}`, now).run()
-          deductedItems.push({ sku: gift.sku, qty: gift.qty, order: orderName, item: `🎁赠送 ${gift.name}` })
+            .bind(gift.sku, gift.qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | ÔùËÍÆ·: ${gift.name}`, now).run()
+          deductedItems.push({ sku: gift.sku, qty: gift.qty, order: orderName, item: `??ÔùËÍ ${gift.name}` })
         }
       }
       totalOrders++
@@ -803,9 +898,9 @@ app.post('/api/shopify/webhook/orders-create', async (c) => {
     const product = await c.env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first()
     if (!product) continue
     const outboundDate = new Date().toISOString().split('T')[0]
-    const noteParts = [`Shopify Order #${orderName}`, '来源: webhook']
-    if (customerNote) noteParts.push(`客户留言: ${customerNote}`)
-    if (item.title) noteParts.push(`商品: ${item.title}`)
+    const noteParts = [`Shopify Order #${orderName}`, 'À´Ô´: webhook']
+    if (customerNote) noteParts.push(`¿Í»§ÁôÑÔ: ${customerNote}`)
+    if (item.title) noteParts.push(`ÉÌÆ·: ${item.title}`)
     await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
       .bind(sku, qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, noteParts.join(' | '), now).run()
     deductedCount++
@@ -818,7 +913,7 @@ app.post('/api/shopify/webhook/orders-create', async (c) => {
       if (!gp) continue
       const outboundDate = new Date().toISOString().split('T')[0]
       await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-        .bind(gift.sku, gift.qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | 赠送品: ${gift.name}`, now).run()
+        .bind(gift.sku, gift.qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | ÔùËÍÆ·: ${gift.name}`, now).run()
       deductedCount++
     }
   }
@@ -841,7 +936,7 @@ app.post('/api/fulfillment/orders/:id/ship', async (c) => {
   return c.json({ error: 'Shipping requires local carrier API integration on VPS. Use VPS Express server for ship operations.' }, 400)
 })
 
-// ============ DISTRIBUTOR (needs Neon — keep on VPS) ============
+// ============ DISTRIBUTOR (needs Neon ¡ª keep on VPS) ============
 
 app.get('/api/inventory/distributor-candidates', async (c) => {
   return c.json({ error: 'Distributor import requires Neon DB on VPS' }, 400)
@@ -850,7 +945,7 @@ app.post('/api/inventory/import-distributor', async (c) => {
   return c.json({ error: 'Distributor import requires Neon DB on VPS' }, 400)
 })
 
-// ============ INVENTORY SOURCE LOAD (CSV import — keep on VPS) ============
+// ============ INVENTORY SOURCE LOAD (CSV import ¡ª keep on VPS) ============
 
 app.post('/api/inventory/source/load', async (c) => {
   return c.json({ error: 'CSV import requires local filesystem access on VPS' }, 400)
@@ -989,7 +1084,7 @@ app.post('/api/automation/bot-account', async (c) => {
     await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_accounts (account_id TEXT PRIMARY KEY, ig_handle TEXT, created_at TEXT, stage TEXT DEFAULT 'new', daily_task_limit INTEGER DEFAULT 5, speed_factor REAL DEFAULT 2.5, first_used_at TEXT, vps_name TEXT, proxy TEXT)`).run();
     try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN created_at TEXT').run(); } catch {}
     const now = new Date().toISOString();
-    // 新账号设创建时间，已有账号不覆盖
+    // ÐÂÕËºÅÉè´´½¨Ê±¼ä£¬ÒÑÓÐÕËºÅ²»¸²¸Ç
     const existing = await c.env.DB.prepare('SELECT created_at FROM bot_accounts WHERE account_id=?').bind(account_id).first() as any;
     if (existing?.created_at) {
       await c.env.DB.prepare('UPDATE bot_accounts SET ig_handle=? WHERE account_id=?').bind(ig_handle || '', account_id).run();
@@ -1080,7 +1175,7 @@ app.post('/api/automation/sync', async (c) => {
     } catch {}
   }
 
-  // Bot accounts（空数组不处理，防止误清）
+  // Bot accounts£¨¿ÕÊý×é²»´¦Àí£¬·ÀÖ¹ÎóÇå£©
   if (body.accounts?.length) {
     try {
       await c.env.DB.prepare('DELETE FROM bot_accounts').run();
@@ -1097,7 +1192,7 @@ app.post('/api/automation/sync', async (c) => {
 // ============ DASHBOARD (read from D1) ============
 
 app.get('/api/automation/dashboard', async (c) => {
-  // Each query independently — missing tables don't cascade
+  // Each query independently ¡ª missing tables don't cascade
   let counts: Record<string, number> = { pending: 0, leased: 0, done: 0, failed: 0 };
   let byDay: Record<string, any> = {};
   let accountsList: any[] = [];
@@ -1365,7 +1460,7 @@ app.get('/api/automation/neon-tasks', async (c) => {
   }
 });
 
-// State progress — per-state coverage from D1 (no Neon dependency)
+// State progress ¡ª per-state coverage from D1 (no Neon dependency)
 app.get('/api/automation/state-progress', async (c) => {
   try {
     await ensureBotTables(c.env.DB);
@@ -1508,7 +1603,7 @@ app.post('/api/automation/report', async (c) => {
   }
 });
 
-// ===== Bot 观察数据上报 (called by bot-worker after each profile) =====
+// ===== Bot ¹Û²ìÊý¾ÝÉÏ±¨ (called by bot-worker after each profile) =====
 app.post('/api/bot/observe', async (c) => {
   if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
   const connStr = c.env.NEON_DATABASE_URL;
@@ -1556,11 +1651,11 @@ app.post('/api/bot/observe', async (c) => {
   }
 });
 
-// ===== 噪声站点配置（供 bot human mimicry 使用） =====
+// ===== ÔëÉùÕ¾µãÅäÖÃ£¨¹© bot human mimicry Ê¹ÓÃ£© =====
 app.get('/api/bot/noise-sites', async (c) => {
   if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
   const botId = c.req.query('botId') || '';
-  // Default noise sites — can be overridden per bot via D1 bot_config table
+  // Default noise sites ¡ª can be overridden per bot via D1 bot_config table
   const defaultSites = [
     'https://www.cnn.com',
     'https://www.nydailynews.com',
@@ -1589,7 +1684,7 @@ app.get('/api/bot/noise-sites', async (c) => {
   return c.json({ ok: true, sites });
 });
 
-// ===== Bot 配置管理（供前端 BotConfigSection 使用） =====
+// ===== Bot ÅäÖÃ¹ÜÀí£¨¹©Ç°¶Ë BotConfigSection Ê¹ÓÃ£© =====
 app.get('/api/automation/bot-config', async (c) => {
   try {
     await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_accounts (
@@ -1658,11 +1753,11 @@ app.patch('/api/automation/bot-config/:botId/toggle', async (c) => {
   }
 });
 
-// ===== 快速检查 Neon 连接 =====
+// ===== ¿ìËÙ¼ì²é Neon Á¬½Ó =====
 app.get('/api/automation/neon-test', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ ok: false, error: 'NEON_DATABASE_URL not set', hint: 'use wrangler secret put NEON_DATABASE_URL' });
-  // 测试正则解析
+  // ²âÊÔÕýÔò½âÎö
   const m = connStr.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^/]+)\/([^?]+)/);
   if (!m) return c.json({ ok: false, error: 'URL regex no match', url: connStr.slice(0, 50) + '...' });
   try {
@@ -1689,7 +1784,7 @@ app.get('/api/automation/neon-test', async (c) => {
   }
 });
 
-// ===== 快速检查 Neon 连接 =====
+// ===== ¿ìËÙ¼ì²é Neon Á¬½Ó =====
 app.get('/api/automation/neon-check', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ ok: false, error: 'NEON_DATABASE_URL not set' });
@@ -1702,18 +1797,18 @@ app.get('/api/automation/neon-check', async (c) => {
   }
 });
 
-// ===== 采集数据：读写 Neon =====
+// ===== ²É¼¯Êý¾Ý£º¶ÁÐ´ Neon =====
 async function ensureObservationsTable(connStr: string) {
   try { await neonQuery(connStr, `CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)`); } catch {}
   try { await neonQuery(connStr, `CREATE INDEX IF NOT EXISTS idx_bot_obs_created_at ON bot_observations(created_at DESC)`); } catch {}
 }
 
 
-// Bot worker 上报观测数据到 Neon（也支持批量 {items:[...]}）
+// Bot worker ÉÏ±¨¹Û²âÊý¾Ýµ½ Neon£¨Ò²Ö§³ÖÅúÁ¿ {items:[...]}£©
 app.all('/api/automation/observations', async (c) => {
   if (c.req.method === 'GET') {
     const limit = Math.min(50, Math.max(1, Number(c.req.query('limit')) || 20));
-    // 先试试 VPS Express（有完整数据含 summary_json / profile_facts_json）
+    // ÏÈÊÔÊÔ VPS Express£¨ÓÐÍêÕûÊý¾Ýº¬ summary_json / profile_facts_json£©
     try {
       const vps = await fetch(`http://163.245.212.169:3000/api/bot/observations?limit=${limit}`, { signal: AbortSignal.timeout(3000) });
       if (vps.ok) {
@@ -1742,7 +1837,7 @@ app.all('/api/automation/observations', async (c) => {
     const connStr = c.env.NEON_DATABASE_URL;
     if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
     await ensureObservationsTable(connStr);
-    // 批量同步
+    // ÅúÁ¿Í¬²½
     if (body.items && Array.isArray(body.items)) {
       let synced = 0;
       for (const o of body.items) {
@@ -1756,7 +1851,7 @@ app.all('/api/automation/observations', async (c) => {
       }
       return c.json({ ok: true, synced });
     }
-    // 单条上报
+    // µ¥ÌõÉÏ±¨
     const botId = String(body.botId || body.bot_id || '').trim();
     const artistHandle = String(body.artistHandle || body.artist_handle || '').replace(/^@/, '').trim();
     const mode = String(body.mode || '').trim();
@@ -1767,10 +1862,10 @@ app.all('/api/automation/observations', async (c) => {
     return c.json({ error: e.message }, 500);
   }
 });
-// 删除旧的 sync 端点（已合并到 POST /observations）
-// app.post('/api/automation/observations/sync', ...) 已移除
+// É¾³ý¾ÉµÄ sync ¶Ëµã£¨ÒÑºÏ²¢µ½ POST /observations£©
+// app.post('/api/automation/observations/sync', ...) ÒÑÒÆ³ý
 
-// ===== 数据看板：查询 Neon artists 表（SQL 层去重分页） =====
+// ===== Êý¾Ý¿´°å£º²éÑ¯ Neon artists ±í£¨SQL ²ãÈ¥ÖØ·ÖÒ³£© =====
 app.get('/api/automation/artists', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
@@ -1804,12 +1899,12 @@ app.get('/api/automation/artists', async (c) => {
     );
     const items = dataRows || [];
 
-    // 任务状态 — 从 D1 和 Neon 合并
+    // ÈÎÎñ×´Ì¬ ¡ª ´Ó D1 ºÍ Neon ºÏ²¢
     let taskStatusMap: Record<string, string> = {};
     try {
       const handles = items.map((r: any) => r.ig_handle).filter(Boolean);
       if (handles.length > 0) {
-        // D1 (旧数据)
+        // D1 (¾ÉÊý¾Ý)
         const tasks = await c.env.DB.prepare(
           `SELECT DISTINCT payload->>'artistHandle' as handle, status FROM automation_tasks
            WHERE payload->>'artistHandle' IN (${handles.map(() => '?').join(',')})
@@ -1818,7 +1913,7 @@ app.get('/api/automation/artists', async (c) => {
         for (const t of (tasks.results || []) as any) {
           if (t.handle && !taskStatusMap[t.handle]) taskStatusMap[t.handle] = t.status;
         }
-        // Neon (新数据，覆盖 D1 中过时的 pending 状态)
+        // Neon (ÐÂÊý¾Ý£¬¸²¸Ç D1 ÖÐ¹ýÊ±µÄ pending ×´Ì¬)
         try {
           const connStr = c.env.NEON_DATABASE_URL;
           if (connStr) {
@@ -1849,7 +1944,7 @@ app.get('/api/automation/artists', async (c) => {
   }
 });
 
-// ===== 从 artists 创建任务（批量查询避免 subrequest 上限） =====
+// ===== ´Ó artists ´´½¨ÈÎÎñ£¨ÅúÁ¿²éÑ¯±ÜÃâ subrequest ÉÏÏÞ£© =====
 app.post('/api/automation/tasks/create-from-artists', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
@@ -1860,10 +1955,10 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
     const dedupWindow = ts - 7 * 24 * 60 * 60 * 1000;
 
     const sql = neonSql(connStr);
-    // 确保表存在
+    // È·±£±í´æÔÚ
     await sql`CREATE TABLE IF NOT EXISTS automation_tasks (id TEXT PRIMARY KEY, payload TEXT, status TEXT, run_at BIGINT, lease_until BIGINT, leased_by TEXT, attempts INT DEFAULT 0, max_attempts INT DEFAULT 3, error_reason TEXT, created_at BIGINT, updated_at BIGINT)`.catch(() => {});
 
-    // 批量查询所有 artist（1次）
+    // ÅúÁ¿²éÑ¯ËùÓÐ artist£¨1´Î£©
     const ids = artistIds.filter((i: any) => String(i).trim().length > 0);
     if (!ids.length) return c.json({ ok: false, error: 'no valid ids' }, 400);
     const idList = ids.map((i: any) => `'${String(i).replace(/'/g, "''")}'`).join(',');
@@ -1871,7 +1966,7 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
     const artists = artistRows || [];
     if (!artists.length) return c.json({ ok: false, error: 'no artists found' }, 404);
 
-    // 批量查已有任务（7 天内任何状态都跳过，含 done）
+    // ÅúÁ¿²éÒÑÓÐÈÎÎñ£¨7 ÌìÄÚÈÎºÎ×´Ì¬¶¼Ìø¹ý£¬º¬ done£©
     const handles = artists.map((a: any) => a.ig_handle || a.shop_name).filter(Boolean);
     let existingRows: any[] = [];
     if (handles.length) {
@@ -1895,7 +1990,7 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
       const rows = taskIds.map((id, i) => ({
         id, status: 'pending', payload: payloads[i], run_at: runAts[i], ts
       }));
-      // Use batched individual inserts — but batch 5 at a time to stay under subrequest limit
+      // Use batched individual inserts ¡ª but batch 5 at a time to stay under subrequest limit
       const batchSize = 5;
       for (let i = 0; i < rows.length; i += batchSize) {
         const batch = rows.slice(i, i + batchSize);
@@ -1912,14 +2007,14 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
   }
 });
 
-// ===== 从 VPS 同步任务数据到 D1 =====
+// ===== ´Ó VPS Í¬²½ÈÎÎñÊý¾Ýµ½ D1 =====
 app.post('/api/automation/task-list/sync', async (c) => {
   const auth = c.req.header('Authorization') || '';
   if (auth !== 'Bearer vps-bot-secret-2024') return c.json({ error: 'unauthorized' }, 401);
   try {
     const { tasks } = await c.req.json();
     if (!Array.isArray(tasks) || !tasks.length) return c.json({ error: 'tasks array required' }, 400);
-    // 确保 D1 表存在且有需要的列
+    // È·±£ D1 ±í´æÔÚÇÒÓÐÐèÒªµÄÁÐ
     try { await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS automation_tasks (id TEXT PRIMARY KEY, payload TEXT, status TEXT, created_at INTEGER, updated_at INTEGER)`).run(); } catch {}
     try { await c.env.DB.prepare(`ALTER TABLE automation_tasks ADD COLUMN payload TEXT`).run(); } catch {}
     try { await c.env.DB.prepare(`ALTER TABLE automation_tasks ADD COLUMN updated_at INTEGER`).run(); } catch {}
@@ -1948,7 +2043,7 @@ app.post('/api/automation/task-list/sync', async (c) => {
   } catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
 });
 
-// ===== 从 artist handle 注入任务到 bot =====
+// ===== ´Ó artist handle ×¢ÈëÈÎÎñµ½ bot =====
 app.post('/api/automation/tasks/inject', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
@@ -1964,7 +2059,7 @@ app.post('/api/automation/tasks/inject', async (c) => {
       const h = String(handle || '').replace(/^@/, '').trim().toLowerCase();
       if (!h) continue;
 
-      // 查重：7天内是否有此 handle 的任务
+      // ²éÖØ£º7ÌìÄÚÊÇ·ñÓÐ´Ë handle µÄÈÎÎñ
       const existing = await sql`SELECT id FROM automation_tasks WHERE payload->>'artistHandle' = ${h} AND updated_at > ${dedupWindow} LIMIT 1`;
       if (existing?.rows?.length || existing?.length) { skipped++; continue; }
 
@@ -1979,7 +2074,7 @@ app.post('/api/automation/tasks/inject', async (c) => {
   }
 });
 
-// ===== Scheduler 日配额查询（ig-scheduler-lite 调用） =====
+// ===== Scheduler ÈÕÅä¶î²éÑ¯£¨ig-scheduler-lite µ÷ÓÃ£© =====
 app.get('/api/tasks/count', async (c) => {
   const tokenParam = c.req.query('token');
   if (tokenParam !== 'vps-bot-secret-2024') return c.json({ error: 'unauthorized' }, 401);
@@ -1998,9 +2093,9 @@ app.get('/api/tasks/count', async (c) => {
   }
 });
 
-// ===== Scheduler 批量创建任务（ig-scheduler-lite 调用） =====
+// ===== Scheduler ÅúÁ¿´´½¨ÈÎÎñ£¨ig-scheduler-lite µ÷ÓÃ£© =====
 app.post('/api/tasks/create', async (c) => {
-  // 支持 ?token= 认证（scheduler 用 query param）
+  // Ö§³Ö ?token= ÈÏÖ¤£¨scheduler ÓÃ query param£©
   const tokenParam = c.req.query('token');
   if (tokenParam !== 'vps-bot-secret-2024') return c.json({ error: 'unauthorized' }, 401);
   const connStr = c.env.NEON_DATABASE_URL;
@@ -2051,7 +2146,7 @@ app.post('/api/tasks/create', async (c) => {
   }
 });
 
-// ===== 任务状态列表（从 Neon automation_tasks） =====
+// ===== ÈÎÎñ×´Ì¬ÁÐ±í£¨´Ó Neon automation_tasks£© =====
 app.get('/api/automation/task-list', async (c) => {
   try {
     const limit = Math.min(200, Math.max(1, Number(c.req.query('limit')) || 50));
@@ -2074,7 +2169,7 @@ app.get('/api/automation/task-list', async (c) => {
   } catch (e: any) { return c.json({ ok: false, error: e.message, tasks: [] }, 500); }
 });
 
-// ===== 清空重复 pending 任务（手动触发，只清已存在 done 的 handle） =====
+// ===== Çå¿ÕÖØ¸´ pending ÈÎÎñ£¨ÊÖ¶¯´¥·¢£¬Ö»ÇåÒÑ´æÔÚ done µÄ handle£© =====
 app.post('/api/automation/tasks/clear-duplicate-pending', async (c) => {
   const auth = c.req.header('Authorization');
   if (!auth?.startsWith('Bearer ') || auth.slice(7) !== 'vps-bot-secret-2024') {
@@ -2085,7 +2180,7 @@ app.post('/api/automation/tasks/clear-duplicate-pending', async (c) => {
   try {
     const sql = neonSql(connStr);
     const dedupWindow = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    // 删除 pending 任务，其 handle 已有 done/leased 任务在 dedup 窗口内
+    // É¾³ý pending ÈÎÎñ£¬Æä handle ÒÑÓÐ done/leased ÈÎÎñÔÚ dedup ´°¿ÚÄÚ
     const result = await sql`
       DELETE FROM automation_tasks
       WHERE status = 'pending'
@@ -2102,7 +2197,7 @@ app.post('/api/automation/tasks/clear-duplicate-pending', async (c) => {
   }
 });
 
-// ===== 清空所有 pending 任务 =====
+// ===== Çå¿ÕËùÓÐ pending ÈÎÎñ =====
 app.post('/api/automation/tasks/clear-all-pending', async (c) => {
   const tokenParam = c.req.query('token');
   const auth = c.req.header('Authorization');
@@ -2120,7 +2215,7 @@ app.post('/api/automation/tasks/clear-all-pending', async (c) => {
   }
 });
 
-// ===== Poll 调试端点 =====
+// ===== Poll µ÷ÊÔ¶Ëµã =====
 app.post('/api/voice/log', async (c) => {
   try { const { transcript, parsed_sku, parsed_qty, matched_product, success } = await c.req.json();
     await c.env.DB.prepare('INSERT INTO voice_logs (transcript,parsed_sku,parsed_qty,matched_product,success,created_at) VALUES (?,?,?,?,?,?)')
@@ -2170,7 +2265,7 @@ app.get('/api/automation/poll-debug', async (c) => {
       `;
       const pRows = pc?.rows || (Array.isArray(pc) ? pc : []);
       pollCandidates = pRows.map((r: any) => ({ id: r.id, run_at: r.run_at }));
-      // Also try the UPDATE (without committing — just test)
+      // Also try the UPDATE (without committing ¡ª just test)
       if (pRows.length > 0) {
         const first = pRows[0];
         try {
@@ -2401,4 +2496,16 @@ app.post('/api/amazon/report', async (c) => {
   } catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
 });
 
-export default app
+export default {
+  fetch: app.fetch,
+  async scheduled(event: any, env: any, ctx: any) {
+    // Auto-sync Shopify orders on cron trigger
+    const url = 'https://harvests-cloud-api.inkflowapp.workers.dev/api/fulfillment/shopify/sync'
+    try {
+      await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      console.log('[cron] Shopify sync completed at', new Date().toISOString())
+    } catch (e: any) {
+      console.error('[cron] Shopify sync failed:', e?.message || e)
+    }
+  }
+}

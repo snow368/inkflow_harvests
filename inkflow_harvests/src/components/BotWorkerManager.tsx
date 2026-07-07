@@ -652,7 +652,7 @@ export default function BotWorkerManager() {
         fetch('/api/bot/workers').catch(() => null),
         apiFetch('/api/bot/learn/status').catch(() => null),
         fetch('/api/marketing/tasks/stats').catch(() => null),
-        fetch('https://harvests-api.inkflowapp.workers.dev/api/automation/neon-tasks?limit=100').catch(() => null),
+        fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/automation/neon-tasks?limit=100').catch(() => null),
       ]);
       if (fnRes?.ok) {
         const fnData = await fnRes.json();
@@ -761,7 +761,7 @@ export default function BotWorkerManager() {
   // 置顶任务（立即执行）
   const prioritizeTask = async (taskId: string | number) => {
     try {
-      const res = await fetch('https://harvests-api.inkflowapp.workers.dev/api/automation/tasks/prioritize/' + taskId, { method: 'POST' });
+      const res = await fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/automation/tasks/prioritize/' + taskId, { method: 'POST' });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed');
       toast.success('✅ 任务 #' + taskId + ' 已置顶');
       fetchData();

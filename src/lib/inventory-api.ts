@@ -58,6 +58,7 @@ export interface OutboundRecord {
   outbound_date: string;
   note: string;
   created_at: number;
+  pack_source?: string;
 }
 
 export interface OutboundSummary {
@@ -147,7 +148,7 @@ export async function recordInbound(data: { product_sku: string; quantity?: numb
   return res.json();
 }
 
-export async function recordOutbound(data: { product_sku: string; quantity: number; channel: string; customer_name: string; shopify_order_id: string; outbound_date: string; note: string }) {
+export async function recordOutbound(data: { product_sku: string; quantity: number; channel: string; customer_name: string; shopify_order_id: string; outbound_date: string; note: string; pack_source?: string }) {
   const res = await fetch(`${API}/inventory/outbound`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

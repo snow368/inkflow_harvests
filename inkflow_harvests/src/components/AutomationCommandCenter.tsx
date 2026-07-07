@@ -88,6 +88,34 @@ export default function AutomationCommandCenter() {
   const [supplySelected, setSupplySelected] = useState<Record<string, string[]>>({});
   const [competitors, setCompetitors] = useState<Array<{ handle: string; account_type: string; source: string }>>([]);
   const [competitorSearch, setCompetitorSearch] = useState<Record<string, string>>({});
+  const [d1Accounts, setD1Accounts] = useState<InstagramAccount[]>([]);
+
+  /* Load bot accounts from D1 (harvests-cloud-api) */
+  const D1_API = 'https://harvests-cloud-api.inkflowapp.workers.dev';
+  useEffect(() => {
+    fetch(D1_API + '/api/automation/bot-account?botId=all')
+      .then(r => r.json().catch(() => ({ accounts: [] })))
+      .then(data => {
+        if (data?.accounts) {
+          setD1Accounts(data.accounts.map((a: any) => ({
+            id: a.accountId || a.account_id,
+            username: a.igHandle || a.ig_handle || a.accountId || a.account_id,
+            behaviorProfile: a.stage || 'observer',
+            status: 'idle',
+            dailyActionCount: 0,
+          })));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  /* Merge Firestore accounts with D1 accounts, dedup by id */
+  const allAccounts = useMemo(() => {
+    const map = new Map<string, InstagramAccount>();
+    accounts.forEach(a => map.set(a.id, a));
+    d1Accounts.forEach(a => { if (!map.has(a.id)) map.set(a.id, a); });
+    return Array.from(map.values());
+  }, [accounts, d1Accounts]);
 
   const activeAssignments = useMemo(() => {
     return assignments.filter(a => a.status === 'pending');
@@ -222,9 +250,9 @@ export default function AutomationCommandCenter() {
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
-          { label: 'Active Accounts', value: accounts.length, icon: Shield, color: 'text-blue-500' },
+          { label: 'Active Accounts', value: allAccounts.length, icon: Shield, color: 'text-blue-500' },
           { label: 'Pending Tasks', value: activeAssignments.length, icon: Clock, color: 'text-amber-500' },
-          { label: 'Daily Actions', value: accounts.reduce((acc, curr) => acc + curr.dailyActionCount, 0), icon: Zap, color: 'text-rose-500' },
+          { label: 'Daily Actions', value: allAccounts.reduce((acc, curr) => acc + curr.dailyActionCount, 0), icon: Zap, color: 'text-rose-500' },
           { label: 'Safety Score', value: '98%', icon: UserCheck, color: 'text-green-500' },
         ].map((stat, i) => (
           <div key={i} className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-3xl">
@@ -253,13 +281,28 @@ export default function AutomationCommandCenter() {
                 <p className="text-xs text-zinc-500 font-medium">AdsPower / Playwright Orchestration</p>
               </div>
             </div>
-            <button className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold rounded-xl transition-colors">
+            <button onClick={async () => {
+              const botId = prompt('Bot account ID:');
+              if (!botId) return;
+              const ig = prompt('Instagram handle (optional):') || '';
+              try {
+                const r = await fetch(D1_API + '/api/automation/bot-account', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ account_id: botId, ig_handle: ig }),
+                });
+                if (r.ok) { toast.success('Account added'); location.reload(); }
+                else toast.error('Failed');
+              } catch { toast.error('Network error'); }
+            }} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold rounded-xl transition-colors">
               Add Account
             </button>
           </div>
 
+          {allAccounts.length === 0 ? (
+            <p className="text-center py-8 text-zinc-500 text-sm">No accounts yet. Add one or configure in D1.</p>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {accounts.map(account => {
+            {allAccounts.map(account => {
               const activeMode = getTaskMode(account.id);
               const modeCfg = TASK_TYPE_CONFIG[activeMode];
               const isExpanded = expandedAccount === account.id;
@@ -568,6 +611,7 @@ export default function AutomationCommandCenter() {
             );
             })}
           </div>
+          )}
         </div>
 
         {/* Task Queue */}

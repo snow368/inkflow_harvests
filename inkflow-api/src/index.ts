@@ -1,6 +1,5 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { neon } from '@neondatabase/serverless'
 import type { Env } from './types'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -280,11 +279,7 @@ app.get('/api/bot/observations', async (c) => {
 
 // ── Competitors ──
 app.get('/api/content/competitors', async (c) => {
-  const sql = neon(c.env.DATABASE_URL)
-  const rows = await sql`
-    SELECT * FROM content_competitors ORDER BY priority ASC, ig_handle ASC
-  `
-  return c.json(rows)
+  return c.json([])
 })
 
 // ── Auth ──
@@ -294,6 +289,190 @@ function requireBotAuth(c: any): boolean {
 }
 
 export default app
+
+// ── INK PASSPORT (EU REACH Compliance) ──
+
+let _passportTableReady: Promise<void> | null = null;
+const ensurePassportTable = (db: any): Promise<void> => {
+  if (!_passportTableReady) {
+    _passportTableReady = db.prepare(`CREATE TABLE IF NOT EXISTS ink_passports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_name TEXT NOT NULL DEFAULT '',
+      client_email TEXT DEFAULT '',
+      artist_name TEXT NOT NULL DEFAULT '',
+      session_date TEXT NOT NULL DEFAULT '',
+      studio_name TEXT DEFAULT '',
+      ink_brand TEXT NOT NULL DEFAULT '',
+      ink_name TEXT DEFAULT '',
+      ink_color TEXT DEFAULT '',
+      batch_number TEXT DEFAULT '',
+      expiration_date TEXT DEFAULT '',
+      supplier TEXT DEFAULT '',
+      notes TEXT DEFAULT '',
+      pdf_generated INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    )`).run().then(() => {}).catch(() => {});
+  }
+  return _passportTableReady;
+};
+
+let _brandPresetsReady: Promise<void> | null = null;
+const ensureBrandPresetsTable = (db: any): Promise<void> => {
+  if (!_brandPresetsReady) {
+    _brandPresetsReady = db.prepare(`CREATE TABLE IF NOT EXISTS ink_brand_presets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      brand_name TEXT NOT NULL UNIQUE,
+      colors TEXT NOT NULL DEFAULT '[]',
+      region TEXT DEFAULT '',
+      supplier TEXT DEFAULT '',
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    )`).run().then(() => {}).catch(() => {});
+  }
+  return _brandPresetsReady;
+};
+
+// List passports
+app.get('/api/ink-passport/list', async (c) => {
+  const db = c.env.INKFLOW_DB
+  await ensurePassportTable(db)
+  const page = Math.max(1, parseInt(c.req.query('page') || '1'))
+  const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '20')))
+  const offset = (page - 1) * limit
+  const search = c.req.query('search') || ''
+  let sql = 'SELECT * FROM ink_passports WHERE 1=1'
+  const binds: any[] = []
+  if (search) {
+    sql += " AND (client_name LIKE ? OR artist_name LIKE ? OR ink_brand LIKE ? OR batch_number LIKE ? OR studio_name LIKE ?)"
+    const q = `%${search}%`
+    binds.push(q, q, q, q, q)
+  }
+  sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+  binds.push(limit, offset)
+  const rows = await db.prepare(sql).bind(...binds).all()
+  const total = await db.prepare('SELECT COUNT(*) as c FROM ink_passports').first() as any
+  return c.json({ ok: true, items: rows.results || [], total: total?.c || 0, page, limit })
+})
+
+// Stats
+app.get('/api/ink-passport/stats', async (c) => {
+  const db = c.env.INKFLOW_DB
+  await ensurePassportTable(db)
+  const total = await db.prepare('SELECT COUNT(*) as c FROM ink_passports').first() as any
+  const withPdf = await db.prepare("SELECT COUNT(*) as c FROM ink_passports WHERE pdf_generated=1").first() as any
+  const recent = await db.prepare("SELECT COUNT(*) as c FROM ink_passports WHERE session_date >= date('now', '-30 days')").first() as any
+  return c.json({ ok: true, stats: { total: total?.c || 0, withPdf: withPdf?.c || 0, recent30d: recent?.c || 0 } })
+})
+
+// Brands list
+app.get('/api/ink-passport/brands', async (c) => {
+  const db = c.env.INKFLOW_DB
+  await ensureBrandPresetsTable(db)
+  const rows = await db.prepare('SELECT * FROM ink_brand_presets ORDER BY brand_name ASC').all()
+  return c.json({ ok: true, brands: rows.results || [] })
+})
+
+// Create passport
+app.post('/api/ink-passport', async (c) => {
+  const db = c.env.INKFLOW_DB
+  const body = await c.req.json()
+  const { client_name, client_email, artist_name, session_date, studio_name, ink_brand, ink_name, ink_color, batch_number, expiration_date, supplier, notes } = body
+  if (!client_name || !artist_name || !session_date || !ink_brand) {
+    return c.json({ error: 'client_name, artist_name, session_date, ink_brand required' }, 400)
+  }
+  await ensurePassportTable(db)
+  const now = Math.floor(Date.now() / 1000)
+  await db.prepare(`INSERT INTO ink_passports (client_name, client_email, artist_name, session_date, studio_name, ink_brand, ink_name, ink_color, batch_number, expiration_date, supplier, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(client_name, client_email||'', artist_name, session_date, studio_name||'', ink_brand, ink_name||'', ink_color||'', batch_number||'', expiration_date||'', supplier||'', notes||'', now, now).run()
+  return c.json({ ok: true })
+})
+
+// Get single passport
+app.get('/api/ink-passport/:id', async (c) => {
+  const db = c.env.INKFLOW_DB
+  await ensurePassportTable(db)
+  const row = await db.prepare('SELECT * FROM ink_passports WHERE id = ?').bind(c.req.param('id')).first()
+  if (!row) return c.json({ error: 'not found' }, 404)
+  return c.json({ ok: true, item: row })
+})
+
+// Update passport
+app.put('/api/ink-passport/:id', async (c) => {
+  const db = c.env.INKFLOW_DB
+  const body = await c.req.json()
+  await ensurePassportTable(db)
+  const now = Math.floor(Date.now() / 1000)
+  const sets: string[] = []; const vals: any[] = []
+  const fields = ['client_name','client_email','artist_name','session_date','studio_name','ink_brand','ink_name','ink_color','batch_number','expiration_date','supplier','notes','pdf_generated']
+  for (const f of fields) { if (body[f] !== undefined) { sets.push(`${f}=?`); vals.push(body[f]) } }
+  if (!sets.length) return c.json({ error: 'no fields to update' }, 400)
+  sets.push('updated_at=?'); vals.push(now)
+  vals.push(c.req.param('id'))
+  await db.prepare(`UPDATE ink_passports SET ${sets.join(',')} WHERE id=?`).bind(...vals).run()
+  return c.json({ ok: true })
+})
+
+// Delete passport
+app.delete('/api/ink-passport/:id', async (c) => {
+  const db = c.env.INKFLOW_DB
+  await ensurePassportTable(db)
+  await db.prepare('DELETE FROM ink_passports WHERE id=?').bind(c.req.param('id')).run()
+  return c.json({ ok: true })
+})
+
+// Add brand preset
+app.post('/api/ink-passport/brands', async (c) => {
+  const db = c.env.INKFLOW_DB
+  const { brand_name, colors, region, supplier } = await c.req.json()
+  if (!brand_name) return c.json({ error: 'brand_name required' }, 400)
+  await ensureBrandPresetsTable(db)
+  try {
+    await db.prepare('INSERT INTO ink_brand_presets (brand_name, colors, region, supplier) VALUES (?,?,?,?)')
+      .bind(brand_name, JSON.stringify(colors||[]), region||'', supplier||'').run()
+    return c.json({ ok: true })
+  } catch (e: any) {
+    if (e.message?.includes('UNIQUE')) return c.json({ error: 'brand already exists' }, 409)
+    throw e
+  }
+})
+
+// Delete brand preset
+app.delete('/api/ink-passport/brands/:id', async (c) => {
+  const db = c.env.INKFLOW_DB
+  await ensureBrandPresetsTable(db)
+  await db.prepare('DELETE FROM ink_brand_presets WHERE id=?').bind(c.req.param('id')).run()
+  return c.json({ ok: true })
+})
+
+// Seed brands
+app.all('/api/ink-passport/brands/seed', async (c) => {
+  const db = c.env.INKFLOW_DB
+  let clear = false
+  if (c.req.method === 'POST') { try { const b = await c.req.json(); clear = b.clear } catch {} }
+  else { clear = c.req.query('clear') === '1' }
+  await ensureBrandPresetsTable(db)
+  if (clear) await db.prepare('DELETE FROM ink_brand_presets').run()
+  const EU_BRANDS = [
+    { brand_name: 'Intenze', colors: ['Zuper Black', 'Lining Black', 'Shading Black', 'Gen-Z Black', 'Muddy Brown', 'Dark Brown', 'White Wash', 'Opaque Red', 'True Blue', 'Purple', 'Orange', 'Yellow', 'Pink', 'Navy'], region: 'US/EU', supplier: 'Intenze Products' },
+    { brand_name: 'Eternal Ink', colors: ['Lining Black', 'Shading Black', 'Ultra Black', 'White', 'Alchemy Orange', 'Sacrament Burgundy', 'Effigy Green', 'Species Green', 'Dystopia Magenta', 'Grey Scale Set', 'Navy', 'Red', 'Blue', 'Purple', 'Yellow', 'Pink', 'Brown'], region: 'US/EU (APEX)', supplier: 'Eternal Ink' },
+    { brand_name: 'World Famous', colors: ['Triple Black', 'Lining Black', 'Grey Wash Set', 'White', 'Navy', 'Cardinal Red', 'Bright Yellow', 'Emerald Green', 'Vibrant Purple', 'Electric Blue', 'Tropical Orange', 'Cotton Candy Pink', 'Limitless Black'], region: 'US/EU', supplier: 'World Famous Ink / Limitless' },
+    { brand_name: 'Kuro Sumi Imperial', colors: ['Lining Black', 'Shading Black', 'Sumi Black', 'Grey Wash 5', 'Grey Wash 10', 'Grey Wash 15', 'Grey Wash 20', 'White', 'Imperial Red', 'Royal Blue', 'Mango Pulp', 'Olive Green', 'Vibrant Yellow', 'Deep Purple'], region: 'EU/JP', supplier: 'Kuro Sumi International' },
+    { brand_name: 'Dynamic', colors: ['Black', 'Ultra Black', 'Grey Wash', 'White', 'Red', 'Blue', 'Green', 'Yellow', 'Purple', 'Orange', 'Viking Black', 'Platinum Grey'], region: 'EU (Viking/Platinum)', supplier: 'Dynamic Ink Co.' },
+    { brand_name: 'Panthera', colors: ['Black Gold', 'Dark Sumy', 'Light Sumy', 'Smooth Finish', 'Smooth Blending', 'Grey Wash Dark', 'Grey Wash Medium', 'Grey Wash Light', 'White'], region: 'IT', supplier: 'Futura / Panthera Italy' },
+    { brand_name: 'Radiant Colors', colors: ['Radiant Black', 'White', 'Red', 'Blue', 'Green', 'Purple', 'Orange', 'Yellow', 'Pink', 'Navy', 'Brown', 'Grey', 'Teal', 'Magenta'], region: 'EU (Evolved)', supplier: 'Radiant Colors EU' },
+    { brand_name: 'I AM INK', colors: ['Sumi Black', '3 Sumi', '5 Sumi', 'White', 'Grey Wash 1', 'Grey Wash 2', 'Grey Wash 3', 'Grey Wash 4', 'Grey Wash 5'], region: 'AT', supplier: 'I AM INK (Austria)' },
+    { brand_name: 'Raw Premium Pigments', colors: ['Raw Black', 'Platinum Black', 'White', 'Red', 'Blue', 'Green', 'Purple', 'Orange', 'Yellow', 'Pink', 'Navy', 'Brown'], region: 'EU (Platinum)', supplier: 'Raw Premium Pigments' },
+    { brand_name: 'Quantum', colors: ['Quantum Black', 'White', 'Red', 'Blue', 'Green', 'Purple', 'Orange', 'Yellow', 'Pink', 'Navy', 'Grey'], region: 'EU', supplier: 'Quantum Tattoo Ink' },
+    { brand_name: 'Premier Products', colors: ['Greywash 1', 'Greywash 2', 'Greystar 1', 'Greystar 2', 'Greystar 3', 'Greystar 4', 'Black', 'White', 'Red', 'Blue', 'Green', 'Yellow'], region: 'EU', supplier: 'Premier Products' },
+    { brand_name: 'Carbon Black', colors: ['Carbon Black', 'White', 'Grey Wash Set'], region: 'EU', supplier: 'Carbon Black Tattoo Ink' },
+    { brand_name: 'Kwadron', colors: ['Enriched Black', 'White', 'Red', 'Blue', 'Green', 'Yellow'], region: 'EU', supplier: 'Kwadron Inx' },
+  ]
+  let count = 0
+  for (const b of EU_BRANDS) {
+    try { await db.prepare('INSERT OR IGNORE INTO ink_brand_presets (brand_name, colors, region, supplier) VALUES (?,?,?,?)').bind(b.brand_name, JSON.stringify(b.colors), b.region, b.supplier).run(); count++ } catch {}
+  }
+  return c.json({ ok: true, seeded: count, total: EU_BRANDS.length, brands: EU_BRANDS.map(b => b.brand_name) })
+})
 
 // ── Proxy: forward missing endpoints to harvests-cloud-api ──
 // (frontend still calls harvests-api — these make it work without redeploy)
