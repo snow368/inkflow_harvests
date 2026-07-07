@@ -966,35 +966,74 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh }: { o
       </div>
 
       {/* 客户订单汇总 */}
-      {summary.length > 0 && (
+      {(() => {
+        if (!summary.length) return null;
+        // 按客户名去重合并
+        const merged: Record<string, any> = {};
+        for (const s of summary) {
+          const name = s.customer_name || '未知';
+          if (!merged[name]) merged[name] = { customer_name: name, channel: s.channel || '', total_qty: 0, total_order_qty: 0, last_date: '' };
+          merged[name].total_qty += s.total_qty || 0;
+          merged[name].total_order_qty = Math.max(merged[name].total_order_qty, (s as any).total_order_qty || 0);
+          if ((s.last_date || '') > merged[name].last_date) merged[name].last_date = s.last_date || '';
+        }
+        const allItems = Object.values(merged).sort((a, b) => (b.last_date || '').localeCompare(a.last_date || ''));
+        const cItems = allItems.filter(s => s.channel === 'B2C' || s.channel === 'sample_b2c');
+        const bItems = allItems.filter(s => s.channel === 'B2B' || s.channel === 'sample_b2b');
+        const today = new Date();
+        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        const groupByMonth = (items: any[]) => {
+          const groups: { label: string; items: any[] }[] = [];
+          const thisMonth: any[] = []; const lastMonth: any[] = []; const older: any[] = [];
+          for (const item of items) {
+            const d = new Date(item.last_date);
+            if (d >= monthStart) thisMonth.push(item);
+            else if (d >= new Date(today.getFullYear(), today.getMonth()-1, 1)) lastMonth.push(item);
+            else older.push(item);
+          }
+          if (thisMonth.length) groups.push({ label: '📅 本月', items: thisMonth });
+          if (lastMonth.length) groups.push({ label: '📅 上月', items: lastMonth });
+          if (older.length) groups.push({ label: '📅 更早', items: older });
+          return groups;
+        };
+        const cGroups = groupByMonth(cItems);
+        const bGroups = groupByMonth(bItems);
+        const renderRow = (s: any) => (
+          <tr key={s.customer_name} style={{ borderBottom: '1px solid #18181b', cursor: 'pointer' }} onClick={() => loadCustomerOrders(s.customer_name)}>
+            <td style={{ padding: '8px 10px', fontWeight: 500, color: '#60a5fa' }}>{s.customer_name}</td>
+            <td style={{ padding: '8px 10px' }}>
+              <span style={{ background: `${channelColor[s.channel] || '#71717a'}20`, color: channelColor[s.channel] || '#71717a', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>{channelLabel[s.channel] || s.channel}</span>
+            </td>
+            <td style={{ padding: '8px 10px', fontWeight: 700, color: '#facc15' }}>{s.total_qty}</td>
+            <td style={{ padding: '8px 10px', color: '#a855f7', fontWeight: 600 }}>{(s as any).total_order_qty > 0 ? (s as any).total_order_qty : '—'}</td>
+            <td style={{ padding: '8px 10px', color: '#71717a' }}>{s.last_date}</td>
+          </tr>
+        );
+        return (
         <div style={{ background: '#0c0c0e', borderRadius: 12, border: '1px solid #27272a', overflow: 'hidden', marginBottom: 12 }}>
           <h4 style={{ fontSize: 13, fontWeight: 600, padding: 12, margin: 0, borderBottom: '1px solid #18181b' }}>📊 客户订单汇总</h4>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #27272a' }}>
-                {['客户', '渠道', '总盒数', '订单数', '最近日期'].map(h => (
-                  <th key={h} style={{ padding: '8px 10px', textAlign: 'left', color: '#71717a', fontWeight: 600 }}>{h}</th>
-                ))}
+                {['客户', '渠道', '总盒数', '订单总盒数', '最近日期'].map(h => <th key={h} style={{ padding: '8px 10px', textAlign: 'left', color: '#71717a', fontWeight: 600 }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
-              {summary.map((s, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid #18181b', cursor: 'pointer' }} onClick={() => loadCustomerOrders(s.customer_name)}>
-                  <td style={{ padding: '8px 10px', fontWeight: 500, color: '#60a5fa' }}>{s.customer_name}</td>
-                  <td style={{ padding: '8px 10px' }}>
-                    <span style={{ background: `${channelColor[s.channel] || '#71717a'}20`, color: channelColor[s.channel] || '#71717a', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>
-                      {channelLabel[s.channel] || s.channel}
-                    </span>
-                  </td>
-                  <td style={{ padding: '8px 10px', fontWeight: 700, color: '#facc15' }}>{s.total_qty}</td>
-                  <td style={{ padding: '8px 10px', color: '#71717a' }}>{s.total_orders}</td>
-                  <td style={{ padding: '8px 10px', color: '#71717a' }}>{s.last_date}</td>
-                </tr>
-              ))}
+              {cGroups.length > 0 && <tr style={{ background: '#3b82f620', borderBottom: '1px solid #3b82f640' }}><td colSpan={5} style={{ padding: '8px 12px', fontWeight: 800, fontSize: 13, color: '#3b82f6' }}>👤 C端客户</td></tr>}
+              {cGroups.flatMap(g => [
+                <tr key={'cg-'+g.label} style={{ background: '#22c55e15', borderBottom: '1px solid #22c55e30' }}><td colSpan={5} style={{ padding: '4px 12px', fontWeight: 700, fontSize: 11, color: '#22c55e' }}>{g.label}</td></tr>,
+                ...g.items.map(renderRow)
+              ])}
+              {bGroups.length > 0 && <tr style={{ background: '#f59e0b20', borderBottom: '1px solid #f59e0b40' }}><td colSpan={5} style={{ padding: '8px 12px', fontWeight: 800, fontSize: 13, color: '#f59e0b' }}>🏢 B端客户</td></tr>}
+              {bGroups.flatMap(g => [
+                <tr key={'bg-'+g.label} style={{ background: '#22c55e15', borderBottom: '1px solid #22c55e30' }}><td colSpan={5} style={{ padding: '4px 12px', fontWeight: 700, fontSize: 11, color: '#22c55e' }}>{g.label}</td></tr>,
+                ...g.items.map(renderRow)
+              ])}
             </tbody>
           </table>
         </div>
-      )}
+        );
+      })()}
 
       {/* 选中客户的各型号明细 */}
       {selectedCustomer && (
