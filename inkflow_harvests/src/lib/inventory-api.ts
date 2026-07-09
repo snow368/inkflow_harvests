@@ -1,6 +1,21 @@
 // Inventory API service — calls cloud-api Worker
 const API = 'https://harvests-cloud-api.inkflowapp.workers.dev/api';
 
+// 自动重试：Worker冷启动时可能EOF，重试3次
+async function apiFetch(url: string, options?: RequestInit, retries = 3): Promise<Response> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch(url, options);
+      return res;
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      // 指数退避：0.5s, 1s, 2s
+      await new Promise(r => setTimeout(r, 500 * Math.pow(2, i)));
+    }
+  }
+  throw new Error('fetch failed');
+}
+
 export interface Product {
   sku: string;
   name: string;

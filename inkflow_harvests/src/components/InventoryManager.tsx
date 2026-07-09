@@ -299,7 +299,7 @@ export default function InventoryManager() {
 
       {tab === 'stock' && <StockTab products={products} onRefresh={loadAll} setMessage={setMessage} />}
       {tab === 'inbound' && <InboundTab inbounds={inbounds} summary={inboundSummary} products={products} onRefresh={loadAll} />}
-      {tab === 'outbound' && <OutboundTab outbounds={outbounds} summary={outboundSummary} products={products} customers={customers} onRefresh={loadAll} />}
+      {tab === 'outbound' && <OutboundTab outbounds={outbounds} summary={outboundSummary} products={products} customers={customers} onRefresh={loadAll} setMessage={setMessage} />}
       {tab === 'customers' && <CustomersTab customers={customers} onRefresh={loadAll} />}
     </div>
   );
@@ -318,6 +318,10 @@ function StockTab({ products, onRefresh, setMessage }: { products: Product[]; on
   const [editSku, setEditSku] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Record<string, any>>({});
   const [savingEdit, setSavingEdit] = useState(false);
+  const [batchEdit, setBatchEdit] = useState(false);
+  const [batchData, setBatchData] = useState<Record<string, number>>({});
+  const [scanInVisible, setScanInVisible] = useState(false);
+  const [scanInText, setScanInText] = useState('');
 
   const startEdit = (p: Product) => {
     setEditSku(p.sku);
@@ -377,7 +381,8 @@ function StockTab({ products, onRefresh, setMessage }: { products: Product[]; on
     onRefresh();
   };
 
-  // Group by series
+  
+// Group by series
   const seriesOrder = ['CON', 'COG', 'AES'];
   const filteredGrouped = new Map<string, typeof products>();
   for (const s of seriesOrder) {
@@ -390,6 +395,71 @@ function StockTab({ products, onRefresh, setMessage }: { products: Product[]; on
 
   return (
     <div>
+      {batchEdit && (
+        <div style={{ background: "#18181b", borderRadius: 12, padding: 12, marginBottom: 12, border: "1px solid #27272a" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#facc15", marginBottom: 8 }}>📝 批量编辑库存</div>
+          <div style={{ maxHeight: 300, overflowY: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+              <thead><tr style={{ borderBottom: "1px solid #27272a", position: "sticky", top: 0, background: "#0c0c0e" }}>
+                <th style={{ padding: "6px 10px", textAlign: "left", color: "#71717a", fontWeight: 600 }}>SKU</th>
+                <th style={{ padding: "6px 10px", textAlign: "left", color: "#71717a", fontWeight: 600 }}>名称</th>
+                <th style={{ padding: "6px 10px", textAlign: "left", color: "#71717a", fontWeight: 600 }}>库存</th>
+              </tr></thead>
+              <tbody>
+                {filtered.map(p => (
+                  <tr key={p.sku} style={{ borderBottom: "1px solid #18181b" }}>
+                    <td style={{ padding: "6px 10px" }}><code style={{ color: "#60a5fa", fontSize: 10 }}>{p.sku}</code></td>
+                    <td style={{ padding: "6px 10px", color: "#e4e4e7", fontSize: 10 }}>{p.name || "---"}</td>
+                    <td style={{ padding: "6px 10px" }}>
+                      <input type="number" value={batchData[p.sku] ?? p.current_stock ?? 0} onChange={e => setBatchData({...batchData, [p.sku]: Number(e.target.value)})}
+                        style={{ width: 70, padding: "4px 8px", borderRadius: 4, border: "1px solid #27272a", background: "#0c0c0e", color: "#22c55e", fontSize: 12, fontWeight: 700, outline: "none" }} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button onClick={async () => {
+            let ok = 0; let fail = 0;
+            for (const [sku, qty] of Object.entries(batchData)) {
+              const p = products.find(x => x.sku === sku);
+              if (!p || qty === p.current_stock) { ok++; continue; }
+              try { await api.updateProductField(sku, "current_stock", qty); ok++; }
+              catch { fail++; }
+            }
+            setMessage("✅ " + ok + " ok" + (fail ? " \u274c " + fail + " fail" : ""));
+            setTimeout(() => setMessage(""), 3000);
+            onRefresh();
+          }} style={{ marginTop: 8, padding: "8px 20px", borderRadius: 6, border: "none", background: "#22c55e", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            ✅ 保存全部
+          </button>
+        </div>
+      )}
+      {scanInVisible && (
+        <div style={{ background: "#18181b", borderRadius: 12, padding: 12, marginBottom: 12, border: "1px solid #27272a" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#f59e0b", marginBottom: 8 }}>📷 扫码入库</div>
+          <textarea value={scanInText} onChange={e => setScanInText(e.target.value)} rows={4} placeholder="粘贴扫码数据，一行一个型号..."
+            style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #27272a", background: "#0c0c0e", color: "#fafafa", fontSize: 12, outline: "none", boxSizing: "border-box", resize: "vertical" }} />
+          <button onClick={async () => {
+            const skus = scanInText.trim().split(/[\s,;\n]+/).filter(Boolean);
+            let ok = 0; let fail = 0;
+            for (const s of skus) {
+              const sku = s.toUpperCase().replace(/[^A-Z0-9-]/g, "");
+              if (!sku) { fail++; continue; }
+              try {
+                await api.recordInbound({ product_sku: sku, quantity: 1, large_case_qty: 0, small_box_qty: 0, po_number: "", inbound_date: new Date().toISOString().slice(0, 10), note: "扫码入库", sterilized: true });
+                ok++;
+              } catch { fail++; }
+            }
+            setMessage("✅ " + ok + " ok" + (fail ? " \u274c " + fail + " fail" : ""));
+            setTimeout(() => setMessage(""), 3000);
+            setScanInText("");
+            onRefresh();
+          }} style={{ marginTop: 8, padding: "8px 20px", borderRadius: 6, border: "none", background: "#f59e0b", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            ✅ 提交入库
+          </button>
+        </div>
+      )}
       {/* Quick Outbound */}
       <div style={{ background: '#18181b', borderRadius: 12, padding: 14, marginBottom: 12, border: '1px solid #f59e0b' }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', marginBottom: 8 }}>{'📤'} 每日出库</div>
@@ -419,6 +489,14 @@ function StockTab({ products, onRefresh, setMessage }: { products: Product[]; on
         <button onClick={() => setShowForm(true)}
           style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: '#2563eb', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
           + Product
+        </button>
+        <button onClick={() => { setBatchEdit(!batchEdit); if (!batchEdit) { const dd: Record<string, number> = {}; for (const p of products) dd[p.sku] = p.current_stock || 0; setBatchData(dd); } }}
+          style={{ padding: "10px 18px", borderRadius: 8, border: "none", background: batchEdit ? "#ef4444" : "#22c55e", color: "white", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace:"nowrap" }}>
+          {batchEdit ? "Done" : "📝 Batch"}
+        </button>
+        <button onClick={() => setScanInVisible(!scanInVisible)}
+          style={{ padding: "10px 18px", borderRadius: 8, border: "none", background: scanInVisible ? "#ef4444" : "#f59e0b", color: "white", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace:"nowrap" }}>
+          {scanInVisible ? "Close" : "📷 Scan"}
         </button>
       </div>
 
@@ -558,10 +636,19 @@ function StockTab({ products, onRefresh, setMessage }: { products: Product[]; on
                               </button>
                             </div>
                           ) : (
+                            <>
                             <button onClick={() => startEdit(p)}
                               style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #27272a', background: 'transparent', color: '#71717a', fontSize: 11, cursor: 'pointer' }}>
                               ✏️
                             </button>
+                            <button onClick={async () => {
+                              if (!confirm('删除 '+p.sku+'?')) return;
+                              try { await api.deleteProduct(p.sku); onRefresh(); }
+                              catch (e: any) { setMessage('❌ ' + (e.message || e)); }
+                            }} style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', fontSize: 11, cursor: 'pointer' }}>
+                              🗑
+                            </button>
+                            </>
                           )}
                         </td>
                       </tr>
@@ -787,7 +874,7 @@ function InboundTab({ inbounds, summary, products, onRefresh }: { inbounds: Inbo
 }
 
 // ── Outbound Tab ──
-function OutboundTab({ outbounds, summary, products, customers, onRefresh }: { outbounds: OutboundRecord[]; summary: OutboundSummary[]; products: Product[]; customers: Customer[]; onRefresh: () => void }) {
+function OutboundTab({ outbounds, summary, products, customers, onRefresh, setMessage }: { outbounds: OutboundRecord[]; summary: OutboundSummary[]; products: Product[]; customers: Customer[]; onRefresh: () => void; setMessage?: (msg: string) => void }) {
   const [sku, setSku] = useState(''); const [qty, setQty] = useState(0);
   const [channel, setChannel] = useState<'B2C'|'B2B'|'sample_b2b'|'sample_b2c'>('B2C');
   const [viewFilter, setViewFilter] = useState<string>('all');
@@ -798,6 +885,34 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh }: { o
   const [selectedCustomer, setSelectedCustomer] = useState<string|null>(null);
   const [customerOrders, setCustomerOrders] = useState<any[]>([]);
   const [customerDetails, setCustomerDetails] = useState<any[]>([]);
+  const [pickSku, setPickSku] = useState<string|null>(null);
+  const [pickQty, setPickQty] = useState(0);
+  const [pickPack, setPickPack] = useState('20pcs');
+  const [pickSubSku, setPickSubSku] = useState('');
+  const [pickedSkus, setPickedSkus] = useState<string[]>([]);
+  const [b2bScan20, setB2bScan20] = useState('');
+  const [b2bScan10, setB2bScan10] = useState('');
+  const [b2bItems, setB2bItems] = useState<{sku:string;q20:number;q10:number}[]>([]);
+  const [b2bCustomer, setB2bCustomer] = useState('');
+  const [b2bSaving, setB2bSaving] = useState(false);
+  const [convert10to20, setConvert10to20] = useState(true);
+  const [b2bOrders, setB2bOrders] = useState<any[]>([]);
+  const [addOosSku, setAddOosSku] = useState('');
+  const [addOosName, setAddOosName] = useState('');
+  const [addOosPack, setAddOosPack] = useState('');
+  const [addOosQty, setAddOosQty] = useState(0);
+  const [addOosStock, setAddOosStock] = useState(0);
+  const [showAddOos, setShowAddOos] = useState(false);
+  const [editSku, setEditSku] = useState<string|null>(null);
+  const [editSkuVal, setEditSkuVal] = useState('');
+  const [editStockQty, setEditStockQty] = useState(0);
+  const [editShipQty, setEditShipQty] = useState(0);
+  const [editStatus, setEditStatus] = useState('');
+  const [editPack, setEditPack] = useState('');
+  const [pickFilter, setPickFilter] = useState<'all'|'oos'|'unpicked'>('unpicked');
+  const [editRowId, setEditRowId] = useState<number|null>(null);
+  const [editRowData, setEditRowData] = useState<any>({});
+  const apiBase = 'https://harvests-cloud-api.inkflowapp.workers.dev';
 
   const record = async () => {
     if (!sku || !qty) return;
@@ -824,6 +939,71 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh }: { o
     const data = await api.getCustomerOrders(name);
     setCustomerOrders(data.items);
     setCustomerDetails(data.details);
+  };
+
+  const handlePick = async () => {
+    const s = pickSubSku || pickSku;
+    if (!s) return;
+    try {
+      await api.recordOutbound({ product_sku: s, quantity: pickQty, pack_source: pickPack, channel: 'B2B', customer_name: selectedCustomer, shopify_order_id: '', outbound_date: new Date().toISOString().slice(0,10), note: (pickSubSku ? 'sub:' + pickSku + '->' : '') + (pickPack === '20pcs' ? '20pcs' : '10pcs') });
+      setPickedSkus(prev => [...prev, s]);
+      setPickSku(null); setPickSubSku('');
+      setMessage('Done'); setTimeout(() => setMessage(''), 3000);
+    } catch (ex: any) { setMessage('Err: ' + (ex.message || ex)); }
+  };
+
+  const parseB2bScan = (text: string, packSize: 20|10) => {
+    const tokens = text.trim().split(/[\s,;\n]+/).filter(Boolean);
+    const counts: Record<string, number> = {};
+    for (const t of tokens) {
+      let sku = t.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+      if (!sku || sku.length < 3) continue;
+      if (/^\d{3,4}[A-Z]*$/.test(sku)) {
+        for (const pre of ['CON-','COG-','AES-','CAN-','PG-','PIC-']) { const c = pre + sku; if (products.find((p:any) => p.sku === c)) { sku = c; break; } }
+      }
+      const prefixes = ['CON-','COG-','AES-','CAN-','PG-','PIC-'];
+      for (const pre of prefixes) { if (sku.startsWith(pre)) { counts[sku] = (counts[sku] || 0) + 1; break; } }
+    }
+    setB2bItems(prev => {
+      const merged = [...prev];
+      for (const [sku, cnt] of Object.entries(counts)) {
+        const ex = merged.find(i => i.sku === sku);
+        if (ex) { if (packSize === 20) ex.q20 += cnt; else ex.q10 += cnt; }
+        else merged.push({ sku, q20: packSize === 20 ? cnt : 0, q10: packSize === 10 ? cnt : 0 });
+      }
+      return merged;
+    });
+  };
+
+  const submitB2bOrder = async () => {
+    if (!b2bCustomer || !b2bItems.length) { setMessage('Error'); setTimeout(() => setMessage(''), 2000); return; }
+    setB2bSaving(true);
+    let ok = 0; let fail = 0;
+    try {
+      const oid = 'B2B-' + b2bCustomer.replace(/[^a-zA-Z0-9]/g, '') + '-' + new Date().toISOString().slice(0,10);
+      for (const item of b2bItems) {
+        if (item.q20 > 0) {
+          try {
+            const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 15000);
+            const r = await fetch(apiBase+'/api/inventory/outbound', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({product_sku:item.sku, quantity:item.q20*20, pack_source:'20pcs', channel:'B2B', customer_name:b2bCustomer, shopify_order_id:oid, outbound_date:new Date().toISOString().slice(0,10), note:'20pcs' }), signal:ac.signal });
+            clearTimeout(t); const d = await r.json(); if (d.ok) ok++; else fail++;
+          } catch { fail++; }
+        }
+        if (item.q10 > 0) {
+          const qty10 = convert10to20 ? Math.ceil(item.q10 * 10 / 20) : item.q10;
+          const src10 = convert10to20 ? '20pcs' : '10pcs';
+          try {
+            const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 15000);
+            const r = await fetch(apiBase+'/api/inventory/outbound', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({product_sku:item.sku, quantity: qty10, pack_source: src10, channel:'B2B', customer_name:b2bCustomer, shopify_order_id:oid, outbound_date:new Date().toISOString().slice(0,10), note: convert10to20 ? '10to20' : '10pcs_orig' }), signal:ac.signal });
+            clearTimeout(t); const d = await r.json(); if (d.ok) ok++; else fail++;
+          } catch { fail++; }
+        }
+      }
+      setMessage(fail === 0 ? 'Done: ' + ok : 'Partial: ' + ok + ' ok ' + fail);
+      setB2bScan20(''); setB2bScan10(''); setB2bItems([]); setB2bCustomer('');
+    } catch (ex: any) { setMessage('Error: ' + (ex.message || ex)); }
+    setB2bSaving(false);
+    setTimeout(() => setMessage(''), 4000);
   };
 
   // Date filter logic
@@ -978,8 +1158,12 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh }: { o
           if ((s.last_date || '') > merged[name].last_date) merged[name].last_date = s.last_date || '';
         }
         const allItems = Object.values(merged).sort((a, b) => (b.last_date || '').localeCompare(a.last_date || ''));
-        const cItems = allItems.filter(s => s.channel === 'B2C' || s.channel === 'sample_b2c');
-        const bItems = allItems.filter(s => s.channel === 'B2B' || s.channel === 'sample_b2b');
+        // Filter by selected channel
+        const showB = channel === 'B2B' || channel === 'sample_b2b';
+        const showC = channel === 'B2C' || channel === 'sample_b2c' || (!showB);
+        const filteredAll = allItems.filter(s => (showB && (s.channel === 'B2B' || s.channel === 'sample_b2b')) || (showC && (s.channel === 'B2C' || s.channel === 'sample_b2c')));
+        const cItems = showC ? filteredAll.filter(s => s.channel === 'B2C' || s.channel === 'sample_b2c') : [];
+        const bItems = showB ? filteredAll.filter(s => s.channel === 'B2B' || s.channel === 'sample_b2b') : [];
         const today = new Date();
         const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
         const groupByMonth = (items: any[]) => {
@@ -1012,6 +1196,51 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh }: { o
         return (
         <div style={{ background: '#0c0c0e', borderRadius: 12, border: '1px solid #27272a', overflow: 'hidden', marginBottom: 12 }}>
           <h4 style={{ fontSize: 13, fontWeight: 600, padding: 12, margin: 0, borderBottom: '1px solid #18181b' }}>📊 客户订单汇总</h4>
+          {(channel === 'B2B' || channel === 'sample_b2b') && (
+          <div style={{ background:'#f59e0b10', borderRadius:12, padding:14, marginBottom:12, border:'1px solid #f59e0b30' }}>
+            <h5 style={{ fontSize:12, fontWeight:700, color:'#f59e0b', margin:'0 0 8px' }}>B2B Scan</h5>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8 }}>
+              <div>
+                <label style={{ fontSize:10, color:'#22c55e', display:'block', marginBottom:4, fontWeight:600 }}>20PCS</label>
+                <textarea value={b2bScan20} onChange={e=>setB2bScan20(e.target.value)} rows={3} placeholder="paste 20pcs barcodes..." style={{ width:'100%', padding:'6px 8px', borderRadius:6, border:'2px solid #22c55e', background:'#0c0c0e', color:'#22c55e', fontSize:11, outline:'none', boxSizing:'border-box', resize:'vertical' }} />
+                <button onClick={()=>{setB2bItems([]);const v=b2bScan20;parseB2bScan(v,20);setB2bScan20('')}} style={{ marginTop:4, padding:'3px 10px', borderRadius:4, border:'none', background:'#22c55e', color:'white', fontSize:10, fontWeight:600, cursor:'pointer' }}>Parse 20pcs</button>
+              </div>
+              <div>
+                <label style={{ fontSize:10, color:'#f59e0b', display:'block', marginBottom:4, fontWeight:600 }}>10PCS</label>
+                <textarea value={b2bScan10} onChange={e=>setB2bScan10(e.target.value)} rows={3} placeholder="paste 10pcs barcodes..." style={{ width:'100%', padding:'6px 8px', borderRadius:6, border:'2px solid #f59e0b', background:'#0c0c0e', color:'#f59e0b', fontSize:11, outline:'none', boxSizing:'border-box', resize:'vertical' }} />
+                <button onClick={()=>{setB2bItems([]);const v=b2bScan10;parseB2bScan(v,10);setB2bScan10('')}} style={{ marginTop:4, padding:'3px 10px', borderRadius:4, border:'none', background:'#f59e0b', color:'white', fontSize:10, fontWeight:600, cursor:'pointer' }}>Parse 10pcs</button>
+              </div>
+            </div>
+            {b2bItems.length > 0 && (
+              <div>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:10 }}>
+                  <thead><tr style={{ borderBottom:'1px solid #27272a' }}>
+                    <th style={{ padding:'4px 8px', textAlign:'left', color:'#71717a', fontWeight:600 }}>SKU</th>
+                    <th style={{ padding:'4px 8px', textAlign:'left', color:'#22c55e', fontWeight:600 }}>20</th>
+                    <th style={{ padding:'4px 8px', textAlign:'left', color:'#f59e0b', fontWeight:600 }}>10</th>
+                    <th style={{ padding:'4px 8px', textAlign:'left', color:'#facc15', fontWeight:600 }}>Total</th>
+                    <th></th>
+                  </tr></thead>
+                  <tbody>{b2bItems.map((item,i)=>(
+                    <tr key={i} style={{ borderBottom:'1px solid #18181b' }}>
+                      <td style={{ padding:'4px 8px' }}><code style={{ color:'#60a5fa', fontSize:10 }}>{item.sku}</code></td>
+                      <td style={{ padding:'4px 8px' }}><input type="number" value={item.q20} onChange={e=>{{const nv=[...b2bItems];nv[i].q20=Math.max(0,Number(e.target.value));setB2bItems(nv)}}} style={{ width:50, padding:'2px 4px', borderRadius:4, border:'1px solid #22c55e', background:'#0c0c0e', color:'#22c55e', fontSize:10, outline:'none' }} /></td>
+                      <td style={{ padding:'4px 8px' }}><input type="number" value={convert10to20?Math.ceil(item.q10*10/20):item.q10} onChange={e=>{{const nv=[...b2bItems];nv[i].q10=Math.max(0,Number(e.target.value));setB2bItems(nv)}}} style={{ width:50, padding:'2px 4px', borderRadius:4, border:'1px solid #f59e0b', background:'#0c0c0e', color:'#f59e0b', fontSize:10, outline:'none' }} /></td>
+                      <td style={{ padding:'4px 8px', fontWeight:700, color:'#facc15' }}>{item.q20*20+(convert10to20?Math.ceil(item.q10*10/20)*20:item.q10*10)}</td>
+                      <td style={{ padding:'4px 8px' }}><button onClick={()=>setB2bItems(p=>p.filter((_,j)=>j!==i))} style={{ padding:'2px 6px', borderRadius:4, border:'none', background:'#ef4444', color:'white', fontSize:9, cursor:'pointer' }}>X</button></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:8, flexWrap:'wrap' }}>
+                  <button onClick={()=>setConvert10to20(!convert10to20)} style={{ padding:'3px 10px', borderRadius:4, border:'none', background:convert10to20?'#f59e0b':'#27272a', color:'white', fontSize:10, fontWeight:600, cursor:'pointer' }}>{convert10to20?'10-20pcs':'10pcs orig'}</button>
+                  <input list="b2b-cust-list" value={b2bCustomer} onChange={e=>setB2bCustomer(e.target.value)} placeholder="Customer" style={{ padding:'6px 10px', borderRadius:6, border:'1px solid #27272a', background:'#0c0c0e', color:'#fafafa', fontSize:12, outline:'none' }} />
+                  <datalist id="b2b-cust-list">{customers.filter((c:any)=>c.customer_type?.includes('B')||c.name?.includes('B')).map((c:any)=><option key={c.id} value={c.name} />)}</datalist>
+                  <button onClick={submitB2bOrder} disabled={b2bSaving||!b2bCustomer||!b2bItems.length} style={{ padding:'6px 20px', borderRadius:6, border:'none', background:b2bSaving||!b2bCustomer||!b2bItems.length?'#27272a':'#f59e0b', color:'white', fontSize:11, fontWeight:700, cursor:'pointer' }}>{b2bSaving?'...':'Submit'}</button>
+                </div>
+              </div>
+            )}
+          </div>
+          )}
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #27272a' }}>
@@ -1035,39 +1264,255 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh }: { o
         );
       })()}
 
-      {/* 选中客户的各型号明细 */}
+      {/* 选中客户的各型号明细 - 3 panel */}
       {selectedCustomer && (
-        <div style={{ background: '#18181b', borderRadius: 12, border: '1px solid #27272a', overflow: 'hidden', marginBottom: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid #27272a' }}>
-            <h4 style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>🔍 {selectedCustomer} — 各型号订单</h4>
-            <button onClick={() => setSelectedCustomer(null)} style={{ background: 'none', border: 'none', color: '#71717a', cursor: 'pointer', fontSize: 14 }}>✕</button>
+        <div style={{ position:'fixed', top:0, left:0, right:0, bottom:0, zIndex:1000, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }} onClick={() => setSelectedCustomer(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', borderRadius: 20, border: '1px solid #27272a', maxWidth: 950, width: '100%', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid #27272a' }}>
+            <h4 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>🔍 {selectedCustomer}</h4>
+            <button onClick={() => setSelectedCustomer(null)} style={{ background: 'none', border: 'none', color: '#71717a', cursor: 'pointer', fontSize: 18 }}>✕</button>
           </div>
-          {customerOrders.length > 0 ? (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #27272a' }}>
-                  {['型号', '名称', '总盒数', '订单次数', '首次', '最近'].map(h => (
-                    <th key={h} style={{ padding: '8px 10px', textAlign: 'left', color: '#71717a', fontWeight: 600 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {customerOrders.map((item, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid #18181b' }}>
-                    <td style={{ padding: '8px 10px' }}><code style={{ color: '#60a5fa' }}>{item.product_sku}</code></td>
-                    <td style={{ padding: '8px 10px', color: '#e4e4e7' }}>{item.product_name || '—'}</td>
-                    <td style={{ padding: '8px 10px', fontWeight: 700, color: '#facc15' }}>{item.total_qty}</td>
-                    <td style={{ padding: '8px 10px', color: '#71717a' }}>{item.order_count}</td>
-                    <td style={{ padding: '8px 10px', color: '#71717a' }}>{item.first_date}</td>
-                    <td style={{ padding: '8px 10px', color: '#71717a' }}>{item.last_date}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : <p style={{ padding: 20, color: '#71717a', fontSize: 11 }}>暂无数据</p>}
+          <div style={{ overflowY:'auto', flex:1, padding:8 }}>
+          <div style={{ display:'flex', gap:8, height:'100%' }}>
+            {/* 左侧：拣货清单 + 已拣货 */}
+            <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:8 }}>
+              {/* 拣货清单 */}
+              {(() => {
+                const custOuts = outbounds.filter((o:any) => o.customer_name === selectedCustomer);
+                const b2bSkus = b2bOrders.map((r:any) => r.product_sku);
+                const outSkus = custOuts.map((r:any) => r.product_sku);
+                const allSkus = [...new Set([...b2bSkus, ...outSkus])].sort();
+                const picked = pickedSkus;
+                const displaySkus = allSkus.filter((sku:any) => {
+                  const shipped = custOuts.filter((r:any) => r.product_sku === sku).reduce((s:number,r:any) => s + r.quantity, 0);
+                  const orderQty = b2bOrders.filter((r:any) => r.product_sku === sku).reduce((s:number,r:any) => s + (r.quantity || 0), 0);
+                        const displayQty = orderQty || shipped;
+                  const hasB2b = b2bOrders.some((r:any) => r.product_sku === sku);
+                  if (pickFilter === 'oos') { const p = products.find((x:any) => x.sku === sku); return p && (p.status === 'out_of_stock' || p.status === 'low_stock') && (!hasB2b || shipped < orderQty); }
+                  if (pickFilter === 'unpicked') return !hasB2b || shipped < orderQty;
+                  return true;
+                });
+                return (
+                <div style={{ border:'1px solid #27272a', borderRadius:10, overflow:'hidden' }}>
+                  <div style={{ padding:'6px 10px', fontSize:11, fontWeight:700, color:'#fafafa', background:'#27272a', display:'flex', alignItems:'center', gap:6 }}>
+                    <span>📋 拣货清单 ({displaySkus.length})</span>
+                    <div style={{ display:'flex', gap:3, marginLeft:'auto' }}>
+                      <button onClick={()=>setPickFilter('all')} style={{ padding:'2px 6px', borderRadius:4, border:'none', background:pickFilter==='all'?'#6366f1':'#27272a', color:'white', fontSize:10, cursor:'pointer', fontWeight:pickFilter==='all'?700:400 }}>全部</button>
+                      <button onClick={()=>setPickFilter('oos')} style={{ padding:'2px 6px', borderRadius:4, border:'none', background:pickFilter==='oos'?'#ef4444':'#27272a', color:'white', fontSize:10, cursor:'pointer', fontWeight:pickFilter==='oos'?700:400 }}>缺货</button>
+                      <button onClick={()=>setPickFilter('unpicked')} style={{ padding:'2px 6px', borderRadius:4, border:'none', background:pickFilter==='unpicked'?'#22c55e':'#27272a', color:'white', fontSize:10, cursor:'pointer', fontWeight:pickFilter==='unpicked'?700:400 }}>待拣</button>
+                    </div>
+                  </div>
+                  <div style={{ maxHeight:300, overflowY:'auto' }}>
+                  <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
+                    <thead><tr style={{ borderBottom:'1px solid #27272a', position:'sticky', top:0, background:'#0c0c0e' }}>
+                      {['型号','订单量','包装','已发','库存','状态','操作'].map(h=><th key={h} style={{ padding:'4px 8px', textAlign:'left', color:'#71717a', fontWeight:600, fontSize:10 }}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      {displaySkus.map((sku:any) => {
+                        const p = products.find((x:any) => x.sku === sku);
+                        const shipped = custOuts.filter((r:any) => r.product_sku === sku).reduce((s:number,r:any) => s + r.quantity, 0);
+                        const orderQty = b2bOrders.filter((r:any) => r.product_sku === sku).reduce((s:number,r:any) => s + (r.quantity || 0), 0) || shipped;
+                        const stock = p?.current_stock || 0;
+                        const status = p?.status || '';
+                        const isOos = status === 'out_of_stock' || status === 'low_stock';
+                        const isPicked = picked.includes(sku);
+                        const packs = [...new Set(custOuts.filter((r:any) => r.product_sku === sku).map((r:any) => (r as any).pack_source).filter(Boolean))] as string[];
+                        const packsStr = packs.map((p:string) => p === '20pcs' ? '20装' : p === '10pcs' ? '10装' : p).join('/');
+                        return (
+                        <tr key={sku} style={{ borderBottom:'1px solid #18181b', background: isPicked ? '#22c55e10' : isOos ? '#ef444408' : 'transparent' }}>
+                          <td style={{ padding:'3px 6px'}}>
+                            {editSku === sku ? <input value={editSkuVal} onChange={e=>setEditSkuVal(e.target.value.toUpperCase())} style={{ width:70, padding:'1px 3px', borderRadius:3, border:'1px solid #6366f1', background:'#0c0c0e', color:'#60a5fa', fontSize:10, outline:'none' }} /> : <code style={{ color:'#60a5fa', fontSize:11 }}>{sku}</code>}
+                          </td>
+                          <td style={{ padding:'3px 6px', color:'#a855f7', fontWeight:600, fontSize:11 }}>{orderQty}</td>
+                          <td style={{ padding:'3px 6px', fontSize:10, fontWeight:600, color: packsStr.includes('20装')?'#22c55e':'#f59e0b' }}>{packsStr || '—'}</td>
+                          <td style={{ padding:'4px 8px', color:'#a855f7', fontWeight:600, fontSize:11 }}>
+                            {editSku === sku ? <input type="number" value={editShipQty} onChange={e=>setEditShipQty(Math.max(0,Number(e.target.value)))} style={{ width:40, padding:'1px 3px', borderRadius:3, border:'1px solid #6366f1', background:'#0c0c0e', color:'#f59e0b', fontSize:11, outline:'none' }} /> : (isPicked ? <span style={{ color:'#22c55e', fontWeight:700 }}>{shipped}</span> : <span style={{ color:'#71717a' }}>—</span>)}
+                          </td>
+                          <td style={{ padding:'4px 8px', fontSize:11 }}>
+                            {editSku === sku ? <input type="number" value={editStockQty} onChange={e=>setEditStockQty(Number(e.target.value))} style={{ width:40, padding:'1px 3px', borderRadius:3, border:'1px solid #6366f1', background:'#0c0c0e', color: stock > 0 ? '#22c55e' : '#ef4444', fontSize:11, outline:'none' }} /> : <span style={{ color: stock > 0 ? '#22c55e' : '#ef4444', fontSize:11 }}>{stock}</span>}
+                          </td>
+                          <td style={{ padding:'4px 8px', fontSize:11 }}>
+                            {editSku === sku ? (
+                              <select value={editStatus} onChange={e=>setEditStatus(e.target.value)} style={{ padding:'1px 3px', borderRadius:3, border:'1px solid #6366f1', background:'#0c0c0e', color:'#fafafa', fontSize:11, outline:'none' }}>
+                                <option value="in_stock">正常</option><option value="low_stock">LOW</option><option value="out_of_stock">OOS</option>
+                              </select>
+                            ) : isPicked ? <span style={{ color:'#22c55e', fontWeight:600 }}>✓</span> : isOos ? <span style={{ color:'#ef4444', fontWeight:600, fontSize:11 }}>{status === 'out_of_stock' ? 'OOS' : 'LOW'}</span> : <span style={{ color:'#22c55e' }}>正常</span>}
+                          </td>
+                          <td style={{ padding:'4px 8px', fontSize:11, whiteSpace:'nowrap' }}>
+                            {editSku === sku ? (
+                              <>
+                              <button onClick={async()=>{try{await api.updateProductField(sku,'current_stock',editStockQty);if(editStatus!==status)await api.updateProductField(sku,'status',editStatus);const recs = outbounds.filter((o:any)=>o.customer_name===selectedCustomer&&o.product_sku===sku);if(recs.length>0)await api.updateOutbound(recs[0].id,{quantity:editShipQty,pack_source:editPack||''});setEditSku(null);loadCustomerOrders(selectedCustomer);}catch(ex:any){setMessage('Err:'+(ex.message||ex))}}} style={{ padding:'2px 5px', borderRadius:3, border:'none', background:'#22c55e', color:'white', fontSize:7, fontWeight:700, cursor:'pointer' }}>保存</button>
+                              <button onClick={()=>setEditSku(null)} style={{ padding:'2px 5px', borderRadius:3, border:'1px solid #27272a', background:'transparent', color:'#a1a1aa', fontSize:7, cursor:'pointer' }}>取消</button>
+                              </>
+                            ) : !isPicked ? (
+                              <>
+                              <button onClick={()=>{setEditSku(sku);setEditStockQty(stock);setEditShipQty(shipped);setEditStatus(status);setEditPack(packs[0]||'')}} style={{ padding:'2px 4px', borderRadius:3, border:'1px solid #6366f1', background:'transparent', color:'#818cf8', fontSize:7, cursor:'pointer' }}>✏️</button>
+                              <button onClick={async()=>{if(!confirm('删除 '+sku+'?')) return;const recs = outbounds.filter((o:any)=>o.customer_name===selectedCustomer&&o.product_sku===sku);if(recs.length>0){for(const r of recs) try{await api.deleteOutbound(r.id)}catch{}} else {const orderRecs=b2bOrders.filter((b:any)=>b.product_sku===sku);for(const r of orderRecs) try{await fetch(apiBase+'/api/inventory/b2b-order/'+r.id,{method:'DELETE'})}catch{}}loadCustomerOrders(selectedCustomer);}} style={{ padding:'2px 4px', borderRadius:3, border:'1px solid #ef4444', background:'transparent', color:'#ef4444', fontSize:7, cursor:'pointer' }}>🗑</button>
+                              {isOos ? <span style={{ color:'#ef4444', fontSize:10, fontWeight:600 }}>⛔</span> : <button onClick={()=>{setPickSku(sku);setPickQty(orderQty||shipped||1);setPickPack(packs[0]||'20pcs')}} style={{ padding:'2px 5px', borderRadius:3, border:'1px solid #22c55e', background:'transparent', color:'#22c55e', fontSize:7, cursor:'pointer', fontWeight:600 }}>拣货</button>}
+                              </>
+                            ) : null}
+                          </td>
+                        </tr>);})}
+                    </tbody>
+                  </table>
+                  </div>
+                </div>
+                );
+              })()}
+              {/* 添加产品 */}
+              {showAddOos ? (
+                <div style={{ padding:'6px 10px', display:'flex', gap:6, flexWrap:'wrap', alignItems:'center', background:'#6366f110', borderRadius:8, border:'1px solid #6366f130' }}>
+                  <input value={addOosSku} onChange={e=>setAddOosSku(e.target.value.toUpperCase())} placeholder="型号" style={{ width:80, padding:'3px 6px', borderRadius:4, border:'1px solid #6366f1', background:'#0c0c0e', color:'#60a5fa', fontSize:10, outline:'none' }} />
+                  <select value={addOosPack} onChange={e=>setAddOosPack(e.target.value)} style={{ padding:'3px 6px', borderRadius:4, border:'1px solid #6366f1', background:'#0c0c0e', color:'#fafafa', fontSize:10, outline:'none' }}><option value="">包装</option><option value="20pcs">20装</option><option value="10pcs">10装</option></select>
+                  <input type="number" value={addOosQty||''} onChange={e=>setAddOosQty(Math.max(1,Number(e.target.value)))} placeholder="数量" style={{ width:50, padding:'3px 6px', borderRadius:4, border:'1px solid #6366f1', background:'#0c0c0e', color:'#f59e0b', fontSize:10, outline:'none' }} />
+                  <button onClick={async()=>{if(!addOosSku||!addOosQty){setMessage('Error');return}try{await api.recordOutbound({product_sku:addOosSku,quantity:addOosQty,pack_source:addOosPack||undefined,channel:'B2B',customer_name:selectedCustomer,shopify_order_id:'',outbound_date:new Date().toISOString().slice(0,10),note:'manual add'});setShowAddOos(false);setAddOosSku('');setAddOosPack('');setAddOosQty(0);setMessage('Done');setTimeout(()=>setMessage(''),3000);const nm=selectedCustomer;setSelectedCustomer(null);setTimeout(()=>{setSelectedCustomer(nm);onRefresh()},100)}catch(ex:any){setMessage('Err:'+(ex.message||ex))}}} style={{ padding:'3px 8px', borderRadius:4, border:'none', background:'#22c55e', color:'white', fontSize:9, fontWeight:700, cursor:'pointer' }}>保存</button>
+                  <button onClick={()=>{setShowAddOos(false);setAddOosSku('');setAddOosPack('');setAddOosQty(0)}} style={{ padding:'3px 8px', borderRadius:4, border:'1px solid #27272a', background:'transparent', color:'#a1a1aa', fontSize:9, cursor:'pointer' }}>取消</button>
+                </div>
+              ) : (
+                <button onClick={()=>setShowAddOos(true)} style={{ padding:'3px 10px', borderRadius:4, border:'1px dashed #6366f1', background:'transparent', color:'#818cf8', fontSize:10, cursor:'pointer', marginBottom:4 }}>➕ 添加产品</button>
+              )}
+              {/* 已拣货 */}
+              {(() => {
+                const custOutSku = [...new Set(outbounds.filter((o:any)=>o.customer_name===selectedCustomer).map((o:any)=>o.product_sku))];
+                const displayPicked = [...new Set([...pickedSkus, ...custOutSku])];
+                if (!displayPicked.length) return null;
+                return (
+                <div style={{ border:'1px solid #22c55e30', borderRadius:10, overflow:'hidden' }}>
+                  <div style={{ padding:'6px 10px', fontSize:11, fontWeight:700, color:'#22c55e', background:'#14532d20' }}>📦 已拣货 ({displayPicked.length})</div>
+                  <div style={{ maxHeight:150, overflowY:'auto' }}>
+                  <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
+                    <thead><tr style={{ borderBottom:'1px solid #27272a', position:'sticky', top:0, background:'#0c0c0e' }}>
+                      {['型号','盒数','操作'].map(h=><th key={h} style={{ padding:'4px 8px', textAlign:'left', color:'#71717a', fontWeight:600, fontSize:10 }}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      {displayPicked.map((sku:string) => {
+                        const shipped = outbounds.filter((o:any)=>o.customer_name===selectedCustomer&&o.product_sku===sku).reduce((s:number,r:any)=>s+r.quantity,0);
+                        return (
+                        <tr key={sku} style={{ borderBottom:'1px solid #18181b', background:'#22c55e08' }}>
+                          <td style={{ padding:'3px 6px'}}><code style={{ color:'#60a5fa', fontSize:11 }}>{sku}</code> <span style={{ color:'#22c55e', fontWeight:700, fontSize:10 }}>✓</span></td>
+                          <td style={{ padding:'3px 6px', color:'#22c55e', fontWeight:600, fontSize:11 }}>{shipped}</td>
+                          <td style={{ padding:'3px 6px' }}>
+                            <button onClick={async()=>{
+                              if(!confirm('取消拣货 '+sku+'?')) return;
+                              const recs = outbounds.filter((o:any)=>o.customer_name===selectedCustomer&&o.product_sku===sku);
+                              for(const r of recs) try{await api.deleteOutbound(r.id)}catch{}
+                              setPickedSkus((prev:string[]) => prev.filter(s => s !== sku));
+                              loadCustomerOrders(selectedCustomer);
+                            }} style={{ padding:'2px 4px', borderRadius:3, border:'1px solid #ef4444', background:'transparent', color:'#ef4444', fontSize:7, cursor:'pointer' }}>🗑</button>
+                          </td>
+                        </tr>);})}
+                    </tbody>
+                  </table>
+                  </div>
+                </div>
+              )})()}
+            </div>
+            {/* 右侧：实际订单 */}
+            <div style={{ width:300, minWidth:260, border:'1px solid #6366f130', borderRadius:10, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+              <div style={{ padding:'6px 10px', fontSize:11, fontWeight:700, color:'#818cf8', background:'#6366f120' }}>📋 实际订单</div>
+              <div style={{ overflowY:'auto', flex:1 }}>
+                {(() => {
+                  const custOuts = outbounds.filter((o:any) => o.customer_name === selectedCustomer);
+                  const orderItems: {sku:string;total:number;pack:string}[] = [];
+                  const seen = new Set<string>();
+                  for (const r of custOuts) {
+                    const key = r.product_sku + '|' + ((r as any).pack_source||'');
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    const total = custOuts.filter((x:any) => x.product_sku === r.product_sku && (x as any).pack_source === (r as any).pack_source).reduce((s:number,x:any) => s + x.quantity, 0);
+                    const packLabel = (r as any).pack_source === '20pcs' ? '20装' : (r as any).pack_source === '10pcs' ? '10装' : '—';
+                    orderItems.push({ sku: r.product_sku, total, pack: packLabel });
+                  }
+                  orderItems.sort((a,b) => a.sku.localeCompare(b.sku));
+                  return orderItems.length > 0 ? (
+                  <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
+                    <thead><tr style={{ borderBottom:'1px solid #27272a', position:'sticky', top:0, background:'#0c0c0e' }}>
+                      {['型号','包装','盒数','操作'].map(h=><th key={h} style={{ padding:'3px 6px', textAlign:'left', color:'#71717a', fontWeight:600, fontSize:10 }}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      {orderItems.map((item,i)=>(
+                        <tr key={i} style={{ borderBottom:'1px solid #18181b' }}>
+                          <td style={{ padding:'3px 6px' }}><code style={{ color:'#60a5fa', fontSize:11 }}>{item.sku}</code></td>
+                          <td style={{ padding:'3px 6px', fontWeight:600, fontSize:10, color: item.pack==='20装'?'#22c55e':item.pack==='10装'?'#f59e0b':'#71717a' }}>{item.pack}</td>
+                          <td style={{ padding:'3px 6px', fontWeight:700, color:'#facc15', fontSize:11 }}>{item.total}</td>
+                          <td style={{ padding:'3px 6px' }}>
+                            <button onClick={async()=>{if(!confirm('删除 '+item.sku+'?')) return;const recs = outbounds.filter((o:any)=>o.customer_name===selectedCustomer&&o.product_sku===item.sku);for(const r of recs) try{await api.deleteOutbound(r.id)}catch{};loadCustomerOrders(selectedCustomer);}} style={{ padding:'2px 4px', borderRadius:3, border:'1px solid #ef4444', background:'transparent', color:'#ef4444', fontSize:9, cursor:'pointer' }}>🗑</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  ) : <p style={{ padding:12, color:'#71717a', fontSize:10 }}>暂无出库记录</p>;
+                })()}
+              </div>
+            </div>
+          </div>
+          </div>
+          </div>
+        </div>
+      )}      {/* 拣货弹窗 */}
+      {pickSku && (
+        <div style={{ position:'fixed', top:0, left:0, right:0, bottom:0, zIndex:1100, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center' }} onClick={()=>{setPickSku(null);setPickSubSku('')}}>
+        <div style={{ background:'#18181b', borderRadius:16, padding:'20px 24px', border:'2px solid #22c55e', boxShadow:'0 20px 60px rgba(0,0,0,0.6)', minWidth:320, maxWidth:'90vw' }} onClick={e=>e.stopPropagation()}>
+          <div style={{ textAlign:'center', marginBottom:12 }}>
+            <span style={{ fontSize:14, color:'#22c55e', fontWeight:700 }}>📦 拣货</span>
+            <code style={{ display:'block', color:'#60a5fa', fontSize:16, fontWeight:700, marginTop:4 }}>{pickSku}</code>
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <span style={{ fontSize:11, color:'#71717a', minWidth:60 }}>替代型号</span>
+              <input value={pickSubSku} onChange={e=>setPickSubSku(e.target.value.toUpperCase())} placeholder="(可选)" style={{ flex:1, padding:'8px 10px', borderRadius:8, border:'1px solid #f59e0b', background:'#0c0c0e', color:'#f59e0b', fontSize:14, outline:'none' }} />
+            </div>
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <span style={{ fontSize:11, color:'#71717a', minWidth:60 }}>数量</span>
+              <input type="number" value={pickQty||''} onChange={e=>setPickQty(Math.max(1,Number(e.target.value)))} style={{ flex:1, padding:'8px 10px', borderRadius:8, border:'1px solid #22c55e', background:'#0c0c0e', color:'#22c55e', fontSize:16, fontWeight:700, outline:'none' }} />
+            </div>
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <span style={{ fontSize:11, color:'#71717a', minWidth:60 }}>包装</span>
+              <select value={pickPack} onChange={e=>setPickPack(e.target.value)} style={{ flex:1, padding:'8px 10px', borderRadius:8, border:'1px solid #22c55e', background:'#0c0c0e', color:'#fafafa', fontSize:14, outline:'none' }}>
+                <option value="20pcs">20装</option>
+                <option value="10pcs">10装</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:8, marginTop:16, justifyContent:'center' }}>
+            <button style={{ padding:'10px 28px', borderRadius:10, border:'none', background:'#22c55e', color:'white', fontSize:14, fontWeight:700, cursor:'pointer' }} onClick={handlePick}>确认拣货</button>
+            <button style={{ padding:'10px 28px', borderRadius:10, border:'1px solid #27272a', background:'transparent', color:'#a1a1aa', fontSize:14, cursor:'pointer' }} onClick={()=>{setPickSku(null);setPickSubSku('')}}>取消</button>
+          </div>
+        </div>
         </div>
       )}
-
+      {/* 已拣货 */}
+      {pickedSkus.length > 0 && (
+        <div style={{ border:'1px solid #22c55e30', borderRadius:10, overflow:'hidden', marginBottom:12 }}>
+          <div style={{ padding:'6px 10px', fontSize:11, fontWeight:700, color:'#22c55e', background:'#14532d20' }}>📦 已拣货 ({pickedSkus.length})</div>
+          <div style={{ maxHeight:180, overflowY:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:10 }}>
+            <thead><tr style={{ borderBottom:'1px solid #27272a', position:'sticky', top:0, background:'#0c0c0e' }}>
+              {['型号','盒数','操作'].map(h=><th key={h} style={{ padding:'4px 8px', textAlign:'left', color:'#71717a', fontWeight:600, fontSize:9 }}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {pickedSkus.map(sku => {
+                const shipped = outbounds.filter((o:any)=>o.customer_name===selectedCustomer&&o.product_sku===sku).reduce((s:number,r:any)=>s+r.quantity,0);
+                return (
+                <tr key={sku} style={{ borderBottom:'1px solid #18181b', background:'#22c55e08' }}>
+                  <td style={{ padding:'4px 8px'}}><code style={{ color:'#60a5fa', fontSize:10 }}>{sku}</code> <span style={{ color:'#22c55e', fontWeight:700, fontSize:9 }}>✓</span></td>
+                  <td style={{ padding:'4px 8px', color:'#22c55e', fontWeight:600 }}>{shipped}</td>
+                  <td style={{ padding:'4px 8px' }}>
+                    <button onClick={async()=>{
+                      if(!confirm('取消拣货 '+sku+'?')) return;
+                      const recs = outbounds.filter((o:any)=>o.customer_name===selectedCustomer&&o.product_sku===sku);
+                      for(const r of recs) try{await api.deleteOutbound(r.id)}catch{}
+                      setPickedSkus(prev => prev.filter(s => s !== sku));
+                      loadCustomerOrders(selectedCustomer);
+                    }} style={{ padding:'2px 5px', borderRadius:3, border:'1px solid #ef4444', background:'transparent', color:'#ef4444', fontSize:8, cursor:'pointer' }}>🗑</button>
+                  </td>
+                </tr>);})}
+            </tbody>
+          </table>
+          </div>
+        </div>
+      )}
       {/* 出库明细 */}
       <div style={{ background: '#0c0c0e', borderRadius: 12, border: '1px solid #27272a', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 12px', borderBottom: '1px solid #18181b', flexWrap: 'wrap' }}>
@@ -1098,8 +1543,8 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh }: { o
             </thead>
             <tbody>
               {(() => {
-                // Group outbounds by order number
-                const recent = filtered.slice().reverse().slice(0, 100);
+                // Group outbounds by order number, B2C by order# desc
+                const recent = filtered.slice().reverse().slice(0, 200);
                 const groups = new Map<string, typeof recent>();
                 const standalone: typeof recent = [];
                 for (const r of recent) {
@@ -1111,8 +1556,15 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh }: { o
                     standalone.push(r);
                   }
                 }
+                // Sort groups: larger order number first
+                const sortedEntries = [...groups.entries()].sort((a: [string, any[]], b: [string, any[]]) => {
+                  const aNum = parseInt(a[0].replace(/[^0-9]/g, ''));
+                  const bNum = parseInt(b[0].replace(/[^0-9]/g, ''));
+                  if (!isNaN(aNum) && !isNaN(bNum)) return bNum - aNum;
+                  return (b[0] || '').localeCompare(a[0] || '');
+                });
                 const rows: any[] = [];
-                for (const [orderNo, items] of groups) {
+                for (const [orderNo, items] of sortedEntries) {
                   const totalQty = items.reduce((s, i) => s + i.quantity, 0);
                   const firstDate = items[0].outbound_date;
                   rows.push(
