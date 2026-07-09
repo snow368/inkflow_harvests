@@ -1,13 +1,13 @@
 ﻿import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
-// Neon Êý¾Ý¿â²éÑ¯ ¡ª Ê¹ÓÃ HTTP Ð­Òé£¨/sql endpoint£©£¬±ÜÃâ WebSocket ÔÚ Worker ÖÐ²»ÎÈ¶¨
-// @neondatabase/serverless µÄ neon() º¯Êý»ùÓÚ WebSocket£¬ÔÚ Cloudflare Worker ÖÐÊ±ºÃÊ±»µ
-// ¸ÄÓÃ HTTP neonQuery£¬ÒÑÑéÖ¤¿ÉÓÃ
+// Neon ��y?Y?a2��?�� ?a ��1��? HTTP D-�����ꡧ/sql endpoint��?��?����?a WebSocket ?�� Worker ?D2??��?��
+// @neondatabase/serverless ��? neon() o����y?������ WebSocket��??�� Cloudflare Worker ?D����o?����?��
+// ??��? HTTP neonQuery��?��??��?��?����?
 
 type UserInfo = { uid: string; email?: string }
 
-// Neon HTTP query helper ¡ª uses Neon SQL-over-HTTP API (new /sql endpoint)
+// Neon HTTP query helper ?a uses Neon SQL-over-HTTP API (new /sql endpoint)
 async function neonQuery(connStr: string, query: string, params?: any[]): Promise<any[]> {
   if (!connStr) throw new Error('NEON_DATABASE_URL not configured');
   const m = connStr.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^/]+)\/([^?]+)/);
@@ -26,7 +26,7 @@ async function neonQuery(connStr: string, query: string, params?: any[]): Promis
   return data.rows || data;
 }
 
-// ¼æÈÝ neon() Ä£°åÓï·¨µÄ SQL ±êÇ©º¯Êý ¡ª µ×²ã×ß HTTP
+// ??��Y neon() ?���?��?������? SQL ����??o����y ?a �̡�2?��? HTTP
 function neonSql(connStr: string) {
   return async (strings: TemplateStringsArray, ...values: any[]): Promise<{rows: any[]}> => {
     let query = strings[0];
@@ -43,7 +43,7 @@ function neonSql(connStr: string) {
   };
 }
 
-// Bot token verification ¡ª shared between bot endpoints
+// Bot token verification ?a shared between bot endpoints
 const BOT_SECRET = 'vps-bot-secret-2024';
 function checkBotToken(c: any): boolean {
   const auth = c.req.header('Authorization') || '';
@@ -82,11 +82,11 @@ type Variables = {
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 app.use('/*', cors())
 
-// Health check ¡ª no DB dependency
+// Health check ?a no DB dependency
 app.get('/_health', (c) => c.json({ ok: true, time: Date.now() }))
 app.get('/_ver', (c) => c.json({ ver: 'final-v2', time: Date.now() }))
 
-// ©¤©¤ Firebase JWT verification ©¤©¤
+// ?��?�� Firebase JWT verification ?��?��
 const FIREBASE_PROJECT_ID = 'harvests-3b238'
 const JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'
 const JWKS = createRemoteJWKSet(new URL(JWKS_URL))
@@ -101,7 +101,7 @@ async function verifyToken(token: string): Promise<UserInfo | null> {
   } catch { return null }
 }
 
-// ©¤©¤ Auth middleware (protects /api/* except whitelisted paths) ©¤©¤
+// ?��?�� Auth middleware (protects /api/* except whitelisted paths) ?��?��
 const PUBLIC_PATHS = new Set([
   '/api/shopify/webhook/orders-create',
   '/api/fulfillment/shopify/callback',
@@ -122,6 +122,8 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/task-counts',
   '/api/automation/task-counts-debug',
   '/api/automation/task-list/sync',
+  '/api/shopify/order',
+  '/api/shopify/fix-name',
   '/api/automation/tasks/clear-duplicate-pending',
   '/api/automation/tasks/clear-all-pending',
   '/api/automation/poll-debug',
@@ -150,20 +152,23 @@ const PUBLIC_PATHS = new Set([
   '/api/inventory/import-distributor',
   '/api/inventory/trends',
   '/api/inventory/po',
+  '/api/inventory/b2b-order',
+  '/api/inventory/b2b-orders',
+  '/api/inventory/b2b-fix-pack',
 ])
 
 app.use('/api/*', async (c, next) => {
   const path = new URL(c.req.url).pathname
   if ([...PUBLIC_PATHS].some(p => path === p || path.startsWith(p + '/'))) return next()
-  if (path === '/api/shopify/status' || path === '/api/shopify/orders/deduct') return next()
+  if (path === '/api/shopify/status' || path === '/api/shopify/orders/deduct' || path.startsWith('/api/shopify/order/') || path.startsWith('/api/shopify/fix-name/')) return next()
 
   const auth = c.req.header('Authorization')
   if (!auth?.startsWith('Bearer ')) {
-    return c.json({ error: 'Unauthorized ¡ª missing token' }, 401)
+    return c.json({ error: 'Unauthorized ?a missing token' }, 401)
   }
   const user = await verifyToken(auth.slice(7))
   if (!user) {
-    return c.json({ error: 'Unauthorized ¡ª invalid token' }, 401)
+    return c.json({ error: 'Unauthorized ?a invalid token' }, 401)
   }
   c.set('user', user)
 
@@ -187,18 +192,19 @@ app.use('/api/*', async (c, next) => {
 
 // ============ STOCK / PRODUCTS ============
 
+app.get('/api/health', async (c) => c.json({ ok: true, ts: Date.now() }))
+
 app.get('/api/inventory/stock', async (c) => {
   const rows = await c.env.DB.prepare(`
     SELECT p.*,
-      COALESCE((SELECT SUM(quantity) FROM inventory_inbounds WHERE product_sku = p.sku), 0) AS total_in,
-      COALESCE((SELECT SUM(quantity) FROM inventory_outbounds WHERE product_sku = p.sku), 0) AS total_out
+      COALESCE((SELECT SUM(quantity) FROM inventory_inbounds WHERE product_sku = p.sku), 0) AS total_inbound,
+      COALESCE((SELECT SUM(quantity) FROM inventory_outbounds WHERE product_sku = p.sku), 0) AS total_outbound
     FROM inventory_products p ORDER BY p.sku
   `).all()
   const items = (rows.results || []).map((r: any) => ({
     ...r,
-    current_stock: (r.total_in || 0) - (r.total_out || 0),
-    status: (r.total_in || 0) - (r.total_out || 0) === 0 ? 'out_of_stock'
-      : (r.total_in || 0) - (r.total_out || 0) <= (r.reorder_point || 0) ? 'low_stock' : 'healthy'
+    status: (r.total_inbound || 0) - (r.total_outbound || 0) === 0 ? 'out_of_stock'
+      : (r.total_inbound || 0) - (r.total_outbound || 0) <= (r.reorder_point || 0) ? 'low_stock' : 'healthy'
   }))
   return c.json({ ok: true, items })
 })
@@ -279,7 +285,7 @@ app.post('/api/inventory/product/:sku/field', async (c) => {
   return c.json({ ok: true })
 })
 
-// ©¤©¤ Stocktake API (D1 persistent) ©¤©¤
+// ?��?�� Stocktake API (D1 persistent) ?��?��
 app.post('/api/inventory/stocktake', async (c) => {
   try {
     const { location, sku, expected_qty, actual_qty, notes, clear } = await c.req.json();
@@ -349,11 +355,11 @@ app.delete('/api/inventory/product/:sku', async (c) => {
 app.post('/api/inventory/inbound', async (c) => {
   const { product_sku, quantity, large_case_qty, small_box_qty, po_number, inbound_date, note, sterilized } = await c.req.json()
   if (!product_sku || !inbound_date) return c.json({ error: 'product_sku, inbound_date required' }, 400)
-  // ×Ô¶¯Ëã×ÜÊýÁ¿£º1´óÏä=2Ð¡Ïä=100ºÐ£¬1Ð¡Ïä=50ºÐ
+  // ��??��??������y��?��o1�䨮??=2D???=100oD��?1D???=50oD
   const lq = Math.max(0, parseInt(large_case_qty) || 0)
   const sq = Math.max(0, parseInt(small_box_qty) || 0)
   const totalQty = lq * 100 + sq * 50 + (parseInt(quantity) || 0)
-  if (totalQty <= 0) return c.json({ error: '×ÜÊýÁ¿±ØÐë´óÓÚ0' }, 400)
+  if (totalQty <= 0) return c.json({ error: '������y��?��?D?�䨮����0' }, 400)
   try { await c.env.DB.prepare(`ALTER TABLE inventory_inbounds ADD COLUMN sterilized INTEGER DEFAULT 0`).run() } catch {}
   try { await c.env.DB.prepare(`ALTER TABLE inventory_inbounds ADD COLUMN large_case_qty INTEGER DEFAULT 0`).run() } catch {}
   try { await c.env.DB.prepare(`ALTER TABLE inventory_inbounds ADD COLUMN small_box_qty INTEGER DEFAULT 0`).run() } catch {}
@@ -442,7 +448,7 @@ app.get('/api/inventory/inbounds', async (c) => {
   return c.json({ ok: true, items: rows.results || [] })
 })
 
-// Èë¿â»ã×Ü£º°´ÈÕÆÚ+ÐÍºÅ+Ïû¶¾ ·Ö×éÍ³¼Æ
+// ��??a??������o��䨨??��+D��o?+???? ��?������3??
 app.get('/api/inventory/inbound-summary', async (c) => {
   const rows = await c.env.DB.prepare(`
     SELECT inbound_date, product_sku, p.name as product_name, sterilized,
@@ -457,7 +463,7 @@ app.get('/api/inventory/inbound-summary', async (c) => {
   return c.json({ ok: true, items: rows.results || [] })
 })
 
-// µ¥¸ö¿Í»§¸÷ÐÍºÅ¾ßÌåºÐÊý
+// �̣�???��?��?��D��o???��?oD��y
 app.get('/api/inventory/customer-orders/:name', async (c) => {
   const name = c.req.param('name')
   const rows = await c.env.DB.prepare(`
@@ -479,11 +485,14 @@ app.get('/api/inventory/customer-orders/:name', async (c) => {
   return c.json({ ok: true, items: rows.results || [], details: details.results || [] })
 })
 
-// ³ö¿â»ã×Ü£º°´¿Í»§+ÇþµÀÍ³¼Æ
+// 3??a??������o���?��?��+?t�̨���3??
 app.get('/api/inventory/outbound-summary', async (c) => {
   const rows = await c.env.DB.prepare(`
     SELECT o.customer_name, o.channel, COUNT(*) as total_orders, SUM(o.quantity) as total_qty, MAX(o.outbound_date) as last_date,
-           COALESCE((SELECT SUM(oi.quantity) FROM order_items oi JOIN orders ord ON oi.order_id = ord.id WHERE ord.customer_name = o.customer_name), 0) as total_order_qty
+           CASE WHEN o.channel = 'B2B' OR o.channel = 'sample_b2b'
+             THEN COALESCE((SELECT SUM(b.quantity) - COALESCE((SELECT SUM(o2.quantity) FROM inventory_outbounds o2 WHERE o2.customer_name = b.customer_name), 0) FROM b2b_order_items b WHERE b.customer_name = o.customer_name), SUM(o.quantity))
+             ELSE COALESCE((SELECT SUM(oi.quantity) FROM order_items oi JOIN orders ord ON oi.order_id = ord.id WHERE ord.customer_name = o.customer_name), SUM(o.quantity))
+           END as total_order_qty
     FROM inventory_outbounds o
     WHERE o.customer_name != ''
     GROUP BY o.customer_name, o.channel
@@ -548,7 +557,7 @@ app.post('/api/inventory/customers/sync', async (c) => {
   return c.json({ ok: true, synced: count })
 })
 
-// ©¤©¤ Picked SKUs tracking (database-backed) ©¤©¤
+// ?��?�� Picked SKUs tracking (database-backed) ?��?��
 app.post('/api/inventory/picked', async (c) => {
   try {
     const { customer_name, product_sku } = await c.req.json()
@@ -570,6 +579,7 @@ app.delete('/api/inventory/picked/:customer_name/:product_sku', async (c) => {
 
 app.get('/api/inventory/picked/:customer_name', async (c) => {
   try {
+    try { await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS inventory_picked_skus (customer_name TEXT, product_sku TEXT, picked_at INTEGER, created_at INTEGER, PRIMARY KEY (customer_name, product_sku))`).run() } catch {}
     const cn = c.req.param('customer_name')
     const rows = await c.env.DB.prepare('SELECT product_sku FROM inventory_picked_skus WHERE customer_name=?').bind(cn).all()
     return c.json({ ok: true, skus: (rows.results || []).map(r => r.product_sku) })
@@ -581,6 +591,83 @@ app.delete('/api/inventory/picked/reset/:customer_name', async (c) => {
     const cn = c.req.param('customer_name')
     await c.env.DB.prepare('DELETE FROM inventory_picked_skus WHERE customer_name=?').bind(cn).run()
     return c.json({ ok: true, reset: true })
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
+})
+
+// ── B2B Orders（存订单，不扣库存，拣货才出库）──
+app.post('/api/inventory/b2b-order', async (c) => {
+  try {
+    const { customer_name, items, order_no, order_date } = await c.req.json()
+    if (!customer_name || !items?.length) return c.json({ error: 'customer_name and items required' }, 400)
+    try { await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS b2b_order_items (id INTEGER PRIMARY KEY AUTOINCREMENT, order_no TEXT, customer_name TEXT, product_sku TEXT, quantity INTEGER DEFAULT 0, pack_source TEXT DEFAULT '', picked INTEGER DEFAULT 0, created_at INTEGER)`).run() } catch {}
+    // 防重复：同客户+同型号+同包装不重复插入
+    for (const item of items) {
+      const existing = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM b2b_order_items WHERE customer_name=? AND product_sku=? AND pack_source=?').bind(customer_name, item.sku, item.pack_source||'').first() as any
+      if (existing && existing.cnt > 0) {
+        item.skipped = true
+      }
+    }
+    const newItems = items.filter(i => !i.skipped)
+    if (!newItems.length) return c.json({ ok: true, count: 0, skipped: true })
+    for (const item of newItems) {
+      await c.env.DB.prepare('INSERT INTO b2b_order_items (order_no, customer_name, product_sku, quantity, pack_source, picked, created_at) VALUES (?,?,?,?,?,0,?)')
+        .bind(order_no||'', customer_name, item.sku, item.quantity, item.pack_source||'', Date.now()).run()
+    }
+    return c.json({ ok: true, count: newItems.length })
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
+})
+
+app.get('/api/inventory/b2b-orders/:customer_name', async (c) => {
+  try {
+    try { await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS b2b_order_items (id INTEGER PRIMARY KEY AUTOINCREMENT, order_no TEXT, customer_name TEXT, product_sku TEXT, quantity INTEGER DEFAULT 0, pack_source TEXT DEFAULT '', picked INTEGER DEFAULT 0, created_at INTEGER)`).run() } catch {}
+    const cn = c.req.param('customer_name')
+    const rows = await c.env.DB.prepare(`
+      SELECT oi.id, oi.order_no, oi.customer_name, oi.product_sku, oi.quantity, oi.pack_source, oi.picked, oi.created_at, p.name as product_name, p.category,
+             COALESCE((SELECT SUM(o.quantity) FROM inventory_outbounds o WHERE o.customer_name = ? AND o.product_sku = oi.product_sku), 0) as shipped
+      FROM b2b_order_items oi
+      LEFT JOIN inventory_products p ON oi.product_sku = p.sku
+      WHERE oi.customer_name = ?
+      ORDER BY oi.product_sku
+    `).bind(cn, cn).all()
+    return c.json({ ok: true, items: rows.results || [] })
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
+})
+
+app.get('/api/inventory/b2b-orders', async (c) => {
+  try {
+    try { await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS b2b_order_items (id INTEGER PRIMARY KEY AUTOINCREMENT, order_no TEXT, customer_name TEXT, product_sku TEXT, quantity INTEGER DEFAULT 0, pack_source TEXT DEFAULT '', picked INTEGER DEFAULT 0, created_at INTEGER)`).run() } catch {}
+    const rows = await c.env.DB.prepare(`
+      SELECT customer_name, product_sku, SUM(quantity) as total_qty, 
+             COALESCE((SELECT SUM(o.quantity) FROM inventory_outbounds o WHERE o.customer_name = b.customer_name AND o.product_sku = b.product_sku), 0) as shipped
+      FROM b2b_order_items b
+      GROUP BY customer_name, product_sku
+      ORDER BY customer_name
+    `).all()
+    return c.json({ ok: true, items: rows.results || [] })
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
+})
+
+app.delete('/api/inventory/b2b-order/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    await c.env.DB.prepare('DELETE FROM b2b_order_items WHERE id=?').bind(id).run()
+    return c.json({ ok: true, deleted: true })
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
+})
+
+app.delete('/api/inventory/b2b-orders/:customer_name', async (c) => {
+  try {
+    const cn = c.req.param('customer_name')
+    await c.env.DB.prepare('DELETE FROM b2b_order_items WHERE customer_name=?').bind(cn).run()
+    return c.json({ ok: true, deleted: true })
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
+})
+
+// TEMP FIX: update 10装 records that were stored as 20pcs
+app.post('/api/inventory/b2b-fix-pack', async (c) => {
+  try {
+    const result = await c.env.DB.prepare("UPDATE b2b_order_items SET pack_source='10pcs' WHERE order_no LIKE '%-si%' AND pack_source='20pcs'").run()
+    return c.json({ ok: true, changes: result.meta?.changes || 0 })
   } catch (e: any) { return c.json({ ok: false, error: e.message }, 500) }
 })
 
@@ -710,7 +797,7 @@ app.delete('/api/fulfillment/orders/:id', async (c) => {
 const parseNote = (note: string): any[] => {
   try {
     const gifts: any[] = []
-    const needleRegex = /(\d{3,4})(RL|RS|RG|RT|F|M)\s*[xX*¡Á]?\s*(\d+)?\s*(ºÐ|Ïä)?/gi
+    const needleRegex = /(\d{3,4})(RL|RS|RG|RT|F|M)\s*[xX*]?\s*(\d+)?\s*(oD|20)?/gi
     const seen = new Set<string>()
     let match
     while ((match = needleRegex.exec(note)) !== null) {
@@ -728,8 +815,8 @@ const parseNote = (note: string): any[] => {
       seen.add(label)
       gifts.push({ type: 'needle', label, quantity: 1 })
     }
-    const posterMatch = note.match(/(Ð¡º£±¨|´óº£±¨|º£±¨)[\sxX*¡Á]*(\d+)?/i)
-    if (posterMatch) gifts.push({ type: 'poster', label: 'º£±¨', quantity: parseInt(posterMatch[2] || '1', 10) })
+    const posterMatch = note.match(/(D?o�����|�䨮o�����|o�����)[\sxX*?��]*(\d+)?/i)
+    if (posterMatch) gifts.push({ type: 'poster', label: 'o�����', quantity: parseInt(posterMatch[2] || '1', 10) })
     return gifts
   } catch { return [] }
 }
@@ -738,7 +825,7 @@ const parseGiftSkus = (note: string): Array<{ sku: string; qty: number; name: st
   return parseNote(note).map(g => ({
     sku: g.type === 'needle' ? g.label : 'POSTER',
     qty: g.quantity,
-    name: g.type === 'needle' ? g.label : 'º£±¨'
+    name: g.type === 'needle' ? g.label : 'o�����'
   }))
 }
 
@@ -762,9 +849,25 @@ app.get('/api/shopify/status', async (c) => {
   })
 })
 
-app.post('/api/shopify/orders/deduct', async (c) => {
+app.get('/api/shopify/orders/deduct', async (c) => {
+  const forceOrder = c.req.query('force');
   const config = await c.env.DB.prepare("SELECT * FROM carrier_configs WHERE carrier='shopify'").first() as any
   if (!config) return c.json({ error: 'Shopify not configured' }, 400)
+
+  // Allow updating token via ?token=xxx&client_id=xxx&client_secret=xxx
+  const newToken = c.req.query('token');
+  const newClientId = c.req.query('client_id');
+  const newClientSecret = c.req.query('client_secret');
+  if (newToken) {
+    await c.env.DB.prepare('UPDATE carrier_configs SET api_key = ? WHERE id = ?').bind(newToken, config.id).run();
+    config.api_key = newToken;
+  }
+  if (newClientId) {
+    await c.env.DB.prepare('UPDATE carrier_configs SET api_secret = ? WHERE id = ?').bind(newClientId, config.id).run();
+  }
+  if (newClientSecret) {
+    await c.env.DB.prepare('UPDATE carrier_configs SET extra_config = ? WHERE id = ?').bind(JSON.stringify({client_secret: newClientSecret}), config.id).run();
+  }
 
   const accessToken = config.api_key
   const storeDomain = config.api_base_url ? new URL(config.api_base_url).hostname : 'dptattoo.myshopify.com'
@@ -772,13 +875,24 @@ app.post('/api/shopify/orders/deduct', async (c) => {
   const now = Date.now()
   let totalOrders = 0
   let deductedItems: any[] = []
-  let ordersUrl = `https://${storeDomain}/admin/api/${apiVersion}/orders.json?status=any&fulfillment_status=unfulfilled&created_at_min=${new Date(Date.now() - 7*86400000).toISOString()}&limit=250`
+  let ordersUrl = `https://${storeDomain}/admin/api/${apiVersion}/orders.json?status=any&fulfillment_status=any&created_at_min=${new Date(Date.now() - 7*86400000).toISOString()}&limit=250`
 
   while (ordersUrl) {
     const resp = await fetch(ordersUrl, { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } })
     if (!resp.ok) return c.json({ error: `Shopify API ${resp.status}: ${(await resp.text()).slice(0,240)}` }, 502)
     const payload = await resp.json() as any
     const orders = Array.isArray(payload?.orders) ? payload.orders : []
+
+    // Force import a specific order by number
+    if (forceOrder && orders.length === 0) {
+      const forceResp = await fetch(`https://${storeDomain}/admin/api/${apiVersion}/orders.json?name=%23${forceOrder}&status=any&limit=1`, {
+        headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' }
+      });
+      if (forceResp.ok) {
+        const forceData = await forceResp.json() as any;
+        if (forceData.orders?.length) orders.push(forceData.orders[0]);
+      }
+    }
 
     for (const order of orders) {
       const orderId = String(order.id)
@@ -797,8 +911,8 @@ app.post('/api/shopify/orders/deduct', async (c) => {
         if (!product) continue
         const outboundDate = new Date().toISOString().split('T')[0]
         const noteParts = [`Shopify Order #${orderName}`]
-        if (customerNote) noteParts.push(`¿Í»§ÁôÑÔ: ${customerNote}`)
-        if (item.title) noteParts.push(`ÉÌÆ·: ${item.title}`)
+        if (customerNote) noteParts.push(`?��?�쨢???: ${customerNote}`)
+        if (item.title) noteParts.push(`����?��: ${item.title}`)
         await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
           .bind(sku, qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, noteParts.join(' | '), now).run()
         deductedItems.push({ sku, qty, order: orderName })
@@ -811,8 +925,8 @@ app.post('/api/shopify/orders/deduct', async (c) => {
           if (!gp) continue
           const outboundDate = new Date().toISOString().split('T')[0]
           await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-            .bind(gift.sku, gift.qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | ÔùËÍÆ·: ${gift.name}`, now).run()
-          deductedItems.push({ sku: gift.sku, qty: gift.qty, order: orderName, item: `??ÔùËÍ ${gift.name}` })
+            .bind(gift.sku, gift.qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | ?��?��?��: ${gift.name}`, now).run()
+          deductedItems.push({ sku: gift.sku, qty: gift.qty, order: orderName, item: `???��?�� ${gift.name}` })
         }
       }
       totalOrders++
@@ -822,6 +936,93 @@ app.post('/api/shopify/orders/deduct', async (c) => {
   }
   return c.json({ ok: true, ordersProcessed: totalOrders, itemsDeducted: deductedItems.length, details: deductedItems })
 })
+
+app.get('/api/shopify/order/:orderNumber', async (c) => {
+  const orderNumber = c.req.param('orderNumber');
+  const config = await c.env.DB.prepare("SELECT * FROM carrier_configs WHERE carrier='shopify'").first() as any;
+  if (!config) return c.json({ error: 'Shopify not configured' }, 400);
+  const accessToken = config.api_key;
+  const storeDomain = config.api_base_url ? new URL(config.api_base_url).hostname : 'dptattoo.myshopify.com';
+  const apiVersion = '2024-10';
+  const resp = await fetch(`https://${storeDomain}/admin/api/${apiVersion}/orders.json?name=%23${orderNumber}&status=any&limit=10`, {
+    headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' }
+  });
+  if (!resp.ok) return c.json({ error: `Shopify ${resp.status}` }, 502);
+  const data = await resp.json() as any;
+  const order = data.orders?.[0];
+  if (!order) return c.json({ error: 'Order not found' }, 404);
+  const items = (order.line_items || []).map((item: any) => ({
+    sku: item.sku || item.variant_sku || '',
+    name: item.name || '',
+    quantity: item.quantity || 0,
+    price: item.price || 0
+  }));
+  return c.json({
+    ok: true,
+    order: {
+      id: order.id,
+      order_number: order.order_number,
+      name: '#' + order.order_number,
+      customer: order.customer?.firstName + ' ' + order.customer?.lastName || order.customer?.email || '',
+      created_at: order.created_at,
+      items
+    }
+  });
+});
+
+app.get('/api/shopify/order/:orderNumber/import', async (c) => {
+  const orderNumber = c.req.param('orderNumber');
+  const config = await c.env.DB.prepare("SELECT * FROM carrier_configs WHERE carrier='shopify'").first() as any;
+  if (!config) return c.json({ error: 'Shopify not configured' }, 400);
+  const accessToken = config.api_key;
+  const storeDomain = config.api_base_url ? new URL(config.api_base_url).hostname : 'dptattoo.myshopify.com';
+  const apiVersion = '2024-10';
+  const resp = await fetch(`https://${storeDomain}/admin/api/${apiVersion}/orders.json?name=%23${orderNumber}&status=any&limit=1`, {
+    headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' }
+  });
+  if (!resp.ok) return c.json({ error: `Shopify ${resp.status}` }, 502);
+  const data = await resp.json() as any;
+  const order = data.orders?.[0];
+  if (!order) return c.json({ error: 'Order not found' }, 404);
+  
+  const orderId = '#' + orderNumber;
+  const customerName = (order.customer?.firstName || '') + ' ' + (order.customer?.lastName || '') || order.shipping_address?.name || order.customer?.email || order.email || 'Shopify Customer';
+  const outboundDate = (order.createdAt || '').slice(0,10) || new Date().toISOString().slice(0,10);
+  let imported = 0; let failed = 0;
+  
+  for (const item of (order.line_items || [])) {
+    const rawSku = (item.sku || item.variant_sku || '').toUpperCase();
+    // Strip PEACH- prefix if the SKU doesn't exist
+    let sku = rawSku;
+    const exists = await c.env.DB.prepare('SELECT id FROM inventory_products WHERE sku = ? LIMIT 1').bind(sku).first();
+    if (!exists && sku.startsWith('PEACH-')) {
+      sku = sku.replace('PEACH-', '');
+      // Try CON- or COG- prefix for numeric SKUs
+      if (/^PEACH-CON-/i.test(rawSku)) sku = rawSku.replace(/^PEACH-CON-/i, 'CON-');
+      if (/^PEACH-COG-/i.test(rawSku)) sku = rawSku.replace(/^PEACH-COG-/i, 'COG-');
+      if (/^PEACH-AES-/i.test(rawSku)) sku = rawSku.replace(/^PEACH-AES-/i, 'AES-');
+    }
+    // Manual SKU mapping
+    const skuMap: Record<string, string> = { 'PEACH-IC-1': 'PIC-BLACK', 'PEACH-IC-2': 'PIC-PINK' };
+    if (skuMap[sku]) sku = skuMap[sku];
+    if (skuMap[rawSku]) sku = skuMap[rawSku];
+    if (!sku || item.quantity <= 0) { failed++; continue; }
+    try {
+      await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
+        .bind(sku, item.quantity, 'B2C', customerName, orderId, outboundDate, 'Shopify Order #' + orderNumber, Date.now()).run();
+      imported++;
+    } catch { failed++; }
+  }
+  
+  return c.json({ ok: true, order: '#' + orderNumber, imported, failed });
+});
+
+app.get('/api/shopify/fix-name/:orderNumber/:name', async (c) => {
+  const orderNo = c.req.param('orderNumber');
+  const name = c.req.param('name');
+  await c.env.DB.prepare('UPDATE inventory_outbounds SET customer_name = ? WHERE shopify_order_id = ?').bind(name, '#' + orderNo).run();
+  return c.json({ ok: true, fixed: '#' + orderNo, name });
+});
 
 const parseNextLink = (linkHeader: string | null): string | null => {
   if (!linkHeader) return null
@@ -898,9 +1099,9 @@ app.post('/api/shopify/webhook/orders-create', async (c) => {
     const product = await c.env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first()
     if (!product) continue
     const outboundDate = new Date().toISOString().split('T')[0]
-    const noteParts = [`Shopify Order #${orderName}`, 'À´Ô´: webhook']
-    if (customerNote) noteParts.push(`¿Í»§ÁôÑÔ: ${customerNote}`)
-    if (item.title) noteParts.push(`ÉÌÆ·: ${item.title}`)
+    const noteParts = [`Shopify Order #${orderName}`, '����?��: webhook']
+    if (customerNote) noteParts.push(`?��?�쨢???: ${customerNote}`)
+    if (item.title) noteParts.push(`����?��: ${item.title}`)
     await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
       .bind(sku, qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, noteParts.join(' | '), now).run()
     deductedCount++
@@ -913,7 +1114,7 @@ app.post('/api/shopify/webhook/orders-create', async (c) => {
       if (!gp) continue
       const outboundDate = new Date().toISOString().split('T')[0]
       await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-        .bind(gift.sku, gift.qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | ÔùËÍÆ·: ${gift.name}`, now).run()
+        .bind(gift.sku, gift.qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | ?��?��?��: ${gift.name}`, now).run()
       deductedCount++
     }
   }
@@ -936,7 +1137,7 @@ app.post('/api/fulfillment/orders/:id/ship', async (c) => {
   return c.json({ error: 'Shipping requires local carrier API integration on VPS. Use VPS Express server for ship operations.' }, 400)
 })
 
-// ============ DISTRIBUTOR (needs Neon ¡ª keep on VPS) ============
+// ============ DISTRIBUTOR (needs Neon ?a keep on VPS) ============
 
 app.get('/api/inventory/distributor-candidates', async (c) => {
   return c.json({ error: 'Distributor import requires Neon DB on VPS' }, 400)
@@ -945,7 +1146,7 @@ app.post('/api/inventory/import-distributor', async (c) => {
   return c.json({ error: 'Distributor import requires Neon DB on VPS' }, 400)
 })
 
-// ============ INVENTORY SOURCE LOAD (CSV import ¡ª keep on VPS) ============
+// ============ INVENTORY SOURCE LOAD (CSV import ?a keep on VPS) ============
 
 app.post('/api/inventory/source/load', async (c) => {
   return c.json({ error: 'CSV import requires local filesystem access on VPS' }, 400)
@@ -1084,7 +1285,7 @@ app.post('/api/automation/bot-account', async (c) => {
     await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_accounts (account_id TEXT PRIMARY KEY, ig_handle TEXT, created_at TEXT, stage TEXT DEFAULT 'new', daily_task_limit INTEGER DEFAULT 5, speed_factor REAL DEFAULT 2.5, first_used_at TEXT, vps_name TEXT, proxy TEXT)`).run();
     try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN created_at TEXT').run(); } catch {}
     const now = new Date().toISOString();
-    // ÐÂÕËºÅÉè´´½¨Ê±¼ä£¬ÒÑÓÐÕËºÅ²»¸²¸Ç
+    // D???o?�������?������??��?��?��D??o?2??2??
     const existing = await c.env.DB.prepare('SELECT created_at FROM bot_accounts WHERE account_id=?').bind(account_id).first() as any;
     if (existing?.created_at) {
       await c.env.DB.prepare('UPDATE bot_accounts SET ig_handle=? WHERE account_id=?').bind(ig_handle || '', account_id).run();
@@ -1175,7 +1376,7 @@ app.post('/api/automation/sync', async (c) => {
     } catch {}
   }
 
-  // Bot accounts£¨¿ÕÊý×é²»´¦Àí£¬·ÀÖ¹ÎóÇå£©
+  // Bot accounts�ꡧ??��y����2?��|������?����?1?��??��?
   if (body.accounts?.length) {
     try {
       await c.env.DB.prepare('DELETE FROM bot_accounts').run();
@@ -1192,7 +1393,7 @@ app.post('/api/automation/sync', async (c) => {
 // ============ DASHBOARD (read from D1) ============
 
 app.get('/api/automation/dashboard', async (c) => {
-  // Each query independently ¡ª missing tables don't cascade
+  // Each query independently ?a missing tables don't cascade
   let counts: Record<string, number> = { pending: 0, leased: 0, done: 0, failed: 0 };
   let byDay: Record<string, any> = {};
   let accountsList: any[] = [];
@@ -1460,7 +1661,7 @@ app.get('/api/automation/neon-tasks', async (c) => {
   }
 });
 
-// State progress ¡ª per-state coverage from D1 (no Neon dependency)
+// State progress ?a per-state coverage from D1 (no Neon dependency)
 app.get('/api/automation/state-progress', async (c) => {
   try {
     await ensureBotTables(c.env.DB);
@@ -1603,7 +1804,7 @@ app.post('/api/automation/report', async (c) => {
   }
 });
 
-// ===== Bot ¹Û²ìÊý¾ÝÉÏ±¨ (called by bot-worker after each profile) =====
+// ===== Bot 1?2����y?Y��?���� (called by bot-worker after each profile) =====
 app.post('/api/bot/observe', async (c) => {
   if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
   const connStr = c.env.NEON_DATABASE_URL;
@@ -1651,11 +1852,11 @@ app.post('/api/bot/observe', async (c) => {
   }
 });
 
-// ===== ÔëÉùÕ¾µãÅäÖÃ£¨¹© bot human mimicry Ê¹ÓÃ£© =====
+// ===== ??����??��?????�ꡧ1? bot human mimicry ��1��?��? =====
 app.get('/api/bot/noise-sites', async (c) => {
   if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
   const botId = c.req.query('botId') || '';
-  // Default noise sites ¡ª can be overridden per bot via D1 bot_config table
+  // Default noise sites ?a can be overridden per bot via D1 bot_config table
   const defaultSites = [
     'https://www.cnn.com',
     'https://www.nydailynews.com',
@@ -1684,7 +1885,7 @@ app.get('/api/bot/noise-sites', async (c) => {
   return c.json({ ok: true, sites });
 });
 
-// ===== Bot ÅäÖÃ¹ÜÀí£¨¹©Ç°¶Ë BotConfigSection Ê¹ÓÃ£© =====
+// ===== Bot ????1�������ꡧ1??��?? BotConfigSection ��1��?��? =====
 app.get('/api/automation/bot-config', async (c) => {
   try {
     await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_accounts (
@@ -1753,11 +1954,11 @@ app.patch('/api/automation/bot-config/:botId/toggle', async (c) => {
   }
 });
 
-// ===== ¿ìËÙ¼ì²é Neon Á¬½Ó =====
+// ===== ?��?��?��2�� Neon ��??�� =====
 app.get('/api/automation/neon-test', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ ok: false, error: 'NEON_DATABASE_URL not set', hint: 'use wrangler secret put NEON_DATABASE_URL' });
-  // ²âÊÔÕýÔò½âÎö
+  // 2a��??y?��?a??
   const m = connStr.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^/]+)\/([^?]+)/);
   if (!m) return c.json({ ok: false, error: 'URL regex no match', url: connStr.slice(0, 50) + '...' });
   try {
@@ -1784,7 +1985,7 @@ app.get('/api/automation/neon-test', async (c) => {
   }
 });
 
-// ===== ¿ìËÙ¼ì²é Neon Á¬½Ó =====
+// ===== ?��?��?��2�� Neon ��??�� =====
 app.get('/api/automation/neon-check', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ ok: false, error: 'NEON_DATABASE_URL not set' });
@@ -1797,18 +1998,18 @@ app.get('/api/automation/neon-check', async (c) => {
   }
 });
 
-// ===== ²É¼¯Êý¾Ý£º¶ÁÐ´ Neon =====
+// ===== 2��?����y?Y��o?��D�� Neon =====
 async function ensureObservationsTable(connStr: string) {
   try { await neonQuery(connStr, `CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)`); } catch {}
   try { await neonQuery(connStr, `CREATE INDEX IF NOT EXISTS idx_bot_obs_created_at ON bot_observations(created_at DESC)`); } catch {}
 }
 
 
-// Bot worker ÉÏ±¨¹Û²âÊý¾Ýµ½ Neon£¨Ò²Ö§³ÖÅúÁ¿ {items:[...]}£©
+// Bot worker ��?����1?2a��y?Y��? Neon�ꡧ��2?��3??����? {items:[...]}��?
 app.all('/api/automation/observations', async (c) => {
   if (c.req.method === 'GET') {
     const limit = Math.min(50, Math.max(1, Number(c.req.query('limit')) || 20));
-    // ÏÈÊÔÊÔ VPS Express£¨ÓÐÍêÕûÊý¾Ýº¬ summary_json / profile_facts_json£©
+    // ?����?��? VPS Express�ꡧ��D����??��y?Yo? summary_json / profile_facts_json��?
     try {
       const vps = await fetch(`http://163.245.212.169:3000/api/bot/observations?limit=${limit}`, { signal: AbortSignal.timeout(3000) });
       if (vps.ok) {
@@ -1837,7 +2038,7 @@ app.all('/api/automation/observations', async (c) => {
     const connStr = c.env.NEON_DATABASE_URL;
     if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
     await ensureObservationsTable(connStr);
-    // ÅúÁ¿Í¬²½
+    // ?����?��?2?
     if (body.items && Array.isArray(body.items)) {
       let synced = 0;
       for (const o of body.items) {
@@ -1851,7 +2052,7 @@ app.all('/api/automation/observations', async (c) => {
       }
       return c.json({ ok: true, synced });
     }
-    // µ¥ÌõÉÏ±¨
+    // �̣���?��?����
     const botId = String(body.botId || body.bot_id || '').trim();
     const artistHandle = String(body.artistHandle || body.artist_handle || '').replace(/^@/, '').trim();
     const mode = String(body.mode || '').trim();
@@ -1862,10 +2063,10 @@ app.all('/api/automation/observations', async (c) => {
     return c.json({ error: e.message }, 500);
   }
 });
-// É¾³ý¾ÉµÄ sync ¶Ëµã£¨ÒÑºÏ²¢µ½ POST /observations£©
-// app.post('/api/automation/observations/sync', ...) ÒÑÒÆ³ý
+// ��?3y?����? sync ??��?�ꡧ��?o?2���? POST /observations��?
+// app.post('/api/automation/observations/sync', ...) ��?��?3y
 
-// ===== Êý¾Ý¿´°å£º²éÑ¯ Neon artists ±í£¨SQL ²ãÈ¥ÖØ·ÖÒ³£© =====
+// ===== ��y?Y?���?��o2��?�� Neon artists �����ꡧSQL 2?����??��?��3��? =====
 app.get('/api/automation/artists', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
@@ -1899,12 +2100,12 @@ app.get('/api/automation/artists', async (c) => {
     );
     const items = dataRows || [];
 
-    // ÈÎÎñ×´Ì¬ ¡ª ´Ó D1 ºÍ Neon ºÏ²¢
+    // ��???���䨬? ?a �䨮 D1 o�� Neon o?2��
     let taskStatusMap: Record<string, string> = {};
     try {
       const handles = items.map((r: any) => r.ig_handle).filter(Boolean);
       if (handles.length > 0) {
-        // D1 (¾ÉÊý¾Ý)
+        // D1 (?����y?Y)
         const tasks = await c.env.DB.prepare(
           `SELECT DISTINCT payload->>'artistHandle' as handle, status FROM automation_tasks
            WHERE payload->>'artistHandle' IN (${handles.map(() => '?').join(',')})
@@ -1913,7 +2114,7 @@ app.get('/api/automation/artists', async (c) => {
         for (const t of (tasks.results || []) as any) {
           if (t.handle && !taskStatusMap[t.handle]) taskStatusMap[t.handle] = t.status;
         }
-        // Neon (ÐÂÊý¾Ý£¬¸²¸Ç D1 ÖÐ¹ýÊ±µÄ pending ×´Ì¬)
+        // Neon (D?��y?Y��??2?? D1 ?D1y������? pending ���䨬?)
         try {
           const connStr = c.env.NEON_DATABASE_URL;
           if (connStr) {
@@ -1944,7 +2145,7 @@ app.get('/api/automation/artists', async (c) => {
   }
 });
 
-// ===== ´Ó artists ´´½¨ÈÎÎñ£¨ÅúÁ¿²éÑ¯±ÜÃâ subrequest ÉÏÏÞ£© =====
+// ===== �䨮 artists ���?����???�ꡧ?����?2��?������?a subrequest ��??T��? =====
 app.post('/api/automation/tasks/create-from-artists', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
@@ -1955,10 +2156,10 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
     const dedupWindow = ts - 7 * 24 * 60 * 60 * 1000;
 
     const sql = neonSql(connStr);
-    // È·±£±í´æÔÚ
+    // �������������??��
     await sql`CREATE TABLE IF NOT EXISTS automation_tasks (id TEXT PRIMARY KEY, payload TEXT, status TEXT, run_at BIGINT, lease_until BIGINT, leased_by TEXT, attempts INT DEFAULT 0, max_attempts INT DEFAULT 3, error_reason TEXT, created_at BIGINT, updated_at BIGINT)`.catch(() => {});
 
-    // ÅúÁ¿²éÑ¯ËùÓÐ artist£¨1´Î£©
+    // ?����?2��?��?����D artist�ꡧ1��?��?
     const ids = artistIds.filter((i: any) => String(i).trim().length > 0);
     if (!ids.length) return c.json({ ok: false, error: 'no valid ids' }, 400);
     const idList = ids.map((i: any) => `'${String(i).replace(/'/g, "''")}'`).join(',');
@@ -1966,7 +2167,7 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
     const artists = artistRows || [];
     if (!artists.length) return c.json({ ok: false, error: 'no artists found' }, 404);
 
-    // ÅúÁ¿²éÒÑÓÐÈÎÎñ£¨7 ÌìÄÚÈÎºÎ×´Ì¬¶¼Ìø¹ý£¬º¬ done£©
+    // ?����?2����?��D��???�ꡧ7 ����?����?o?���䨬???��?1y��?o? done��?
     const handles = artists.map((a: any) => a.ig_handle || a.shop_name).filter(Boolean);
     let existingRows: any[] = [];
     if (handles.length) {
@@ -1990,7 +2191,7 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
       const rows = taskIds.map((id, i) => ({
         id, status: 'pending', payload: payloads[i], run_at: runAts[i], ts
       }));
-      // Use batched individual inserts ¡ª but batch 5 at a time to stay under subrequest limit
+      // Use batched individual inserts ?a but batch 5 at a time to stay under subrequest limit
       const batchSize = 5;
       for (let i = 0; i < rows.length; i += batchSize) {
         const batch = rows.slice(i, i + batchSize);
@@ -2007,14 +2208,14 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
   }
 });
 
-// ===== ´Ó VPS Í¬²½ÈÎÎñÊý¾Ýµ½ D1 =====
+// ===== �䨮 VPS ��?2?��???��y?Y��? D1 =====
 app.post('/api/automation/task-list/sync', async (c) => {
   const auth = c.req.header('Authorization') || '';
   if (auth !== 'Bearer vps-bot-secret-2024') return c.json({ error: 'unauthorized' }, 401);
   try {
     const { tasks } = await c.req.json();
     if (!Array.isArray(tasks) || !tasks.length) return c.json({ error: 'tasks array required' }, 400);
-    // È·±£ D1 ±í´æÔÚÇÒÓÐÐèÒªµÄÁÐ
+    // �������� D1 ������??��?����DD����a��?��D
     try { await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS automation_tasks (id TEXT PRIMARY KEY, payload TEXT, status TEXT, created_at INTEGER, updated_at INTEGER)`).run(); } catch {}
     try { await c.env.DB.prepare(`ALTER TABLE automation_tasks ADD COLUMN payload TEXT`).run(); } catch {}
     try { await c.env.DB.prepare(`ALTER TABLE automation_tasks ADD COLUMN updated_at INTEGER`).run(); } catch {}
@@ -2043,7 +2244,7 @@ app.post('/api/automation/task-list/sync', async (c) => {
   } catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
 });
 
-// ===== ´Ó artist handle ×¢ÈëÈÎÎñµ½ bot =====
+// ===== �䨮 artist handle ���騨?��???��? bot =====
 app.post('/api/automation/tasks/inject', async (c) => {
   const connStr = c.env.NEON_DATABASE_URL;
   if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
@@ -2059,7 +2260,7 @@ app.post('/api/automation/tasks/inject', async (c) => {
       const h = String(handle || '').replace(/^@/, '').trim().toLowerCase();
       if (!h) continue;
 
-      // ²éÖØ£º7ÌìÄÚÊÇ·ñÓÐ´Ë handle µÄÈÎÎñ
+      // 2��??��o7����?����?��?��D��? handle ��?��???
       const existing = await sql`SELECT id FROM automation_tasks WHERE payload->>'artistHandle' = ${h} AND updated_at > ${dedupWindow} LIMIT 1`;
       if (existing?.rows?.length || existing?.length) { skipped++; continue; }
 
@@ -2074,7 +2275,7 @@ app.post('/api/automation/tasks/inject', async (c) => {
   }
 });
 
-// ===== Scheduler ÈÕÅä¶î²éÑ¯£¨ig-scheduler-lite µ÷ÓÃ£© =====
+// ===== Scheduler ��?????2��?���ꡧig-scheduler-lite �̡¨�?��? =====
 app.get('/api/tasks/count', async (c) => {
   const tokenParam = c.req.query('token');
   if (tokenParam !== 'vps-bot-secret-2024') return c.json({ error: 'unauthorized' }, 401);
@@ -2093,9 +2294,9 @@ app.get('/api/tasks/count', async (c) => {
   }
 });
 
-// ===== Scheduler ÅúÁ¿´´½¨ÈÎÎñ£¨ig-scheduler-lite µ÷ÓÃ£© =====
+// ===== Scheduler ?����?���?����???�ꡧig-scheduler-lite �̡¨�?��? =====
 app.post('/api/tasks/create', async (c) => {
-  // Ö§³Ö ?token= ÈÏÖ¤£¨scheduler ÓÃ query param£©
+  // ?��3? ?token= ��??��ꡧscheduler ��? query param��?
   const tokenParam = c.req.query('token');
   if (tokenParam !== 'vps-bot-secret-2024') return c.json({ error: 'unauthorized' }, 401);
   const connStr = c.env.NEON_DATABASE_URL;
@@ -2146,7 +2347,7 @@ app.post('/api/tasks/create', async (c) => {
   }
 });
 
-// ===== ÈÎÎñ×´Ì¬ÁÐ±í£¨´Ó Neon automation_tasks£© =====
+// ===== ��???���䨬?��D�����ꡧ�䨮 Neon automation_tasks��? =====
 app.get('/api/automation/task-list', async (c) => {
   try {
     const limit = Math.min(200, Math.max(1, Number(c.req.query('limit')) || 50));
@@ -2169,7 +2370,7 @@ app.get('/api/automation/task-list', async (c) => {
   } catch (e: any) { return c.json({ ok: false, error: e.message, tasks: [] }, 500); }
 });
 
-// ===== Çå¿ÕÖØ¸´ pending ÈÎÎñ£¨ÊÖ¶¯´¥·¢£¬Ö»ÇåÒÑ´æÔÚ done µÄ handle£© =====
+// ===== ???????�� pending ��???�ꡧ��??���䣤�����?????��?��??�� done ��? handle��? =====
 app.post('/api/automation/tasks/clear-duplicate-pending', async (c) => {
   const auth = c.req.header('Authorization');
   if (!auth?.startsWith('Bearer ') || auth.slice(7) !== 'vps-bot-secret-2024') {
@@ -2180,7 +2381,7 @@ app.post('/api/automation/tasks/clear-duplicate-pending', async (c) => {
   try {
     const sql = neonSql(connStr);
     const dedupWindow = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    // É¾³ý pending ÈÎÎñ£¬Æä handle ÒÑÓÐ done/leased ÈÎÎñÔÚ dedup ´°¿ÚÄÚ
+    // ��?3y pending ��???��??? handle ��?��D done/leased ��????�� dedup ���?��?��
     const result = await sql`
       DELETE FROM automation_tasks
       WHERE status = 'pending'
@@ -2197,7 +2398,7 @@ app.post('/api/automation/tasks/clear-duplicate-pending', async (c) => {
   }
 });
 
-// ===== Çå¿ÕËùÓÐ pending ÈÎÎñ =====
+// ===== ?????����D pending ��??? =====
 app.post('/api/automation/tasks/clear-all-pending', async (c) => {
   const tokenParam = c.req.query('token');
   const auth = c.req.header('Authorization');
@@ -2215,7 +2416,7 @@ app.post('/api/automation/tasks/clear-all-pending', async (c) => {
   }
 });
 
-// ===== Poll µ÷ÊÔ¶Ëµã =====
+// ===== Poll �̡¨�???��? =====
 app.post('/api/voice/log', async (c) => {
   try { const { transcript, parsed_sku, parsed_qty, matched_product, success } = await c.req.json();
     await c.env.DB.prepare('INSERT INTO voice_logs (transcript,parsed_sku,parsed_qty,matched_product,success,created_at) VALUES (?,?,?,?,?,?)')
@@ -2265,7 +2466,7 @@ app.get('/api/automation/poll-debug', async (c) => {
       `;
       const pRows = pc?.rows || (Array.isArray(pc) ? pc : []);
       pollCandidates = pRows.map((r: any) => ({ id: r.id, run_at: r.run_at }));
-      // Also try the UPDATE (without committing ¡ª just test)
+      // Also try the UPDATE (without committing ?a just test)
       if (pRows.length > 0) {
         const first = pRows[0];
         try {
@@ -2499,13 +2700,41 @@ app.post('/api/amazon/report', async (c) => {
 export default {
   fetch: app.fetch,
   async scheduled(event: any, env: any, ctx: any) {
-    // Auto-sync Shopify orders on cron trigger
-    const url = 'https://harvests-cloud-api.inkflowapp.workers.dev/api/fulfillment/shopify/sync'
+    console.log('[scheduled] triggered at', new Date().toISOString());
     try {
-      await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-      console.log('[cron] Shopify sync completed at', new Date().toISOString())
-    } catch (e: any) {
-      console.error('[cron] Shopify sync failed:', e?.message || e)
-    }
+      const config = await env.DB.prepare("SELECT * FROM carrier_configs WHERE carrier='shopify'").first() as any;
+      if (!config) { console.log('[scheduled] Shopify not configured'); return; }
+      const accessToken = config.api_key;
+      const storeDomain = config.api_base_url ? new URL(config.api_base_url).hostname : 'dptattoo.myshopify.com';
+      const apiVersion = '2024-10';
+      let ordersUrl = `https://${storeDomain}/admin/api/${apiVersion}/orders.json?status=any&fulfillment_status=any&created_at_min=${new Date(Date.now() - 7*86400000).toISOString()}&limit=250`;
+      let totalOrders = 0, deductedItems: any[] = [];
+      while (ordersUrl) {
+        const resp = await fetch(ordersUrl, { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } });
+        if (!resp.ok) { console.log('[scheduled] Shopify error:', resp.status); break; }
+        const payload = await resp.json() as any;
+        const orders = payload.orders || [];
+        for (const order of orders) {
+          const orderId = '#' + (order.order_number || order.name || '');
+          totalOrders++;
+          const existing = await env.DB.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? LIMIT 1').bind(orderId).first();
+          if (existing) continue;
+          for (const item of (order.line_items || [])) {
+            const sku = (item.sku || item.variant_sku || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+            if (!sku || item.quantity <= 0) continue;
+            const note = `Shopify Order ${orderId}`;
+            await env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
+              .bind(sku, item.quantity, 'B2C', (order.customer?.firstName||'')+' '+(order.customer?.lastName||'') || order.customer?.email || '', orderId, (order.createdAt||'').slice(0,10), note, Date.now()).run();
+            deductedItems.push({ sku, qty: item.quantity });
+          }
+        }
+        ordersUrl = null;
+        const linkHeader = resp.headers.get('link') || '';
+        const relNext = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+        if (relNext) ordersUrl = relNext[1];
+      }
+      console.log('[scheduled] done:', totalOrders, 'orders,' , deductedItems.length, 'items');
+    } catch (e: any) { console.log('[scheduled] error:', e?.message || e); }
   }
-}
+};
+
