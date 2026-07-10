@@ -26,6 +26,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
 import { Toaster, toast } from 'sonner';
 import { CRMProvider, useCRM } from './contexts/CRMContext';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from './lib/firebase';
 
 // Components
 import Dashboard from './components/Dashboard';
@@ -46,6 +48,7 @@ import PublishCalendar from './components/PublishCalendar';
 import InkFlowOutreach from './components/InkFlowOutreach';
 import ScrapeConfig from './components/ScrapeConfig';
 import AdminUsers from './components/AdminUsers';
+import UserPermissions from './components/UserPermissions';
 
 type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'settings' | 'publish' | 'scrape' | 'admin' | 'inkflow-outreach';
 
@@ -76,7 +79,21 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
   const isSnow368 = user?.email === 'snow368@gmail.com';
   const inkflowTab = { id: 'inkflow-outreach', label: 'InkFlow 获客', icon: Target };
   const adminTab = { id: 'admin', label: 'Admin', icon: Users };
-  const allTabs = isSnow368 ? [...tabs, adminTab, inkflowTab] : tabs;
+  const allowedTabs = userTabs === null ? tabs : tabs.filter(t => userTabs.includes(t.id));
+  const showAdmin = isSnow368 || (userTabs !== null && userTabs.includes('admin'));
+  const showInkflow = isSnow368 || (userTabs !== null && userTabs.includes('inkflow-outreach'));
+  let allTabs = [...allowedTabs];
+  if (showInkflow) allTabs.push(inkflowTab);
+  if (showAdmin) allTabs.push(adminTab);
+
+  // Load user permissions from Firestore
+  useEffect(() => {
+    if (!user?.email) { setUserTabs(null); return; }
+    if (user.email === 'snow368@gmail.com') { setUserTabs([]); return; }
+    getDoc(doc(db, 'user_permissions', user.email)).then(snap => {
+      setUserTabs(snap.exists() ? snap.data().tabs || [] : null);
+    }).catch(() => setUserTabs(null));
+  }, [user]);
 
   const renderTab = (tab: typeof tabs[0]) => {
     const Icon = tab.icon;
