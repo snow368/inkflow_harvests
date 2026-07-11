@@ -29,6 +29,7 @@ import { toast } from 'sonner';
 import SeoKeywordTool from './SeoKeywordTool';
 import OgChecker from './OgChecker';
 import ContentGapAnalyzer from './ContentGapAnalyzer';
+import SeoSkillLibrary from './SeoSkillLibrary';
 
 const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30',
@@ -117,7 +118,7 @@ function DMTemplateSection({ target }: { target: any }) {
 
 export default function InkFlowOutreach() {
   const [section, setSection] = useState<'outreach' | 'seo'>('outreach');
-  const [seoTool, setSeoTool] = useState<'keyword-cluster' | 'og-checker' | 'content-gap'>('keyword-cluster');
+  const [seoTool, setSeoTool] = useState<'keyword-cluster' | 'og-checker' | 'content-gap' | 'skill-library'>('keyword-cluster');
   const [activeView, setActiveView] = useState<'stats' | 'candidates' | 'targets' | 'target-detail'>('stats');
   const [candidates, setCandidates] = useState<any[]>([]);
   const [targets, setTargets] = useState<any[]>([]);
@@ -292,10 +293,16 @@ export default function InkFlowOutreach() {
               seoTool === 'content-gap' ? 'bg-rose-600/30 text-rose-400' : 'text-slate-500 hover:text-slate-300')}>
             📊 Content Gap
           </button>
+          <button onClick={() => setSeoTool('skill-library')}
+            className={cn('px-3 py-1 text-[10px] font-semibold rounded-md transition-colors',
+              seoTool === 'skill-library' ? 'bg-rose-600/30 text-rose-400' : 'text-slate-500 hover:text-slate-300')}>
+            📚 技能知识库
+          </button>
         </div>
         {seoTool === 'keyword-cluster' ? <SeoKeywordTool /> :
          seoTool === 'og-checker' ? <OgChecker /> :
-         <ContentGapAnalyzer />}
+         seoTool === 'content-gap' ? <ContentGapAnalyzer /> :
+         <SeoSkillLibrary />}
       </div>
     );
   }
