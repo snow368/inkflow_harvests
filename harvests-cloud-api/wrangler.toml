@@ -10,7 +10,7 @@ database_name = "harvests-db"
 database_id = "97b5e650-01a7-4796-a301-b7fe3017bf2a"
 
 [triggers]
-crons = ["0 3 * * *", "0 7 * * *"]
+crons = ["30 2 * * *", "0 3 * * *", "0 7 * * *"]
 
 [vars]
 # NEON_DATABASE_URL must be set via `npx wrangler secret put NEON_DATABASE_URL`

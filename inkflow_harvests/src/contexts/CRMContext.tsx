@@ -97,6 +97,8 @@ interface CRMContextType {
   assignments: TaskAssignment[];
   assignTaskToAccount: (artistId: string) => Promise<string | null>;
   startAutomationSequence: (artistId: string, accountId: string) => Promise<void>;
+  registerStatus: 'checking'|'approved'|'pending'|'rejected'|'none';
+  registerUser: (name: string, reason: string) => Promise<boolean>;
 }
 
 const CRMContext = createContext<CRMContextType | undefined>(undefined);
@@ -165,6 +167,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [pagination, setPagination] = useState({ total: 0, page: 1, totalPages: 1 });
   const [globalStats, setGlobalStats] = useState<any[]>([]);
+  const [registerStatus, setRegisterStatus] = useState<'checking'|'approved'|'pending'|'rejected'|'none'>('approved');
 
   // Auth Listener — supports both Firebase (Google) and Email Auth proxy
   useEffect(() => {
@@ -178,18 +181,37 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const stored = getStoredEmailAuth();
     if (stored) {
       setUser(stored);
-      setIsAuthReady(true);
       console.log("Email auth user:", stored.email);
+      // Check registration status FIRST, then setIsAuthReady
+      (async () => {
+        if (stored.email === 'snow368@gmail.com') { setRegisterStatus('approved'); }
+        else {
+          try {
+            const r = await fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/auth/register-status/' + encodeURIComponent(stored.email || ''));
+            if (r.ok) { const d = await r.json(); setRegisterStatus(d.status || 'approved'); }
+            else setRegisterStatus('approved');
+          } catch { setRegisterStatus('approved'); }
+        }
+        setIsAuthReady(true);
+      })();
     }
 
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
       clearTimeout(t);
       if (u) {
         clearStoredEmailAuth();
         setUser(u);
         console.log("User authenticated:", u.email);
+        // Check registration status
+        if (u.email === 'snow368@gmail.com') { setRegisterStatus('approved'); setIsAuthReady(true); return; }
+        try {
+          const r = await fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/auth/register-status/' + encodeURIComponent(u.email || ''));
+          if (r.ok) { const d = await r.json(); setRegisterStatus(d.status || 'approved'); }
+          else setRegisterStatus('approved');
+        } catch { setRegisterStatus('approved'); }
       } else if (!getStoredEmailAuth()) {
         setUser(null);
+        setRegisterStatus('approved');
       }
       setIsAuthReady(true);
     });
@@ -1897,7 +1919,18 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       user,
       login,
       logout,
-      isAuthReady
+      isAuthReady,
+      registerStatus,
+      registerUser: async (name: string, reason: string): Promise<boolean> => {
+        try {
+          const r = await fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/auth/register', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: user?.email || '', name, reason })
+          });
+          if (r.ok) { setRegisterStatus('pending'); return true; }
+        } catch {}
+        return false;
+      }
     }}>
       {children}
     </CRMContext.Provider>

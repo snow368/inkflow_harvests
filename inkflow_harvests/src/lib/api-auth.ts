@@ -1,6 +1,18 @@
 import { auth, getStoredEmailAuth } from './firebase';
 
 const API_BASE = 'https://harvests-cloud-api.inkflowapp.workers.dev';
+const API_TIMEOUT = 20000; // 20s — Worker can be slow under GFW
+
+/** fetch with timeout wrapper */
+async function fetchWithTimeout(url: string, options: RequestInit, timeout = API_TIMEOUT): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    return await fetch(url, { ...options, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 let cachedToken: string | null = null;
 let tokenPromise: Promise<string | null> | null = null;
@@ -43,7 +55,7 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const res = await fetchWithTimeout(`${API_BASE}${path}`, { ...options, headers });
 
   // If 401, token might be expired — refresh and retry once
   if (res.status === 401) {
@@ -51,7 +63,7 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
     const newToken = await getAuthToken();
     if (newToken) {
       headers['Authorization'] = `Bearer ${newToken}`;
-      return fetch(`${API_BASE}${path}`, { ...options, headers });
+      return fetchWithTimeout(`${API_BASE}${path}`, { ...options, headers });
     }
   }
 

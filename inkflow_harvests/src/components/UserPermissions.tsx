@@ -1,6 +1,4 @@
 import { useEffect, useState } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
 import { apiFetch } from '../lib/api-auth';
 
 const ALL_TABS = [
@@ -36,30 +34,52 @@ export default function UserPermissions() {
 
   const loadUsers = async () => {
     try {
-      const data = await apiFetch('/api/admin/users');
-      if (Array.isArray(data)) setUsers(data);
-    } catch {}
+      const res = await apiFetch('/api/admin/users');
+      const data = await res.json();
+      console.log('UserPermissions users:', data);
+      if (Array.isArray(data.users)) { setUsers(data.users); return; }
+      if (Array.isArray(data)) { setUsers(data); return; }
+      console.warn('Unexpected response format:', data);
+    } catch (e) {
+      console.error('UserPermissions load error:', e);
+    }
   };
 
   useEffect(() => { loadUsers(); }, []);
 
   const loadPerm = async (email: string) => {
     setSelected(email);
+    setPermTabs(ALL_TABS.map(t => t.id)); // default: all tabs
     try {
-      const snap = await getDoc(doc(db, 'user_permissions', email));
-      if (snap.exists()) setPermTabs(snap.data().tabs || []);
-      else setPermTabs(ALL_TABS.map(t => t.id));
-    } catch { setPermTabs(ALL_TABS.map(t => t.id)); }
+      const res = await apiFetch(`/api/auth/permissions/${encodeURIComponent(email)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.tabs && Array.isArray(data.tabs) && data.tabs.length > 0) {
+          setPermTabs(data.tabs);
+        }
+      }
+    } catch (e) {
+      console.error('loadPerm error:', e);
+    }
   };
 
   const savePerm = async () => {
     setSaving(true); setMsg('');
     try {
-      await setDoc(doc(db, 'user_permissions', selected), {
-        tabs: permTabs, updatedAt: Date.now(),
+      const res = await apiFetch(`/api/auth/permissions/${encodeURIComponent(selected)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tabs: permTabs }),
       });
-      setMsg('✅ Saved');
-    } catch (e: any) { setMsg('❌ ' + e.message); }
+      if (res.ok) {
+        setMsg('✅ Saved');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setMsg('❌ ' + (data.error || `HTTP ${res.status}`));
+      }
+    } catch (e: any) {
+      setMsg('❌ ' + (e.message || 'Network error'));
+    }
     setSaving(false);
   };
 

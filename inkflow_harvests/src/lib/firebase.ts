@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { initializeFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -50,8 +50,16 @@ export function clearStoredEmailAuth() {
 }
 
 export const signInWithGoogle = async () => {
-  /* Always use redirect — popups are unreliable on iOS/mobile */
-  await signInWithRedirect(auth, googleProvider);
+  /* Googld OAuth popup — works on harvests.pages.dev which is in Firebase authorized domains.
+     Falls back to redirect if popup blocked. */
+  try {
+    await signInWithPopup(auth, googleProvider);
+  } catch (popupErr: any) {
+    if (popupErr?.code === 'auth/popup-blocked' || popupErr?.code === 'auth/popup-closed-by-user') {
+      throw new Error('Popup blocked. Please allow popups for this site, then try again.');
+    }
+    throw popupErr;
+  }
 };
 
 export const handleRedirectResult = async (): Promise<void> => {

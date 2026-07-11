@@ -1548,7 +1548,16 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh, setMe
                 const groups = new Map<string, typeof recent>();
                 const standalone: typeof recent = [];
                 for (const r of recent) {
-                  const key = r.shopify_order_id || r.note || '';
+                  // Use # order number from note if shopify_order_id is a numeric internal ID
+                  let key = r.shopify_order_id || '';
+                  // If the ID is purely numeric (internal Shopify ID), try to get # from note
+                  if (key && /^\d+$/.test(key)) {
+                    const noteMatch = (r.note || '').match(/#\d+/);
+                    key = noteMatch ? noteMatch[0] : key;
+                  } else if (!key) {
+                    const noteMatch = (r.note || '').match(/#\d+/);
+                    key = noteMatch ? noteMatch[0] : r.note || '';
+                  }
                   if (key) {
                     if (!groups.has(key)) groups.set(key, []);
                     groups.get(key)!.push(r);

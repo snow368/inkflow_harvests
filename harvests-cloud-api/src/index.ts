@@ -155,6 +155,12 @@ const PUBLIC_PATHS = new Set([
   '/api/inventory/b2b-order',
   '/api/inventory/b2b-orders',
   '/api/inventory/b2b-fix-pack',
+  '/api/auth/signin',
+  '/api/auth/signup',
+  '/api/auth/reset',
+  '/api/auth/register',
+  '/api/auth/register-status',,
+  '/api/migrate-users'
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -1228,6 +1234,206 @@ app.post('/api/scrape/update-status', async (c) => {
   return c.json({ ok: true })
 })
 
+
+
+
+
+// ============ USER REGISTRATION & APPROVAL ============
+
+
+// GET /api/auth/permissions/:email
+app.get('/api/auth/permissions/:email', async (c) => {
+  await ensurePermsTable(c.env.DB);
+  const { email } = c.req.param();
+  const row = await c.env.DB.prepare('SELECT tabs FROM user_permissions WHERE email = ?').bind(email).first() as any;
+  return c.json({ tabs: row ? JSON.parse(row.tabs) : null });
+});
+
+// POST /api/auth/permissions/:email
+app.post('/api/auth/permissions/:email', async (c) => {
+  await ensurePermsTable(c.env.DB);
+  const { uid, email: callerEmail } = c.get('user');
+  // Allow hardcoded superuser (matches frontend + middleware logic) OR D1 admin role
+  let isAdmin = callerEmail === 'snow368@gmail.com';
+  if (!isAdmin) {
+    const me = await c.env.DB.prepare('SELECT role FROM users WHERE user_id = ?').bind(uid).first() as any;
+    isAdmin = me?.role === 'admin';
+  }
+  if (!isAdmin) return c.json({ error: 'forbidden' }, 403);
+  const { email } = c.req.param();
+  const { tabs } = await c.req.json();
+  await c.env.DB.prepare('INSERT OR REPLACE INTO user_permissions (email, tabs, updated_at) VALUES (?,?,?)')
+    .bind(email, JSON.stringify(tabs || []), Date.now()).run();
+  return c.json({ ok: true });
+});
+
+// Ensure perms table on first use
+async function ensurePermsTable(db) {
+  try { await db.prepare('CREATE TABLE IF NOT EXISTS user_permissions (email TEXT PRIMARY KEY, tabs TEXT, updated_at INTEGER)').run(); } catch {}
+}
+async function ensureUsersTable(db: D1Database) {
+  try { await db.prepare("CREATE TABLE IF NOT EXISTS access_requests (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT, reason TEXT, status TEXT DEFAULT 'pending', role TEXT DEFAULT 'user', created_at INTEGER, approved_at INTEGER, approved_by TEXT)").run(); } catch {}
+  try { await db.prepare("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'").run(); } catch {}
+  try { await db.prepare("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active'").run(); } catch {}
+}
+
+// POST /api/auth/register
+app.post('/api/auth/register', async (c) => {
+  await ensureUsersTable(c.env.DB);
+  const { email, name, reason } = await c.req.json();
+  if (!email) return c.json({ error: 'email required' }, 400);
+  const existing = await c.env.DB.prepare('SELECT status FROM access_requests WHERE email = ?').bind(email).first() as any;
+  if (existing?.status === 'approved') return c.json({ ok: true, message: 'already approved' });
+  if (existing?.status === 'pending') return c.json({ ok: true, message: 'already pending' });
+  const id = 'req-' + Date.now().toString(36);
+  await c.env.DB.prepare('INSERT INTO access_requests (id,email,name,reason,status,created_at) VALUES (?,?,?,?,?,?)')
+    .bind(id, email, name||'', reason||'', 'pending', Date.now()).run();
+  return c.json({ ok: true, id });
+});
+
+// GET /api/auth/register-status/:email
+app.get('/api/auth/register-status/:email', async (c) => {
+  await ensureUsersTable(c.env.DB);
+  const { email } = c.req.param();
+  const d = await c.env.DB.prepare('SELECT status, role FROM access_requests WHERE email = ?').bind(email).first() as any;
+  if (d?.status === 'approved') return c.json({ ok: true, status: 'approved', role: d.role || 'user' });
+  if (d?.status === 'pending') return c.json({ ok: false, status: 'pending', message: 'Waiting for admin approval' });
+  if (d?.status === 'rejected') return c.json({ ok: false, status: 'rejected', message: 'Access denied' });
+  return c.json({ ok: false, status: 'none', message: 'Not registered. Please request access.' });
+});
+
+// GET /api/auth/pending-users (admin only)
+app.get("/api/auth/pending-users", async (c) => {
+  await ensureUsersTable(c.env.DB);
+  const { uid } = c.get("user");
+  const me = await c.env.DB.prepare("SELECT role FROM users WHERE user_id = ?").bind(uid).first() as any;
+  if (me?.role !== "admin") return c.json({ error: "forbidden" }, 403);
+  const { results } = await c.env.DB.prepare("SELECT * FROM access_requests ORDER BY created_at DESC LIMIT 100").all();
+  return c.json({ users: results });
+});
+
+// POST /api/auth/approve (admin only)
+app.post("/api/auth/approve", async (c) => {
+  await ensureUsersTable(c.env.DB);
+  const { uid } = c.get("user");
+  const me = await c.env.DB.prepare("SELECT role FROM users WHERE user_id = ?").bind(uid).first() as any;
+  if (me?.role !== "admin") return c.json({ error: "forbidden" }, 403);
+  const { id, action } = await c.req.json();
+  if (action === 'approve') {
+    await c.env.DB.prepare("UPDATE access_requests SET status = 'approved', approved_at = ? WHERE id = ?").bind(Date.now(), id).run();
+    const rd = await c.env.DB.prepare("SELECT email FROM access_requests WHERE id = ?").bind(id).first() as any;
+    if (rd?.email) await c.env.DB.prepare("INSERT OR IGNORE INTO users (user_id, email, role, status, created_at) VALUES (?,?,?,?,?)").bind('email_' + rd.email, rd.email, 'user', 'active', Date.now()).run();
+  } else {
+    await c.env.DB.prepare("UPDATE access_requests SET status = 'rejected' WHERE id = ?").bind(id).run();
+  }
+  return c.json({ ok: true });
+});
+
+
+
+
+
+// GET /api/migrate-users — public endpoint, checks admin via query param
+app.get('/api/migrate-users', async (c) => {
+  const adminEmail = c.req.query('admin') || '';
+  if (adminEmail !== 'snow368@gmail.com') {
+    // Try JWT auth
+    try {
+      const { uid } = c.get('user');
+      const me = await c.env.DB.prepare('SELECT role FROM users WHERE user_id = ?').bind(uid).first() as any;
+      if (me?.role !== 'admin') throw new Error('not admin');
+    } catch {
+      return c.json({ error: 'forbidden' }, 403);
+    }
+  }
+  try {
+    const approved = await c.env.DB.prepare("SELECT email FROM access_requests WHERE status = 'approved'").all();
+    const results = [];
+    for (const r of (approved.results || [])) {
+      const email = (r as any).email;
+      if (email) {
+        const existing = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
+        if (!existing) {
+          await c.env.DB.prepare('INSERT INTO users (user_id, email, role, quota_daily_scrape, quota_total_scrape, created_at, updated_at) VALUES (?,?,?,?,?,?,?)')
+            .bind('email_' + email, email, 'user', 10, 100, Date.now(), Date.now()).run();
+          results.push('inserted ' + email);
+        } else {
+          results.push('exists ' + email);
+        }
+      }
+    }
+    const all = await c.env.DB.prepare('SELECT email FROM users ORDER BY created_at DESC').all();
+    return c.json({ migrated: results.length, details: results, users: (all.results || []).map(r => (r as any).email) });
+  } catch (e: any) {
+    return c.json({ error: e?.message || String(e) }, 500);
+  }
+});
+// ============ AUTH PROXY (Firebase REST API bypass) ============
+
+// POST /api/auth/signin
+app.post('/api/auth/signin', async (c) => {
+  const { email, password } = await c.req.json();
+  const url = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=AIzaSyCiCeZ7cyqtDW6NeLk6Ikvv3H3MX1_UbXs';
+  const resp = await fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, returnSecureToken: true })
+  });
+  const data = await resp.json();
+  if (resp.ok && data.localId) {
+    await c.env.DB.prepare("INSERT OR IGNORE INTO users (user_id, email, role, status, created_at) VALUES (?,?,?,?,?)")
+      .bind('email_' + data.email, data.email, 'user', 'active', Date.now()).run();
+  }
+  return c.json(data, resp.ok ? 200 : 400);
+});
+
+// POST /api/auth/signup
+app.post('/api/auth/signup', async (c) => {
+  const { email, password } = await c.req.json();
+  const url = 'https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyCiCeZ7cyqtDW6NeLk6Ikvv3H3MX1_UbXs';
+  const resp = await fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, returnSecureToken: true })
+  });
+  const data = await resp.json();
+  return c.json(data, resp.ok ? 200 : 400);
+});
+
+// POST /api/auth/reset
+app.post('/api/auth/reset', async (c) => {
+  const { email } = await c.req.json();
+  const url = 'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=AIzaSyCiCeZ7cyqtDW6NeLk6Ikvv3H3MX1_UbXs';
+  const resp = await fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, requestType: 'PASSWORD_RESET' })
+  });
+  const data = await resp.json();
+  return c.json(data, resp.ok ? 200 : 400);
+});
+
+// POST /api/auth/google
+app.post('/api/auth/google', async (c) => {
+  const { idToken } = await c.req.json();
+  if (!idToken) return c.json({ error: 'idToken required' }, 400);
+  const url = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=AIzaSyCiCeZ7cyqtDW6NeLk6Ikvv3H3MX1_UbXs';
+  const resp = await fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requestUri: 'http://localhost',
+      postBody: 'id_token=' + idToken + '&providerId=google.com',
+      returnSecureToken: true
+    })
+  });
+  const data = await resp.json();
+  if (!resp.ok) return c.json(data, 400);
+  return c.json({
+    uid: data.localId,
+    email: data.email,
+    idToken: data.idToken,
+    refreshToken: data.refreshToken,
+    displayName: data.displayName,
+    photoUrl: data.photoUrl
+  });
+});
 // ============ AUTH CHECK ============
 
 app.get('/api/auth/me', async (c) => {
@@ -1241,6 +1447,17 @@ app.get('/api/admin/users', async (c) => {
   const { uid } = c.get('user')
   const me = await c.env.DB.prepare('SELECT role FROM users WHERE user_id = ?').bind(uid).first() as any
   if (me?.role !== 'admin') return c.json({ error: 'forbidden' }, 403)
+  // Sync approved access_requests into users table
+  try {
+    const approved = await c.env.DB.prepare("SELECT email FROM access_requests WHERE status = 'approved'").all()
+    for (const r of (approved.results || [])) {
+      const email: string = (r as any).email
+      if (email) {
+        await c.env.DB.prepare("INSERT OR IGNORE INTO users (user_id, email, role, quota_daily_scrape, quota_total_scrape, created_at, updated_at) VALUES (?,?,?,?,?,?,?)")
+          .bind('email_' + email, email, 'user', 10, 100, Date.now(), Date.now()).run()
+      }
+    }
+  } catch (e: any) { console.error('sync error:', e?.message || e) }
   const rows = await c.env.DB.prepare(`
     SELECT u.*,
       (SELECT COUNT(*) FROM user_scrape_configs WHERE user_id = u.user_id) as total_tasks,
@@ -2697,6 +2914,425 @@ app.post('/api/amazon/report', async (c) => {
   } catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
 });
 
+
+
+// ============ COMPETITOR INTELLIGENCE ROUTES ============
+
+async function ensureCompetitorTables(db: D1Database) {
+  try { await db.prepare(```CREATE TABLE IF NOT EXISTS competitor_brands (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, website TEXT, category TEXT,
+    notes TEXT, status TEXT DEFAULT 'active', created_at INTEGER
+)```).run(); } catch {}
+  try { await db.prepare(```CREATE TABLE IF NOT EXISTS competitor_products (
+    id TEXT PRIMARY KEY, brand_id TEXT, name TEXT NOT NULL, category TEXT,
+    subcategory TEXT, launch_date TEXT, target_user TEXT, price TEXT,
+    features TEXT, packaging TEXT, images TEXT, claims TEXT,
+    source_url TEXT, notes TEXT, created_at INTEGER, updated_at INTEGER
+)```).run(); } catch {}
+  try { await db.prepare(```CREATE TABLE IF NOT EXISTS competitor_mentions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, brand_id TEXT, product_id TEXT,
+    source TEXT NOT NULL, source_url TEXT, content TEXT, sentiment TEXT,
+    mention_type TEXT, author TEXT, platform TEXT, mentioned_at INTEGER,
+    created_at INTEGER
+)```).run(); } catch {}
+}
+
+// BRANDS
+app.get('/api/competitor/brands', async (c) => {
+  await ensureCompetitorTables(c.env.DB);
+  const { results } = await c.env.DB.prepare('SELECT * FROM competitor_brands ORDER BY name ASC').all();
+  return c.json({ brands: results });
+});
+
+app.post('/api/competitor/brands', async (c) => {
+  await ensureCompetitorTables(c.env.DB);
+  const body: any = await c.req.json();
+  const id = 'cb-' + Date.now().toString(36);
+  await c.env.DB.prepare(```INSERT INTO competitor_brands (id,name,website,category,notes,status,created_at) VALUES (?,?,?,?,?,?,?)```).bind(id, body.name, body.website||'', body.category||'', body.notes||'', 'active', Date.now()).run();
+  return c.json({ ok: true, id });
+});
+
+app.put('/api/competitor/brands/:id', async (c) => {
+  await ensureCompetitorTables(c.env.DB);
+  const { id } = c.req.param();
+  const body: any = await c.req.json();
+  const fields = ['name','website','category','notes','status'];
+  const sets = fields.filter(f => body[f] !== undefined).map(f => f + ' = ?');
+  if (!sets.length) return c.json({ ok: false });
+  const vals = fields.filter(f => body[f] !== undefined).map(f => body[f]);
+  await c.env.DB.prepare(`UPDATE competitor_brands SET ` + sets.join(',') + ' WHERE id = ?').bind(...vals, id).run();
+  return c.json({ ok: true });
+});
+
+app.delete('/api/competitor/brands/:id', async (c) => {
+  await ensureCompetitorTables(c.env.DB);
+  const { id } = c.req.param();
+  await c.env.DB.prepare(`DELETE FROM competitor_brands WHERE id = ?`).bind(id).run();
+  await c.env.DB.prepare(`DELETE FROM competitor_products WHERE brand_id = ?`).bind(id).run();
+  return c.json({ ok: true });
+});
+
+// PRODUCTS
+app.get('/api/competitor/products', async (c) => {
+  await ensureCompetitorTables(c.env.DB);
+  const brandId = c.req.query('brand_id');
+  let sql = 'SELECT cp.*, cb.name as brand_name FROM competitor_products cp LEFT JOIN competitor_brands cb ON cp.brand_id = cb.id';
+  if (brandId) sql += ' WHERE cp.brand_id = ?';
+  sql += ' ORDER BY cp.created_at DESC LIMIT 100';
+  const stmt = brandId ? c.env.DB.prepare(sql).bind(brandId) : c.env.DB.prepare(sql);
+  const { results } = await stmt.all();
+  return c.json({ products: results });
+});
+
+app.post('/api/competitor/products', async (c) => {
+  await ensureCompetitorTables(c.env.DB);
+  const body: any = await c.req.json();
+  const id = 'cpr-' + Date.now().toString(36);
+  await c.env.DB.prepare(```INSERT INTO competitor_products (id,brand_id,name,category,subcategory,launch_date,target_user,price,features,packaging,images,claims,source_url,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)```).bind(id, body.brand_id||'', body.name, body.category||'', body.subcategory||'', body.launch_date||'', body.target_user||'', body.price||'', body.features||'', body.packaging||'', body.images||'', body.claims||'', body.source_url||'', body.notes||'', Date.now(), Date.now()).run();
+  return c.json({ ok: true, id });
+});
+
+app.put('/api/competitor/products/:id', async (c) => {
+  await ensureCompetitorTables(c.env.DB);
+  const { id } = c.req.param();
+  const body: any = await c.req.json();
+  const fields = ['brand_id','name','category','subcategory','launch_date','target_user','price','features','packaging','images','claims','source_url','notes'];
+  const sets = fields.filter(f => body[f] !== undefined).map(f => f + ' = ?');
+  if (!sets.length) return c.json({ ok: false });
+  sets.push('updated_at = ?');
+  const vals = fields.filter(f => body[f] !== undefined).map(f => body[f]);
+  vals.push(Date.now());
+  await c.env.DB.prepare(`UPDATE competitor_products SET ` + sets.join(',') + ' WHERE id = ?').bind(...vals, id).run();
+  return c.json({ ok: true });
+});
+
+app.delete('/api/competitor/products/:id', async (c) => {
+  await ensureCompetitorTables(c.env.DB);
+  const { id } = c.req.param();
+  await c.env.DB.prepare(`DELETE FROM competitor_products WHERE id = ?`).bind(id).run();
+  return c.json({ ok: true });
+});
+
+// MENTIONS
+app.get('/api/competitor/mentions', async (c) => {
+  await ensureCompetitorTables(c.env.DB);
+  const brandId = c.req.query('brand_id');
+  let sql = 'SELECT cm.*, cb.name as brand_name FROM competitor_mentions cm LEFT JOIN competitor_brands cb ON cm.brand_id = cb.id';
+  if (brandId) sql += ' WHERE cm.brand_id = ?';
+  sql += ' ORDER BY cm.mentioned_at DESC LIMIL 100';
+  const stmt = brandId ? c.env.DB.prepare(sql).bind(brandId) : c.env.DB.prepare(sql);
+  const { results } = await stmt.all();
+  return c.json({ mentions: results });
+});
+
+app.post('/api/competitor/mentions', async (c) => {
+  await ensureCompetitorTables(c.env.DB);
+  const body: any = await c.req.json();
+  await c.env.DB.prepare(```INSERT INTO competitor_mentions (brand_id,product_id,source,source_url,content,sentiment,mention_type,author,platform,mentioned_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)```).bind(body.brand_id||'', body.product_id||'', body.source||'manual', body.source_url||'', body.content||'', body.sentiment||'', body.mention_type||'', body.author||'', body.platform||'', body.mentioned_at||Date.now(), Date.now()).run();
+  return c.json({ ok: true });
+});
+
+// SUMMARY
+app.get('/api/competitor/summary', async (c) => {
+  await ensureCompetitorTables(c.env.DB);
+  const brands = await c.env.DB.prepare('SELECT id, name, category, status FROM competitor_brands ORDER BY name ASC').all();
+  const counts = {} as any;
+  for (const b of (brands.results || [])) {
+    const p = await c.env.DB.prepare('SELECT COUNT(*) as c FROM competitor_products WHERE brand_id = ?').bind(b.id).first() as any;
+    const m = await c.env.DB.prepare('SELECT COUNT(*) as c FROM competitor_mentions WHERE brand_id = ?').bind(b.id).first() as any;
+    counts[b.id] = { products: p?.c || 0, mentions: m?.c || 0 };
+  }
+  return c.json({ brands: brands.results, counts });
+});
+
+
+
+// ============ MARKET INTELLIGENCE ROUTES ============
+
+async function ensureMarketTables(db: D1Database) {
+  try { await db.prepare(```CREATE TABLE IF NOT EXISTS market_categories (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, parent TEXT, sort_order INTEGER DEFAULT 0,
+    created_at INTEGER
+)```).run(); } catch {}
+  try { await db.prepare(```CREATE TABLE IF NOT EXISTS market_scores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT NOT NULL, country TEXT NOT NULL,
+    brand TEXT NOT NULL, score REAL DEFAULT 0, google_score REAL DEFAULT 0,
+    amazon_score REAL DEFAULT 0, social_score REAL DEFAULT 0, artist_score REAL DEFAULT 0,
+    dist_score REAL DEFAULT 0, rank INTEGER, updated_at INTEGER,
+    UNIQUE(category, country, brand)
+)```).run(); } catch {}
+  try { await db.prepare(```CREATE TABLE IF NOT EXISTS market_reports (
+    id TEXT PRIMARY KEY, category TEXT, country TEXT, report TEXT,
+    ai_summary TEXT, opportunity TEXT, created_at INTEGER
+)```).run(); } catch {}
+}
+
+// SEED default categories on first call
+const DEFAULT_CATEGORIES = [
+  {id:'cartridge',name:'Tattoo Cartridge',parent:'supplies',sort_order:1},
+  {id:'machine',name:'Tattoo Machine',parent:'equipment',sort_order:2},
+  {id:'ink',name:'Tattoo Ink',parent:'supplies',sort_order:3},
+  {id:'printer',name:'Tattoo Printer',parent:'equipment',sort_order:4},
+  {id:'powersupply',name:'Power Supply',parent:'equipment',sort_order:5},
+  {id:'pmu',name:'PMU Cartridge',parent:'supplies',sort_order:6},
+  {id:'needle',name:'Needle & Grip',parent:'supplies',sort_order:7},
+  {id:'transfer',name:'Transfer Paper',parent:'supplies',sort_order:8},
+  {id:'aftercare',name:'Aftercare',parent:'supplies',sort_order:9},
+  {id:'packaging',name:'Packaging',parent:'',sort_order:99},
+];
+const DEFAULT_COUNTRIES = ['USA','Germany','UK','France','Italy','Spain','Canada','Australia','Japan','Brazil'];
+
+// CATEGORIES
+app.get('/api/market/categories', async (c) => {
+  await ensureMarketTables(c.env.DB);
+  // Seed if empty
+  const { results: existing } = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM market_categories').all();
+  if (!existing[0]?.cnt) {
+    for (const cat of DEFAULT_CATEGORIES) {
+      await c.env.DB.prepare('INSERT OR IGNORE INTO market_categories (id,name,parent,sort_order,created_at) VALUES (?,?,?,?,?)')
+        .bind(cat.id, cat.name, cat.parent, cat.sort_order, Date.now()).run();
+    }
+  }
+  const { results } = await c.env.DB.prepare('SELECT * FROM market_categories ORDER BY sort_order ASC').all();
+  return c.json({ categories: results });
+});
+
+app.post('/api/market/categories', async (c) => {
+  await ensureMarketTables(c.env.DB);
+  const body: any = await c.req.json();
+  const id = body.id || 'cat-' + Date.now().toString(36);
+  await c.env.DB.prepare('INSERT OR REPLACE INTO market_categories (id,name,parent,sort_order,created_at) VALUES (?,?,?,?,?)')
+    .bind(id, body.name, body.parent||'', body.sort_order||0, Date.now()).run();
+  return c.json({ ok: true, id });
+});
+
+app.delete('/api/market/categories/:id', async (c) => {
+  await ensureMarketTables(c.env.DB);
+  const { id } = c.req.param();
+  await c.env.DB.prepare('DELETE FROM market_categories WHERE id = ?').bind(id).run();
+  await c.env.DB.prepare('DELETE FROM market_scores WHERE category = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
+// SCORES
+app.get('/api/market/scores', async (c) => {
+  await ensureMarketTables(c.env.DB);
+  const category = c.req.query('category') || '';
+  const country = c.req.query('country') || '';
+  let sql = 'SELECT * FROM market_scores';
+  const params: any[] = [];
+  const wheres: string[] = [];
+  if (category) { wheres.push('category = ?'); params.push(category); }
+  if (country) { wheres.push('country = ?'); params.push(country); }
+  if (wheres.length) sql += ' WHERE ' + wheres.join(' AND ');
+  sql += ' ORDER BY score DESC';
+  const { results } = await (params.length ? c.env.DB.prepare(sql).bind(...params) : c.env.DB.prepare(sql)).all();
+  return c.json({ scores: results });
+});
+
+app.post('/api/market/scores', async (c) => {
+  await ensureMarketTables(c.env.DB);
+  const body: any = await c.req.json();
+  await c.env.DB.prepare(```INSERT OR REPLACE INTO market_scores (category,country,brand,score,google_score,amazon_score,social_score,artist_score,dist_score,rank,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)```).bind(body.category, body.country, body.brand, body.score||0, body.google_score||0, body.amazon_score||0, body.social_score||0, body.artist_score||0, body.dist_score||0, body.rank||0, Date.now()).run();
+  return c.json({ ok: true });
+});
+
+app.delete('/api/market/scores/:id', async (c) => {
+  await ensureMarketTables(c.env.DB);
+  const { id } = c.req.param();
+  await c.env.DB.prepare('DELETE FROM market_scores WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
+// REPORTS (Opportunity Finder)
+app.get('/api/market/reports', async (c) => {
+  await ensureMarketTables(c.env.DB);
+  const { results } = await c.env.DB.prepare('SELECT * FROM market_reports ORDER BY created_at DESC LIMIT 50').all();
+  return c.json({ reports: results });
+});
+
+app.post('/api/market/reports', async (c) => {
+  await ensureMarketTables(c.env.DB);
+  const body: any = await c.req.json();
+  const id = 'mr-' + Date.now().toString(36);
+  await c.env.DB.prepare(```INSERT INTO market_reports (id,category,country,report,ai_summary,opportunity,created_at) VALUES (?,?,?,?,?,?,?)```).bind(id, body.category||'', body.country||'', body.report||'', body.ai_summary||'', body.opportunity||'', Date.now()).run();
+  return c.json({ ok: true, id });
+});
+
+app.delete('/api/market/reports/:id', async (c) => {
+  await ensureMarketTables(c.env.DB);
+  const { id } = c.req.param();
+  await c.env.DB.prepare('DELETE FROM market_reports WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
+// OPPORTUNITY FINDER (AI-powered analysis stub)
+app.get('/api/market/opportunities', async (c) => {
+  await ensureMarketTables(c.env.DB);
+  const category = c.req.query('category') || '';
+  const country = c.req.query('country') || '';
+  // Get top brands in this category+country
+  let sql = 'SELECT * FROM market_scores';
+  const params: any[] = [];
+  const wheres: string[] = ['score > 0'];
+  if (category) { wheres.push('category = ?'); params.push(category); }
+  if (country) { wheres.push('country = ?'); params.push(country); }
+  sql += ' WHERE ' + wheres.join(' AND ') + ' ORDER BY score DESC LIMIT 20';
+  const { results: scores } = await (params.length ? c.env.DB.prepare(sql).bind(...params) : c.env.DB.prepare(sql)).all();
+  // Simple opportunity detection: if demand zone exists but few brands score high
+  const opportunities = [];
+  const topScore = (scores[0]?.score || 0);
+  const gap = 100 - topScore;
+  if (gap > 30) {
+    opportunities.push({
+      type: 'market_gap',
+      category, country,
+      gap_percent: Math.round(gap),
+      recommendation: gap > 50 ? 'High potential market with low competition' : 'Moderate competition, niche opportunity',
+    });
+  }
+  return c.json({ scores, opportunities });
+});
+
+// SUMMARY — get all categories with brand count
+app.get('/api/market/summary', async (c) => {
+  await ensureMarketTables(c.env.DB);
+  const { results: categories } = await c.env.DB.prepare('SELECT * FROM market_categories ORDER BY sort_order ASC').all();
+  const summary = [];
+  for (const cat of (categories || [])) {
+    const { results: scores } = await c.env.DB.prepare('SELECT DISTINCT country, COUNT(*) as brands, AVG(score) as avg_score FROM market_scores WHERE category = ? GROUP BY country ORDER BY avg_score DESC').bind(cat.id).all();
+    summary.push({ ...cat, countries: scores || [] });
+  }
+  return c.json({ summary });
+});
+
+
+
+// ============ CONTENT OPPORTUNITY ENGINE ============
+
+async function ensureOppTables(db: D1Database) {
+  try { await db.prepare(```CREATE TABLE IF NOT EXISTS opportunity_signals (
+    id TEXT PRIMARY KEY, source TEXT NOT NULL, signal_text TEXT NOT NULL,
+    related_product TEXT, related_brand TEXT, score INTEGER DEFAULT 50,
+    audience TEXT, pain_point TEXT, content_format TEXT, platform TEXT,
+    status TEXT DEFAULT 'active', created_at INTEGER
+  )```).run(); } catch {}
+  try { await db.prepare(```CREATE TABLE IF NOT EXISTS content_briefs (
+    id TEXT PRIMARY KEY, signal_id TEXT, title TEXT NOT NULL,
+    hook TEXT, audience TEXT, pain_point TEXT, product TEXT,
+    format TEXT, platform TEXT, score INTEGER, source TEXT,
+    status TEXT DEFAULT 'draft', created_at INTEGER
+  )```).run(); } catch {}
+}
+
+
+app.get('/api/content/signals', async (c) => {
+  await ensureOppTables(c.env.DB);
+  const source = c.req.query('source') || '';
+  const limit = parseInt(c.req.query('limit') || '50');
+  let sql = 'SELECT * FROM opportunity_signals WHERE status = ?';
+  const params: any[] = ['active'];
+  if (source) { sql += ' AND source = ?'; params.push(source); }
+  sql += ' ORDER BY score DESC LIMIT ' + limit;
+  const { results } = await c.env.DB.prepare(sql).bind(...params).all();
+  return c.json({ signals: results });
+});
+
+app.post('/api/content/signals', async (c) => {
+  await ensureOppTables(c.env.DB);
+  const body: any = await c.req.json();
+  const id = 'sig-' + Date.now().toString(36);
+  await c.env.DB.prepare(```INSERT INTO opportunity_signals (id,source,signal_text,related_product,related_brand,score,audience,pain_point,content_format,platform,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)```)
+    .bind(id, body.source||'manual', body.signal_text, body.related_product||'', body.related_brand||'',
+      body.score||50, body.audience||'', body.pain_point||'', body.content_format||'', body.platform||'', 'active', Date.now()).run();
+  return c.json({ ok: true, id });
+});
+
+app.put('/api/content/signals/:id', async (c) => {
+  await ensureOppTables(c.env.DB);
+  const { id } = c.req.param();
+  const body: any = await c.req.json();
+  const fields = ['signal_text','related_product','related_brand','score','audience','pain_point','content_format','platform','status'];
+  const sets = fields.filter(f => body[f] !== undefined).map(f => f + ' = ?');
+  if (!sets.length) return c.json({ ok: false });
+  const vals = fields.filter(f => body[f] !== undefined).map(f => body[f]);
+  await c.env.DB.prepare(`UPDATE opportunity_signals SET ` + sets.join(',') + ' WHERE id = ?').bind(...vals, id).run();
+  return c.json({ ok: true });
+});
+
+app.delete('/api/content/signals/:id', async (c) => {
+  await ensureOppTables(c.env.DB);
+  const { id } = c.req.param();
+  await c.env.DB.prepare(`DELETE FROM opportunity_signals WHERE id = ?`).bind(id).run();
+  return c.json({ ok: true });
+});
+
+app.get('/api/content/briefs', async (c) => {
+  await ensureOppTables(c.env.DB);
+  const { results } = await c.env.DB.prepare('SELECT * FROM content_briefs ORDER BY score DESC LIMIT 50').all();
+  return c.json({ briefs: results });
+});
+
+app.post('/api/content/briefs', async (c) => {
+  await ensureOppTables(c.env.DB);
+  const body: any = await c.req.json();
+  const id = 'br-' + Date.now().toString(36);
+  await c.env.DB.prepare(```INSERT INTO content_briefs (id,signal_id,title,hook,audience,pain_point,product,format,platform,score,source,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)```)
+    .bind(id, body.signal_id||'', body.title, body.hook||'', body.audience||'', body.pain_point||'',
+      body.product||'', body.format||'', body.platform||'', body.score||0, body.source||'', 'draft', Date.now()).run();
+  return c.json({ ok: true, id });
+});
+
+// AI OPPORTUNITY SCAN
+app.post('/api/content/scan-opportunities', async (c) => {
+  await ensureOppTables(c.env.DB);
+  const body: any = await c.req.json();
+  const focus = body.focus || '';
+  const signals = [];
+  const now = Date.now();
+  // Product signals
+  try {
+    const stocks = await c.env.DB.prepare('SELECT sku, name, current_stock, total_in, total_out FROM products ORDER BY total_out DESC LIMIT 10').all();
+    for (const p of (stocks.results || [])) {
+      const isHot = (p.total_out || 0) > 50;
+      signals.push({
+        source: isHot ? 'sales_data' : 'inventory',
+        signal_text: isHot ? 'Hot product: ' + (p.name||p.sku) : 'Slow moving: ' + (p.name||p.sku) + ' stock: ' + (p.current_stock||0),
+        related_product: p.sku, score: isHot ? 85 : 60,
+      });
+    }
+  } catch {}
+  // Competitor signals
+  try {
+    const comps = await c.env.DB.prepare('SELECT id, name FROM competitor_brands ORDER BY RANDOM() LIMIT 5').all();
+    for (const b of (comps.results || [])) {
+      const postCount = await c.env.DB.prepare('SELECT COUNT(*) as c FROM competitor_mentions WHERE brand_id = ?').bind(b.id).first() as any;
+      if ((postCount?.c || 0) > 0) {
+        signals.push({ source: 'competitor_analysis', signal_text: 'Competitor ' + (b.name||'') + ' has ' + postCount.c + ' mentions', related_product: '', score: 75 });
+      }
+    }
+  } catch {}
+  // Fallback if no real signals found
+  if (signals.length < 3) {
+    const sources = ['product_knowledge','competitor_analysis','artist_insight','customer_feedback','sales_data','new_product','social_trend'];
+    const topics = focus ? [focus] : ['Fine line cartridge education','PMU needle guide','Tattoo machine comparison','Aftercare content','Supply storage tips'];
+    for (const topic of topics) {
+      signals.push({
+        source: sources[Math.floor(Math.random() * sources.length)],
+        signal_text: topic + ' — trending opportunity',
+        related_product: '', score: 70 + Math.floor(Math.random() * 25),
+      });
+    }
+  }
+  const results = [];
+  for (const s of signals) {
+    const id = 'sig-' + now.toString(36) + '-' + Math.random().toString(36).slice(2,6);
+    await c.env.DB.prepare(```INSERT INTO opportunity_signals (id,source,signal_text,related_product,related_brand,score,audience,pain_point,content_format,platform,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)```)
+      .bind(id, s.source, s.signal_text, s.related_product||'', '', s.score||50, '', '', '', '', 'active', now).run();
+    results.push({ id: id, source: s.source, signal_text: s.signal_text, score: s.score, related_product: s.related_product });
+  }
+  return c.json({ ok: true, signals: results });
+});
 export default {
   fetch: app.fetch,
   async scheduled(event: any, env: any, ctx: any) {

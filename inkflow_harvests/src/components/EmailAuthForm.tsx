@@ -5,12 +5,13 @@ import { toast } from 'sonner';
 interface Props {
   onBackToGoogle: () => void;
   onSuccess: () => void;
+  defaultMode?: 'login' | 'register';
 }
 
-export default function EmailAuthForm({ onBackToGoogle, onSuccess }: Props) {
+export default function EmailAuthForm({ onBackToGoogle, onSuccess, defaultMode = 'login' }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isRegister, setIsRegister] = useState(false);
+  const [isRegister, setIsRegister] = useState(defaultMode === 'register');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showReset, setShowReset] = useState(false);
@@ -26,8 +27,23 @@ export default function EmailAuthForm({ onBackToGoogle, onSuccess }: Props) {
 
     try {
       if (isRegister) {
-        await registerWithEmail(email, password);
-        toast.success('账号注册成功！');
+        try {
+          await registerWithEmail(email, password);
+          toast.success('账号注册成功！');
+          onSuccess();
+        } catch (err: any) {
+          const code = err?.code || '';
+          if (code === 'auth/email-already-in-use') {
+            // Email already registered, auto-switch to login
+            try {
+              await signInWithEmail(email, password);
+              toast.success('登录成功！');
+              onSuccess();
+              return;
+            } catch {}
+          }
+          throw err;
+        }
       } else {
         await signInWithEmail(email, password);
         toast.success('登录成功！');

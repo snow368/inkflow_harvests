@@ -156,6 +156,67 @@ export default function AdminUsers() {
           </tbody>
         </table>
       </div>
+
+      {/* Pending Access Requests */}
+      <PendingUsers />
+    </div>
+  );
+}
+
+function PendingUsers() {
+  const [requests, setRequests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await apiFetch('/api/auth/pending-users');
+      if (r.ok) { const d = await r.json(); setRequests(d.users || []); }
+    } catch {}
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+  const approve = async (id: string, action: string) => {
+    try {
+      await apiFetch('/api/auth/approve', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action })
+      });
+      load();
+    } catch {}
+  };
+  const s: any = { background: '#1e293b', borderRadius: 8, padding: 16, border: '1px solid #334155', marginTop: 16 };
+  return (
+    <div style={s}>
+      <h3 style={{ margin: '0 0 12px', fontSize: 16, color: '#fbbf24', fontWeight: 700 }}>Pending Access Requests</h3>
+      {loading ? <p style={{ color: '#64748b' }}>Loading...</p> : requests.length === 0 ? <p style={{ color: '#64748b' }}>No pending requests</p> : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead><tr style={{ background: '#334155', textAlign: 'left' }}>
+            <th style={{ padding: '8px 10px' }}>Email</th><th style={{ padding: '8px 10px' }}>Name</th>
+            <th style={{ padding: '8px 10px' }}>Reason</th><th style={{ padding: '8px 10px' }}>Status</th>
+            <th style={{ padding: '8px 10px' }}>Date</th><th style={{ padding: '8px 10px' }}></th>
+          </tr></thead>
+          <tbody>{requests.map((r: any) => (
+            <tr key={r.id} style={{ borderBottom: '1px solid #334155' }}>
+              <td style={{ padding: '8px 10px' }}>{r.email}</td>
+              <td style={{ padding: '8px 10px' }}>{r.name || '-'}</td>
+              <td style={{ padding: '8px 10px' }}>{r.reason || '-'}</td>
+              <td style={{ padding: '8px 10px' }}>
+                <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 11,
+                  background: r.status === 'approved' ? '#14532d' : r.status === 'pending' ? '#713f12' : '#7f1d1d',
+                  color: r.status === 'approved' ? '#4ade80' : r.status === 'pending' ? '#fbbf24' : '#f87171',
+                }}>{r.status}</span>
+              </td>
+              <td style={{ padding: '8px 10px', color: '#64748b' }}>{r.created_at ? new Date(r.created_at).toLocaleDateString() : '-'}</td>
+              <td style={{ padding: '8px 10px' }}>
+                {r.status === 'pending' && <>
+                  <button onClick={() => approve(r.id, 'approve')} style={{ padding: '4px 10px', borderRadius: 4, border: 'none', background: '#22c55e', color: 'white', cursor: 'pointer', fontSize: 11, marginRight: 4 }}>Approve</button>
+                  <button onClick={() => approve(r.id, 'reject')} style={{ padding: '4px 10px', borderRadius: 4, border: 'none', background: '#ef4444', color: 'white', cursor: 'pointer', fontSize: 11 }}>Reject</button>
+                </>}
+              </td>
+            </tr>
+          ))}</tbody>
+        </table>
+      )}
     </div>
   );
 }

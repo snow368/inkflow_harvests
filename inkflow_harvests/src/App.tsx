@@ -10,9 +10,13 @@ import {
   Users,
   ShoppingBag,
   Clock,
+  Clock,
   Flame,
   Search,
   Target,
+  Lightbulb,
+  Building2,
+  BarChart3,
   LogIn,
   LogOut,
   Loader2,
@@ -26,8 +30,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
 import { Toaster, toast } from 'sonner';
 import { CRMProvider, useCRM } from './contexts/CRMContext';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from './lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth, getStoredEmailAuth } from './lib/firebase';
+import { apiFetch } from './lib/api-auth';
 
 // Components
 import Dashboard from './components/Dashboard';
@@ -45,14 +50,25 @@ import OrderManager from './components/OrderManager';
 import BotWorkerManager from './components/BotWorkerManager';
 import BotTaskStatus from './components/BotTaskStatus';
 import PublishCalendar from './components/PublishCalendar';
+import ContentIntelligence from './components/ContentIntelligence';
+import CompetitorIntelligence from './components/CompetitorIntelligence';
+import MarketIntelligence from './components/MarketIntelligence';
+import ContentOperations from './components/ContentOperations';
 import InkFlowOutreach from './components/InkFlowOutreach';
+import EmailAuthForm from './components/EmailAuthForm';
 import ScrapeConfig from './components/ScrapeConfig';
 import AdminUsers from './components/AdminUsers';
-import UserPermissions from './components/UserPermissions';
 
-type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'settings' | 'publish' | 'scrape' | 'admin' | 'inkflow-outreach';
 
-const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (tab: Tab) => void }) => {
+type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'content-intelligence' | 'competitor-intelligence' | 'market-intelligence' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'settings' | 'publish' | 'scrape' | 'admin' | 'inkflow-outreach';
+
+const DynamicLoad = ({ component: load, fallback }: { component: () => Promise<any>, fallback?: any }) => {
+  const [Comp, setComp] = useState<any>(null);
+  useEffect(() => { load().then(m => setComp(() => m.default || m)); }, []);
+  return Comp ? <Comp /> : fallback || null;
+};
+
+const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab: Tab, setActiveTab: (tab: Tab) => void, userTabs: string[] | null, setUserTabs: (tabs: string[] | null) => void }) => {
   const { artists, user, logout } = useCRM();
   
   const getHighIntentCount = () => {
@@ -65,11 +81,14 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
     { id: 'analyzer', label: 'Artist Analyzer', icon: Instagram },
     { id: 'training', label: 'AI Training', icon: MessageSquare },
     { id: 'crm', label: 'CRM (Lifecycle)', icon: Users },
+    { id: 'content-intelligence', label: 'Content Intelligence', icon: Lightbulb },
+    { id: 'competitor-intelligence', label: 'Competitor Intelligence', icon: Building2 },
+    { id: 'market-intelligence', label: 'Market Intelligence', icon: BarChart3 },
     { id: 'inventory', label: 'Inventory', icon: Box },
     { id: 'orders', label: 'Orders', icon: Box },
     { id: 'tasks', label: 'Tasks', icon: ListTodo },
     { id: 'automation', label: 'Automation', icon: Zap },
-    { id: 'publish', label: 'Publish Calendar', icon: Calendar },
+    { id: 'publish', label: 'Content Operations', icon: Calendar },
     { id: 'botworkers', label: 'Bot Workers', icon: Bot },
     { id: 'scrape', label: 'Scrape', icon: Search },
     { id: 'settings', label: 'Settings', icon: Settings },
@@ -86,15 +105,7 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
   if (showInkflow) allTabs.push(inkflowTab);
   if (showAdmin) allTabs.push(adminTab);
 
-  // Load user permissions from Firestore
-  useEffect(() => {
-    if (!user?.email) { setUserTabs(null); return; }
-    if (user.email === 'snow368@gmail.com') { setUserTabs([]); return; }
-    getDoc(doc(db, 'user_permissions', user.email)).then(snap => {
-      setUserTabs(snap.exists() ? snap.data().tabs || [] : null);
-    }).catch(() => setUserTabs(null));
-  }, [user]);
-
+  
   const renderTab = (tab: typeof tabs[0]) => {
     const Icon = tab.icon;
     const isActive = activeTab === tab.id;
@@ -149,17 +160,17 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
         <div className="space-y-6">
           <div className="space-y-1">
             <p className="px-4 text-[10px] font-black text-zinc-600 uppercase tracking-widest mb-2">Main</p>
-            {tabs.slice(0, 3).map(renderTab)}
+            {allTabs.filter(t => ['dashboard','outreach','analyzer'].includes(t.id)).map(renderTab)}
           </div>
 
           <div className="space-y-1">
             <p className="px-4 text-[10px] font-black text-zinc-600 uppercase tracking-widest mb-2">Intelligence</p>
-            {tabs.slice(3, 5).map(renderTab)}
+            {allTabs.filter(t => ['training','crm','content-intelligence','competitor-intelligence','market-intelligence'].includes(t.id)).map(renderTab)}
           </div>
 
           <div className="space-y-1">
             <p className="px-4 text-[10px] font-black text-zinc-600 uppercase tracking-widest mb-2">System</p>
-            {tabs.slice(5).map(renderTab)}
+            {allTabs.filter(t => ['inventory','orders','tasks','automation','publish','botworkers','scrape','settings'].includes(t.id)).map(renderTab)}
           </div>
 
           {isSnow368 && (
@@ -202,12 +213,64 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
 };
 
 const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (tab: Tab) => void }) => {
-  const { user, login, isAuthReady } = useCRM();
+  const { user, login, isAuthReady, registerStatus, registerUser } = useCRM();
+  const [showEmailAuth, setShowEmailAuth] = useState(false);
+  const [emailAuthMode, setEmailAuthMode] = useState<'login'|'register'>('login');
+  const [regForm, setRegForm] = useState({ name: '', reason: '' });
+  const [regSaving, setRegSaving] = useState(false);
 
   if (!isAuthReady) {
     return (
       <div className="flex-1 flex items-center justify-center min-h-screen ml-64">
         <Loader2 className="w-10 h-10 text-rose-600 animate-spin" />
+      </div>
+    );
+  }
+
+  // Registration gate — after login, check approval
+  if (user && registerStatus === 'pending') {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-6 min-h-screen ml-64">
+        <div className="w-20 h-20 bg-amber-600 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-amber-600/20 mb-8">
+          <Clock className="w-10 h-10 text-white" />
+        </div>
+        <h1 className="text-3xl font-black text-white mb-4 tracking-tighter">Access Pending</h1>
+        <p className="text-zinc-500 text-center max-w-md mb-4 font-medium leading-relaxed">
+          Your access request has been submitted and is waiting for admin approval.
+        </p>
+        <p className="text-xs text-zinc-600 text-center max-w-sm">
+          Please wait for snow368 to approve your account. You will be able to sign in once approved.
+        </p>
+      </div>
+    );
+  }
+
+  if (user && registerStatus === 'none') {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-6 min-h-screen ml-64">
+        <div className="w-20 h-20 bg-rose-600 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-rose-600/20 mb-8">
+          <ShoppingBag className="w-10 h-10 text-white" />
+        </div>
+        <h1 className="text-3xl font-black text-white mb-4 tracking-tighter">Request Access</h1>
+        <p className="text-zinc-500 text-center max-w-md mb-6 text-sm">
+          Your Google account ({user.email}) is not registered. Please submit a request to get access.
+        </p>
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 w-full max-w-sm space-y-3">
+          <input value={regForm.name} onChange={e => setRegForm(p => ({ ...p, name: e.target.value }))}
+            placeholder="Your name" className="w-full p-2.5 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-100 outline-none" />
+          <textarea value={regForm.reason} onChange={e => setRegForm(p => ({ ...p, reason: e.target.value }))}
+            placeholder="Why do you need access?" rows={3}
+            className="w-full p-2.5 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-100 outline-none resize-none" />
+          <button onClick={async () => {
+            if (!regForm.name) return;
+            setRegSaving(true);
+            await registerUser(regForm.name, regForm.reason);
+            setRegSaving(false);
+          }} disabled={regSaving || !regForm.name}
+            className="w-full px-4 py-2.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white rounded-lg text-sm font-semibold">
+            {regSaving ? 'Submitting...' : 'Submit Request'}
+          </button>
+        </div>
       </div>
     );
   }
@@ -222,13 +285,37 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
         <p className="text-zinc-500 text-center max-w-md mb-12 font-medium leading-relaxed">
           Welcome back. Please sign in to access your CRM data and cloud-synced outreach pipeline.
         </p>
-        <button 
-          onClick={login}
-          className="flex items-center gap-4 px-10 py-5 bg-white text-black rounded-[2rem] font-black text-lg hover:bg-zinc-200 transition-all shadow-xl shadow-white/5"
-        >
-          <LogIn className="w-6 h-6" />
-          Sign in with Google
-        </button>
+        {showEmailAuth ? (
+          <EmailAuthForm
+            key={emailAuthMode}
+            defaultMode={emailAuthMode}
+            onBackToGoogle={() => setShowEmailAuth(false)}
+            onSuccess={() => window.location.reload()} />
+        ) : (
+          <>
+          <button 
+            onClick={login}
+            className="flex items-center gap-4 px-10 py-5 bg-white text-black rounded-[2rem] font-black text-lg hover:bg-zinc-200 transition-all shadow-xl shadow-white/5"
+          >
+            <LogIn className="w-6 h-6" />
+            Sign in with Google
+          </button>
+          <div className="flex gap-2 mt-3">
+          <button
+            onClick={() => { setShowEmailAuth(true); setEmailAuthMode('login'); }}
+            className="flex-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors border border-zinc-800 rounded-xl py-2"
+          >
+            Sign in with Email
+          </button>
+          <button
+            onClick={() => { setShowEmailAuth(true); setEmailAuthMode('register'); }}
+            className="flex-1 text-xs text-emerald-500 hover:text-emerald-300 transition-colors border border-emerald-800/30 rounded-xl py-2"
+          >
+            Register
+          </button>
+          </div>
+          </>
+        )}
         <p className="mt-8 text-zinc-600 text-[10px] uppercase tracking-[0.2em] font-black">
           Secure Cloud Persistence Enabled
         </p>
@@ -312,7 +399,9 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
           {activeTab === 'dashboard' && <Dashboard onNavigate={setActiveTab} />}
           {activeTab === 'outreach' && <ShopOutreach onNavigate={setActiveTab} />}
           {activeTab === 'analyzer' && <ArtistAnalyzer />}
-          {activeTab === 'training' && <ChatTrainer />}
+          {activeTab === 'training' && <ChatTrainer />}{activeTab === 'competitor-intelligence' && <CompetitorIntelligence />}
+              {activeTab === 'market-intelligence' && <MarketIntelligence />}
+              {activeTab === 'content-intelligence' && <ContentIntelligence />}
           {activeTab === 'crm' && <CRMManager />}
           {activeTab === 'inventory' && <InventoryManager />}
           {activeTab === 'orders' && <OrderManager />}
@@ -324,10 +413,12 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
               <BotWorkerManager />
             </div>
           )}
-          {activeTab === 'publish' && <PublishCalendar />}
+          {activeTab === 'publish' && <ContentOperations />}
           {activeTab === 'settings' && <AutomationSettings />}
           {activeTab === 'scrape' && <ScrapeConfig />}
-          {activeTab === 'admin' && <AdminUsers />}
+          {activeTab === 'admin' && <><AdminUsers />
+          <DynamicLoad component={() => import('./components/UserPermissions')} fallback={null} />
+        </>}
           {activeTab === 'inkflow-outreach' && <InkFlowOutreach />}
         </motion.div>
       </AnimatePresence>
@@ -341,7 +432,43 @@ export default function App() {
     const validTabs: Tab[] = ['dashboard','outreach','analyzer','training','crm','inventory','orders','tasks','automation','botworkers','settings','publish','scrape','admin','inkflow-outreach'];
     return validTabs.includes(hash as Tab) ? (hash as Tab) : 'dashboard';
   });
+  const [userTabs, setUserTabs] = useState<string[] | null>(null);
 
+  // Load user permissions from API (D1, not Firestore)
+  useEffect(() => {
+    const checkPerms = async (email: string) => {
+      try {
+        const res = await apiFetch(`/api/auth/permissions/${encodeURIComponent(email)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setUserTabs(data.tabs && data.tabs.length > 0 ? data.tabs : null);
+        } else {
+          setUserTabs(null);
+        }
+      } catch { setUserTabs(null); }
+    };
+
+    // Check email auth proxy user first
+    const stored = getStoredEmailAuth();
+    if (stored?.email && stored.email !== 'snow368@gmail.com') {
+      checkPerms(stored.email);
+    }
+
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (!u?.email) {
+        // If no Firebase SDK user but has stored email auth, already checked above
+        if (!stored?.email || stored.email === 'snow368@gmail.com') {
+          setUserTabs(null);
+        }
+        return;
+      }
+      if (u.email === 'snow368@gmail.com') { setUserTabs(null); return; }
+      checkPerms(u.email);
+    });
+    return unsub;
+  }, []);
+
+  
   useEffect(() => {
     const hash = activeTab === 'dashboard' ? '' : activeTab;
     if (window.location.hash.replace(/^#\/?/, '') !== hash) {
@@ -363,7 +490,7 @@ export default function App() {
     <CRMProvider>
       <div className="min-h-screen bg-[#0a0a0a] text-zinc-100 font-sans selection:bg-rose-500/30">
         <Toaster position="top-right" theme="dark" richColors />
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} userTabs={userTabs} setUserTabs={setUserTabs} />
         <MainContent activeTab={activeTab} setActiveTab={setActiveTab} />
       </div>
     </CRMProvider>
