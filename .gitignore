@@ -11,3 +11,17 @@ coverage/
 .wrangler
 .dev.vars*
 !.dev.vars.example
+
+# build / temp artifacts
+harvests-cloud-api/tmp/
+inkflow_harvests/temp-stash-diff.txt
+
+# cleanup: debug stashes, unrelated assets, leaked creds
+.leaked-credentials-backup.md
+stash_*.patch
+stash_*.tsx
+stash_*.txt
+*_backup.json
+_zip_review/
+gen-lang-client-*.json
+.DS_Store
