@@ -24,4 +24,8 @@ stash_*.txt
 *_backup.json
 _zip_review/
 gen-lang-client-*.json
+
+# LOCAL-ONLY secret backups (never commit — contain live credentials)
+SECRETS_BACKUP.local.md
+gemini-service-account.backup.json
 .DS_Store
