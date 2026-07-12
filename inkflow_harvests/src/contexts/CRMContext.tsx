@@ -221,8 +221,11 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const login = async () => {
     try {
       await signInWithGoogle();
-    } catch (e) {
-      toast.error("Login failed");
+    } catch (e: any) {
+      // Surface the real reason so the user (and we) can diagnose.
+      const msg = e?.message || 'Login failed';
+      console.error('[login] Google sign-in failed:', e);
+      toast.error(msg);
     }
   };
 

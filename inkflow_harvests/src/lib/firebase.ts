@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from 'firebase/auth';
 import { initializeFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -50,23 +50,49 @@ export function clearStoredEmailAuth() {
 }
 
 export const signInWithGoogle = async () => {
-  /* Googld OAuth popup — works on harvests.pages.dev which is in Firebase authorized domains.
-     Falls back to redirect if popup blocked. */
+  // Try popup first. If the browser blocks popups (common on mobile / embedded
+  // webviews / strict GFW setups), transparently fall back to a full-page redirect
+  // which is far more reliable in restricted networks.
   try {
     await signInWithPopup(auth, googleProvider);
   } catch (popupErr: any) {
-    if (popupErr?.code === 'auth/popup-blocked' || popupErr?.code === 'auth/popup-closed-by-user') {
-      throw new Error('Popup blocked. Please allow popups for this site, then try again.');
+    const code = popupErr?.code || '';
+    if (code === 'auth/popup-blocked' || code === 'auth/popup-closed-by-user') {
+      // Auto-fallback to redirect so the user isn't stuck.
+      await signInWithRedirect(auth, googleProvider);
+      return; // page will reload after the redirect completes
     }
-    throw popupErr;
+    // Surface the real Firebase error message instead of swallowing it.
+    throw new Error(friendlyAuthError(popupErr));
   }
 };
 
+/** Translate raw Firebase auth errors into human-readable Chinese messages. */
+function friendlyAuthError(err: any): string {
+  const code = err?.code || '';
+  const msgMap: Record<string, string> = {
+    'auth/operation-not-allowed': 'Google 登录方式未在 Firebase 控制台启用',
+    'auth/unauthorized-domain': '当前域名未在 Firebase 授权域名列表中（需在控制台添加 harvests.pages.dev）',
+    'auth/network-request-failed': '网络无法连接 Google（可能被防火墙拦截），请换网络或稍后重试',
+    'auth/invalid-api-key': 'Firebase API Key 无效',
+    'auth/internal-error': 'Firebase 内部错误，请重试',
+    'auth/user-disabled': '该账号已被禁用',
+    'auth/timeout': '登录超时，请重试',
+  };
+  if (msgMap[code]) return msgMap[code];
+  if (err?.message) return err.message;
+  return '登录失败，请重试';
+}
+
 export const handleRedirectResult = async (): Promise<void> => {
   try {
-    await getRedirectResult(auth);
-  } catch (error) {
+    const res = await getRedirectResult(auth);
+    if (!res) return; // no redirect in progress — normal on first load
+    // Successful redirect sign-in: do nothing, onAuthStateChanged will fire.
+  } catch (error: any) {
     console.error("Redirect sign-in error", error);
+    // Re-throw so the caller can show the user what went wrong.
+    throw new Error(friendlyAuthError(error));
   }
 };
 
