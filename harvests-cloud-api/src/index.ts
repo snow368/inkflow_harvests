@@ -159,7 +159,9 @@ const PUBLIC_PATHS = new Set([
   '/api/auth/signup',
   '/api/auth/reset',
   '/api/auth/register',
-  '/api/auth/register-status',,
+  '/api/auth/register-status',
+  '/api/auth/refresh',
+  '/api/auth/google',
   '/api/migrate-users',
   '/api/artists',
   '/api/artists/bulk-import'
