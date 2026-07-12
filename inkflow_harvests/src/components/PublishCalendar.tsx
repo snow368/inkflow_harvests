@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Image, CheckCircle2, Clock, AlertTriangle, Loader2, RefreshCw, Send, X } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { apiFetch } from '../lib/api-auth';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -34,7 +35,7 @@ export default function PublishCalendar() {
   const loadTasks = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/publish/tasks?limit=500');
+      const res = await apiFetch('/api/publish/tasks?limit=500');
       if (res.ok) {
         const data = await res.json();
         setTasks(Array.isArray(data?.rows) ? data.rows : []);

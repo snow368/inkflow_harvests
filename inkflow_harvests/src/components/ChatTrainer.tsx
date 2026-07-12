@@ -39,6 +39,7 @@ import { identifyKnowledgeGaps, getTrainingStatus, generateChatResponse, safeJso
 import { toast } from 'sonner';
 import { useCRM } from '../contexts/CRMContext';
 import { AIPersona } from '../types/crm';
+import { apiFetch } from '../lib/api-auth';
 
 type Scenario = 'ice-breaking' | 'pricing' | 'after-sales';
 type Persona = 'professional' | 'friendly';
@@ -129,7 +130,7 @@ export default function ChatTrainer() {
       try {
         for (const scenario of ['ice-breaking', 'pricing', 'after-sales'] as Scenario[]) {
           const category = SCENARIO_CATEGORY_MAP[scenario];
-          const res = await fetch(`/api/marketing/scripts?category=${category}`);
+          const res = await apiFetch(`/api/marketing/scripts?category=${category}`);
           if (!res.ok) continue;
           const data = await res.json();
           const scripts = data?.scripts || [];
@@ -297,7 +298,7 @@ export default function ChatTrainer() {
   const loadScriptLibrary = useCallback(async () => {
     setScriptLibLoading(true);
     try {
-      const res = await fetch('/api/marketing/scripts?active=false');
+      const res = await apiFetch('/api/marketing/scripts?active=false');
       if (res.ok) {
         const data = await res.json();
         setScriptLibrary(Array.isArray(data?.scripts) ? data.scripts : []);
@@ -311,8 +312,8 @@ export default function ChatTrainer() {
     setDmHistoryLoading(true);
     try {
       const [histRes, statsRes] = await Promise.all([
-        fetch('/api/marketing/tasks/history?limit=20'),
-        fetch('/api/marketing/tasks/stats')
+        apiFetch('/api/marketing/tasks/history?limit=20'),
+        apiFetch('/api/marketing/tasks/stats')
       ]);
       if (histRes.ok) {
         const d = await histRes.json();
@@ -339,7 +340,7 @@ export default function ChatTrainer() {
       const category = SCENARIO_CATEGORY_MAP[activeScenario];
       const direction = scenarioDirection[activeScenario];
       const label = activeScenario === 'ice-breaking' ? 'Ice-breaking' : activeScenario === 'pricing' ? 'Pricing' : 'After-sales';
-      const res = await fetch('/api/marketing/scripts', {
+      const res = await apiFetch('/api/marketing/scripts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -365,7 +366,7 @@ export default function ChatTrainer() {
   const handleDeleteScript = async (id: number) => {
     setScriptDeleteId(id);
     try {
-      const res = await fetch(`/api/marketing/scripts/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/marketing/scripts/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete failed');
       toast.success('Script deleted');
       await loadScriptLibrary();

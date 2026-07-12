@@ -651,7 +651,7 @@ export default function BotWorkerManager() {
         fetch('/api/bot/functions').catch(() => null),
         fetch('/api/bot/workers').catch(() => null),
         apiFetch('/api/bot/learn/status').catch(() => null),
-        fetch('/api/marketing/tasks/stats').catch(() => null),
+        apiFetch('/api/marketing/tasks/stats').catch(() => null),
         fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/automation/neon-tasks?limit=100').catch(() => null),
       ]);
       if (fnRes?.ok) {

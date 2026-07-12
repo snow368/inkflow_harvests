@@ -165,7 +165,8 @@ const PUBLIC_PATHS = new Set([
   '/api/migrate-users',
   '/api/artists',
   '/api/artists/bulk-import',
-  '/api/states'
+  '/api/states',
+  '/api/publish/ingest'
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -3442,6 +3443,160 @@ app.post('/api/artists/bulk-import', async (c) => {
   } catch (e: any) {
     return c.json({ ok: false, error: e.message }, 500);
   }
+});
+
+// ============ MARKETING SCRIPTS & PUBLISH TASKS ============
+function safeJson(v: any, fallback: any) {
+  try { return typeof v === 'string' ? JSON.parse(v) : (v ?? fallback); } catch { return fallback; }
+}
+
+async function ensureMarketingScriptsTable(db: D1Database) {
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS marketing_scripts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL DEFAULT 'general',
+    direction TEXT NOT NULL DEFAULT 'general',
+    title TEXT,
+    content TEXT NOT NULL,
+    tone TEXT,
+    tags TEXT,
+    match_conditions TEXT,
+    usage_count INTEGER DEFAULT 0,
+    success_rate REAL DEFAULT 0,
+    active INTEGER DEFAULT 1,
+    created_at INTEGER,
+    updated_at INTEGER
+  )`).run(); } catch {}
+}
+
+async function ensurePublishTables(db: D1Database) {
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS publish_tasks (
+    id TEXT PRIMARY KEY,
+    status TEXT DEFAULT 'pending',
+    platform TEXT DEFAULT 'instagram',
+    caption TEXT,
+    payload TEXT,
+    media_files TEXT,
+    scheduled_at INTEGER,
+    published_at INTEGER,
+    created_at INTEGER,
+    updated_at INTEGER,
+    error_reason TEXT,
+    platform_post_id TEXT
+  )`).run(); } catch {}
+}
+
+// ---------- Marketing Scripts (protected; frontend uses apiFetch) ----------
+app.get('/api/marketing/scripts', async (c) => {
+  await ensureMarketingScriptsTable(c.env.DB);
+  const category = c.req.query('category') || '';
+  const active = c.req.query('active'); // 'true' | 'false' | undefined
+  const wheres: string[] = [];
+  const params: any[] = [];
+  // active=true -> only active; active=false OR missing -> full library (matches frontend semantics)
+  if (active === 'true') wheres.push('active = 1');
+  if (category) { wheres.push('category = ?'); params.push(category); }
+  let sql = 'SELECT * FROM marketing_scripts';
+  if (wheres.length) sql += ' WHERE ' + wheres.join(' AND ');
+  sql += ' ORDER BY usage_count DESC, id DESC';
+  const { results } = await (params.length ? c.env.DB.prepare(sql).bind(...params) : c.env.DB.prepare(sql)).all();
+  return c.json({ scripts: results || [] });
+});
+
+app.post('/api/marketing/scripts', async (c) => {
+  await ensureMarketingScriptsTable(c.env.DB);
+  const b: any = await c.req.json().catch(() => ({}));
+  if (!b.content) return c.json({ ok: false, error: 'content required' }, 400);
+  const now = Date.now();
+  const mc = typeof b.match_conditions === 'string' ? b.match_conditions : (b.match_conditions ? JSON.stringify(b.match_conditions) : null);
+  if (b.id) {
+    await c.env.DB.prepare(`UPDATE marketing_scripts SET category=?, direction=?, title=?, content=?, tone=?, tags=?, match_conditions=?, active=?, updated_at=? WHERE id=?`)
+      .bind(b.category || 'general', b.direction || 'general', b.title || null, b.content, b.tone || null, b.tags || null, mc, b.active === false ? 0 : 1, now, b.id).run();
+    return c.json({ ok: true, id: b.id });
+  }
+  const res: any = await c.env.DB.prepare(`INSERT INTO marketing_scripts (category,direction,title,content,tone,tags,match_conditions,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .bind(b.category || 'general', b.direction || 'general', b.title || null, b.content, b.tone || null, b.tags || null, mc, b.active === false ? 0 : 1, now, now).run();
+  return c.json({ ok: true, id: Number(res?.meta?.last_row_id) || null });
+});
+
+app.delete('/api/marketing/scripts/:id', async (c) => {
+  await ensureMarketingScriptsTable(c.env.DB);
+  const { id } = c.req.param();
+  await c.env.DB.prepare('DELETE FROM marketing_scripts WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
+app.get('/api/marketing/scripts/ab-test', async (c) => {
+  await ensureMarketingScriptsTable(c.env.DB);
+  const { results } = await c.env.DB.prepare(`SELECT category, COUNT(*) as count, AVG(success_rate) as avgSuccessRate, MAX(usage_count) as maxUsage FROM marketing_scripts WHERE active=1 GROUP BY category`).all();
+  const categories = (results || []).map((r: any) => ({
+    category: r.category,
+    count: r.count,
+    avgSuccessRate: Math.round((Number(r.avgSuccessRate) || 0) * 100) / 100,
+    topScriptTitle: null,
+    recommendedDirection: null,
+  }));
+  return c.json({ categories });
+});
+
+app.post('/api/marketing/scripts/auto-optimize', async (c) => {
+  // STUB: real optimization needs Gemini to rewrite low success_rate scripts.
+  await ensureMarketingScriptsTable(c.env.DB);
+  return c.json({ ok: true, changed: [], note: 'stub: wire Gemini to rewrite low success_rate scripts' });
+});
+
+// ---------- Marketing Tasks (DM pipeline) — safe stubs until pipeline is wired ----------
+app.get('/api/marketing/tasks/history', async (c) => {
+  const limit = Math.min(100, Math.max(1, Number(c.req.query('limit')) || 20));
+  return c.json({ tasks: [], limit });
+});
+
+app.get('/api/marketing/tasks/stats', async (c) => {
+  return c.json({ counts: { pending: 0, sent: 0, replied: 0, converted: 0 }, conversionRate: 0 });
+});
+
+// ---------- Publish Tasks (protected; frontend uses apiFetch) ----------
+app.get('/api/publish/tasks', async (c) => {
+  await ensurePublishTables(c.env.DB);
+  const limit = Math.min(2000, Math.max(1, Number(c.req.query('limit')) || 500));
+  const { results } = await c.env.DB.prepare('SELECT * FROM publish_tasks ORDER BY COALESCE(scheduled_at, created_at) DESC LIMIT ?').bind(limit).all();
+  return c.json({ rows: results || [] });
+});
+
+app.get('/api/publish/tasks/pending-media', async (c) => {
+  await ensurePublishTables(c.env.DB);
+  const { results } = await c.env.DB.prepare(`SELECT * FROM publish_tasks WHERE (media_files IS NULL OR media_files = '[]') AND status IN ('pending','pending_media','scheduled') ORDER BY created_at DESC`).all();
+  const tasks = (results || []).map((r: any) => ({
+    id: r.id,
+    status: r.status,
+    platform: r.platform,
+    payload: safeJson(r.payload, {}),
+    mediaFiles: safeJson(r.media_files, []),
+  }));
+  return c.json({ tasks });
+});
+
+app.post('/api/publish/tasks/:id/attach-media', async (c) => {
+  await ensurePublishTables(c.env.DB);
+  const { id } = c.req.param();
+  const b: any = await c.req.json().catch(() => ({}));
+  const mediaFiles = Array.isArray(b.mediaFiles) ? JSON.stringify(b.mediaFiles) : (typeof b.mediaFiles === 'string' ? b.mediaFiles : '[]');
+  await c.env.DB.prepare(`UPDATE publish_tasks SET media_files=?, status='pending_media', updated_at=? WHERE id=?`).bind(mediaFiles, Date.now(), id).run();
+  return c.json({ ok: true });
+});
+
+// Bot-authenticated ingest endpoint — lets the publish pipeline (VPS bot / harvests-engine)
+// create publish tasks. Whichever caller holds BOT_SECRET can POST here.
+app.post('/api/publish/ingest', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  await ensurePublishTables(c.env.DB);
+  const b: any = await c.req.json().catch(() => ({}));
+  const id = b.id || ('pt-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+  const payload = b.payload ? (typeof b.payload === 'string' ? b.payload : JSON.stringify(b.payload)) : null;
+  const mediaFiles = b.mediaFiles ? JSON.stringify(Array.isArray(b.mediaFiles) ? b.mediaFiles : [b.mediaFiles]) : null;
+  const now = Date.now();
+  await c.env.DB.prepare(`INSERT OR REPLACE INTO publish_tasks (id,status,platform,caption,payload,media_files,scheduled_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
+    .bind(id, b.status || 'pending', b.platform || 'instagram', b.caption || null, payload, mediaFiles, b.scheduled_at || null, now, now).run();
+  return c.json({ ok: true, id });
 });
 
 export default {

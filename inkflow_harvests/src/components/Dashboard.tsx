@@ -43,6 +43,7 @@ import { cn } from '../lib/utils';
 import { useCRM } from '../contexts/CRMContext';
 import { generatePersonaDMScript } from '../lib/gemini';
 import { toast } from 'sonner';
+import { apiFetch } from '../lib/api-auth';
 
 const data = [
   { name: 'Mon', engagement: 400, conversions: 24 },
@@ -117,8 +118,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (tab: any) => v
     try {
       const [statsRes, scriptsRes, tasksRes] = await Promise.all([
         fetch('/api/bot/stats/dashboard?days=14'),
-        fetch('/api/marketing/scripts?active=true'),
-        fetch('/api/marketing/tasks/stats')
+        apiFetch('/api/marketing/scripts?active=true'),
+        apiFetch('/api/marketing/tasks/stats')
       ]);
       if (statsRes.ok) {
         const d = await statsRes.json();
@@ -151,7 +152,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (tab: any) => v
 
   const loadPendingMedia = async () => {
     try {
-      const res = await fetch('/api/publish/tasks/pending-media');
+      const res = await apiFetch('/api/publish/tasks/pending-media');
       if (res.ok) {
         const data = await res.json();
         setPendingMediaTasks(Array.isArray(data?.tasks) ? data.tasks : []);
@@ -168,7 +169,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (tab: any) => v
 
   const loadAbTestData = async () => {
     try {
-      const res = await fetch('/api/marketing/scripts/ab-test');
+      const res = await apiFetch('/api/marketing/scripts/ab-test');
       if (res.ok) {
         const d = await res.json();
         setAbTestData(Array.isArray(d?.categories) ? d.categories : []);
@@ -179,7 +180,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (tab: any) => v
   const autoOptimize = async () => {
     setOptimizing(true);
     try {
-      const res = await fetch('/api/marketing/scripts/auto-optimize', { method: 'POST' });
+      const res = await apiFetch('/api/marketing/scripts/auto-optimize', { method: 'POST' });
       if (res.ok) {
         const d = await res.json();
         toast.success(d.changed?.[0] || 'Optimized');
@@ -195,7 +196,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (tab: any) => v
     const files = input.split('\n').map(s => s.trim()).filter(s => s.length > 0);
     if (files.length === 0) { toast.error('Enter at least one file path'); return; }
     try {
-      const res = await fetch(`/api/publish/tasks/${taskId}/attach-media`, {
+      const res = await apiFetch(`/api/publish/tasks/${taskId}/attach-media`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mediaFiles: files })
