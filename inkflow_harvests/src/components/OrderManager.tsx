@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { apiFetch } from '../lib/api-auth';
 
 interface Gift {
   type: string;
@@ -57,14 +58,14 @@ export default function OrderManager() {
     e.stopPropagation();
     if (!confirm('Delete this order?')) return;
     try {
-      await fetch(`/api/fulfillment/orders/${id}`, { method: 'DELETE' });
+      await apiFetch(`/api/fulfillment/orders/${id}`, { method: 'DELETE' });
       fetchOrders();
     } catch { setMessage('Delete failed'); }
   };
 
   const openDetail = async (order: Order) => {
     try {
-      const r = await fetch(`/api/fulfillment/orders/${order.id}`);
+      const r = await apiFetch(`/api/fulfillment/orders/${order.id}`);
       const d = await r.json();
       setSelected(d);
     } catch { setMessage('Failed to load detail'); }
@@ -152,13 +153,13 @@ export default function OrderManager() {
     const carrier = ['US','CA'].includes(order.country) ? 'equick' : 'yanwen';
 
     useEffect(() => {
-      fetch('/api/fulfillment/boxes').then(r => r.json()).then(setBoxes).catch(() => {});
+      apiFetch('/api/fulfillment/boxes').then(r => r.json()).then(setBoxes).catch(() => {});
     }, []);
 
     const doShip = async () => {
       setLoading(true); setShipMsg('');
       try {
-        const r = await fetch(`/api/fulfillment/orders/${order.id}/ship`, {
+        const r = await apiFetch(`/api/fulfillment/orders/${order.id}/ship`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ carrier, box_id: Number(selectedBox) || 0 }),

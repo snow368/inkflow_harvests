@@ -164,7 +164,8 @@ const PUBLIC_PATHS = new Set([
   '/api/auth/google',
   '/api/migrate-users',
   '/api/artists',
-  '/api/artists/bulk-import'
+  '/api/artists/bulk-import',
+  '/api/states'
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -203,6 +204,17 @@ app.use('/api/*', async (c, next) => {
 // ============ STOCK / PRODUCTS ============
 
 app.get('/api/health', async (c) => c.json({ ok: true, ts: Date.now() }))
+
+// GET /api/states?country=US — static reference list for the country/state dropdown
+// (ShopOutreach falls back to a local constant if this is unavailable, so it's safe to keep public)
+app.get('/api/states', (c) => {
+  const country = (c.req.query('country') || 'US').toUpperCase();
+  const STATES: Record<string, string[]> = {
+    US: ['AZ', 'CA', 'FL', 'NY', 'TX', 'NV', 'WA', 'IL', 'GA', 'PA', 'OR', 'CO', 'NC', 'OH', 'MI', 'NJ', 'MA', 'TN', 'VA'],
+    CA: ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'],
+  };
+  return c.json({ states: STATES[country] || [] });
+})
 
 app.get('/api/inventory/stock', async (c) => {
   const rows = await c.env.DB.prepare(`
