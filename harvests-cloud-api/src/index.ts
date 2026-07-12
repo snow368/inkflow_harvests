@@ -49,6 +49,9 @@ function checkBotToken(c: any): boolean {
   const auth = c.req.header('Authorization') || '';
   if (auth === `Bearer ${BOT_SECRET}`) return true;
   if (c.req.query('token') === BOT_SECRET) return true;
+  // Bot worker authenticates via the `x-bot-key` header (see harvests-engine
+  // buildHeaders). Accept it so the real VPS bot can reach bot-token endpoints.
+  if (c.req.header('x-bot-key') === BOT_SECRET) return true;
   return false;
 }
 
@@ -3671,17 +3674,33 @@ app.post('/api/marketing/tasks/report', async (c) => {
   await ensureMarketingTasksTable(c.env.DB);
   try {
     const b: any = await c.req.json();
-    const taskId = String(b.taskId || '');
+    let taskId = String(b.taskId || '');
     const status = String(b.status || '');
     const botId = String(b.botId || '');
+    const targetHandleRaw = b.targetHandle ? String(b.targetHandle).replace(/^@/, '').trim() : '';
     const ALLOWED = ['sent', 'failed', 'replied', 'converted'];
-    if (!taskId) return c.json({ error: 'taskId required' }, 400);
     if (!ALLOWED.includes(status)) return c.json({ error: `status must be one of ${ALLOWED.join('|')}` }, 400);
+    if (!taskId && !targetHandleRaw) return c.json({ error: 'taskId or targetHandle required' }, 400);
     const now = Date.now();
+
+    // Post-send statuses (replied/converted) may arrive from the bot's inbox check,
+    // which only knows the conversation partner's handle — resolve it to the most
+    // recent engaged task. No-op (matched:false) when no such task exists.
+    if (!taskId && targetHandleRaw && (status === 'replied' || status === 'converted')) {
+      const handleStatuses = status === 'replied'
+        ? "status IN ('sent','replied')"
+        : "status IN ('sent','replied','converted')";
+      const row: any = await c.env.DB.prepare(
+        `SELECT id FROM marketing_tasks WHERE target_handle=? AND ${handleStatuses} ORDER BY updated_at DESC LIMIT 1`
+      ).bind(targetHandleRaw).first();
+      if (!row) return c.json({ ok: true, matched: false, reason: 'no engaged task for handle', status });
+      taskId = String(row.id);
+    }
 
     let res: any;
     if (status === 'sent' || status === 'failed') {
       // Original send report — requires this bot to hold the lease.
+      if (!taskId) return c.json({ error: 'taskId required for sent/failed' }, 400);
       if (!botId) return c.json({ error: 'botId required for sent/failed' }, 400);
       res = await c.env.DB.prepare(`UPDATE marketing_tasks SET status=?, leased_by=NULL, lease_until=NULL, error_reason=?, sent_at=?, attempts=attempts+1, updated_at=? WHERE id=? AND leased_by=? AND status IN ('leased','pending')`)
         .bind(status, status === 'failed' ? (b.reason || 'unknown') : null, status === 'sent' ? now : null, now, taskId, botId).run();
