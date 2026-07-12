@@ -170,6 +170,7 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/create-marketing-task',
   '/api/marketing/tasks/poll',
   '/api/marketing/tasks/report',
+  '/api/marketing/tasks/mark-converted',
   '/api/marketing/scripts/select'
 ])
 
@@ -3660,7 +3661,11 @@ app.get('/api/marketing/tasks/poll', async (c) => {
   }
 });
 
-// Bot reports send result.
+// Bot reports task result.
+//  - sent/failed: the send outcome (requires lease ownership; original queue transition)
+//  - replied/converted: post-send lifecycle signals (lease already cleared, so no lease check).
+//    replied  = target replied to our outbound DM (bot detects inbound reply)
+//    converted = lead became a customer (order flow / manual). See also mark-converted.
 app.post('/api/marketing/tasks/report', async (c) => {
   if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
   await ensureMarketingTasksTable(c.env.DB);
@@ -3669,16 +3674,64 @@ app.post('/api/marketing/tasks/report', async (c) => {
     const taskId = String(b.taskId || '');
     const status = String(b.status || '');
     const botId = String(b.botId || '');
-    if (!taskId || !botId) return c.json({ error: 'taskId and botId required' }, 400);
-    if (status !== 'sent' && status !== 'failed') return c.json({ error: 'status must be sent or failed' }, 400);
+    const ALLOWED = ['sent', 'failed', 'replied', 'converted'];
+    if (!taskId) return c.json({ error: 'taskId required' }, 400);
+    if (!ALLOWED.includes(status)) return c.json({ error: `status must be one of ${ALLOWED.join('|')}` }, 400);
     const now = Date.now();
-    const res: any = await c.env.DB.prepare(`UPDATE marketing_tasks SET status=?, leased_by=NULL, lease_until=NULL, error_reason=?, sent_at=?, attempts=attempts+1, updated_at=? WHERE id=? AND leased_by=? AND status IN ('leased','pending')`)
-      .bind(status, status === 'failed' ? (b.reason || 'unknown') : null, status === 'sent' ? now : null, now, taskId, botId).run();
-    if (status === 'sent') {
+
+    let res: any;
+    if (status === 'sent' || status === 'failed') {
+      // Original send report — requires this bot to hold the lease.
+      if (!botId) return c.json({ error: 'botId required for sent/failed' }, 400);
+      res = await c.env.DB.prepare(`UPDATE marketing_tasks SET status=?, leased_by=NULL, lease_until=NULL, error_reason=?, sent_at=?, attempts=attempts+1, updated_at=? WHERE id=? AND leased_by=? AND status IN ('leased','pending')`)
+        .bind(status, status === 'failed' ? (b.reason || 'unknown') : null, status === 'sent' ? now : null, now, taskId, botId).run();
+      if (status === 'sent') {
+        const t: any = await c.env.DB.prepare('SELECT script_id FROM marketing_tasks WHERE id = ?').bind(taskId).first();
+        if (t?.script_id) await c.env.DB.prepare('UPDATE marketing_scripts SET usage_count = usage_count + 1 WHERE id = ?').bind(t.script_id).run().catch(() => {});
+      }
+    } else if (status === 'replied') {
+      // Post-send: only a task we already sent (or previously replied) can flip to replied.
+      res = await c.env.DB.prepare(`UPDATE marketing_tasks SET status='replied', reply_at=?, updated_at=? WHERE id=? AND status IN ('sent','replied')`)
+        .bind(now, now, taskId).run();
+    } else {
+      // converted: terminal win state; also backfill reply_at if the reply was never recorded.
+      res = await c.env.DB.prepare(`UPDATE marketing_tasks SET status='converted', converted_at=?, reply_at=COALESCE(reply_at, ?), updated_at=? WHERE id=? AND status IN ('sent','replied','converted')`)
+        .bind(now, now, now, taskId).run();
+      // bump script success on conversion
       const t: any = await c.env.DB.prepare('SELECT script_id FROM marketing_tasks WHERE id = ?').bind(taskId).first();
-      if (t?.script_id) await c.env.DB.prepare('UPDATE marketing_scripts SET usage_count = usage_count + 1 WHERE id = ?').bind(t.script_id).run().catch(() => {});
+      if (t?.script_id) await c.env.DB.prepare('UPDATE marketing_scripts SET success_rate = MIN(1.0, success_rate + 0.02) WHERE id = ?').bind(t.script_id).run().catch(() => {});
     }
     return c.json({ ok: true, taskId, status, changes: res?.meta?.changes || 0 });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
+  }
+});
+
+// Order flow / manual: mark a lead as converted by IG handle (or taskId).
+// Orders don't yet carry an IG handle, so this is the hook the order pipeline
+// (or an admin action) calls once handle↔order linking exists. Bot-token protected.
+app.post('/api/marketing/tasks/mark-converted', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  await ensureMarketingTasksTable(c.env.DB);
+  try {
+    const b: any = await c.req.json().catch(() => ({}));
+    const taskId = b.taskId ? String(b.taskId) : '';
+    const targetHandle = b.targetHandle ? String(b.targetHandle).replace(/^@/, '').trim() : '';
+    if (!taskId && !targetHandle) return c.json({ error: 'taskId or targetHandle required' }, 400);
+    const now = Date.now();
+    let res: any;
+    if (taskId) {
+      res = await c.env.DB.prepare(`UPDATE marketing_tasks SET status='converted', converted_at=?, reply_at=COALESCE(reply_at, ?), updated_at=? WHERE id=? AND status IN ('sent','replied','converted')`)
+        .bind(now, now, now, taskId).run();
+    } else {
+      // Convert the most recent engaged task for this handle.
+      const row: any = await c.env.DB.prepare(`SELECT id FROM marketing_tasks WHERE target_handle=? AND status IN ('sent','replied','converted') ORDER BY updated_at DESC LIMIT 1`)
+        .bind(targetHandle).first();
+      if (!row) return c.json({ ok: true, matched: false, reason: 'no engaged task for handle' });
+      res = await c.env.DB.prepare(`UPDATE marketing_tasks SET status='converted', converted_at=?, reply_at=COALESCE(reply_at, ?), updated_at=? WHERE id=?`)
+        .bind(now, now, now, row.id).run();
+    }
+    return c.json({ ok: true, matched: (res?.meta?.changes || 0) > 0, changes: res?.meta?.changes || 0 });
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
   }
