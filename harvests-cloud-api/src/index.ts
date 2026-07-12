@@ -166,7 +166,11 @@ const PUBLIC_PATHS = new Set([
   '/api/artists',
   '/api/artists/bulk-import',
   '/api/states',
-  '/api/publish/ingest'
+  '/api/publish/ingest',
+  '/api/automation/create-marketing-task',
+  '/api/marketing/tasks/poll',
+  '/api/marketing/tasks/report',
+  '/api/marketing/scripts/select'
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -3485,6 +3489,46 @@ async function ensurePublishTables(db: D1Database) {
   )`).run(); } catch {}
 }
 
+// ---------- Marketing Tasks table + script picker (DM pipeline) ----------
+async function ensureMarketingTasksTable(db: D1Database) {
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS marketing_tasks (
+    id TEXT PRIMARY KEY,
+    target_handle TEXT,
+    target_name TEXT,
+    category TEXT DEFAULT 'industry_talk',
+    direction TEXT,
+    intent TEXT,
+    script_id INTEGER,
+    script_content TEXT,
+    lead_score INTEGER DEFAULT 0,
+    touch_count INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'pending',
+    leased_by TEXT,
+    lease_until BIGINT,
+    attempts INTEGER DEFAULT 0,
+    error_reason TEXT,
+    sent_at BIGINT,
+    reply_at BIGINT,
+    converted_at BIGINT,
+    created_at BIGINT,
+    updated_at BIGINT
+  )`).run(); } catch {}
+}
+
+// Pick the best-performing active script for a category (server-side fill, 方案 A)
+async function selectBestScript(db: D1Database, category: string, _intent?: string): Promise<{ id: number; content: string } | null> {
+  let sql = 'SELECT id, content FROM marketing_scripts WHERE active = 1';
+  const params: any[] = [];
+  if (category) { sql += ' AND category = ?'; params.push(category); }
+  sql += ' ORDER BY success_rate DESC, usage_count DESC, id DESC LIMIT 1';
+  const { results } = params.length
+    ? await db.prepare(sql).bind(...params).all()
+    : await db.prepare(sql).all();
+  const row: any = (results || [])[0];
+  if (!row) return null;
+  return { id: Number(row.id), content: String(row.content || '') };
+}
+
 // ---------- Marketing Scripts (protected; frontend uses apiFetch) ----------
 app.get('/api/marketing/scripts', async (c) => {
   await ensureMarketingScriptsTable(c.env.DB);
@@ -3544,14 +3588,141 @@ app.post('/api/marketing/scripts/auto-optimize', async (c) => {
   return c.json({ ok: true, changed: [], note: 'stub: wire Gemini to rewrite low success_rate scripts' });
 });
 
-// ---------- Marketing Tasks (DM pipeline) — safe stubs until pipeline is wired ----------
-app.get('/api/marketing/tasks/history', async (c) => {
-  const limit = Math.min(100, Math.max(1, Number(c.req.query('limit')) || 20));
-  return c.json({ tasks: [], limit });
+// ---------- Marketing Tasks (DM pipeline) ----------
+// Bot injects a DM task on follow-back detection; Worker fills script_content server-side.
+app.post('/api/automation/create-marketing-task', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  await ensureMarketingTasksTable(c.env.DB);
+  await ensureMarketingScriptsTable(c.env.DB);
+  try {
+    const b: any = await c.req.json().catch(() => ({}));
+    const targetHandle = String(b.targetHandle || '').replace(/^@/, '').trim();
+    if (!targetHandle) return c.json({ error: 'targetHandle required' }, 400);
+    const now = Date.now();
+    const dedupWindow = now - 7 * 24 * 60 * 60 * 1000;
+    const dup: any = await c.env.DB.prepare(
+      `SELECT id FROM marketing_tasks WHERE target_handle = ? AND status IN ('pending','leased','sent','replied','converted') AND updated_at > ? LIMIT 1`
+    ).bind(targetHandle, dedupWindow).first();
+    if (dup) return c.json({ ok: true, created: false, skipped: true, id: dup.id, reason: 'duplicate' });
+
+    const category = String(b.category || 'industry_talk');
+    const intent = b.intent ? String(b.intent) : null;
+    let scriptId: number | null = null;
+    let scriptContent: string | null = null;
+    if (b.scriptId) {
+      const sr: any = await c.env.DB.prepare('SELECT id, content FROM marketing_scripts WHERE id = ?').bind(Number(b.scriptId)).first();
+      if (sr) { scriptId = Number(sr.id); scriptContent = String(sr.content || ''); }
+    }
+    if (!scriptContent) {
+      const best = await selectBestScript(c.env.DB, category, intent || undefined);
+      if (best) { scriptId = best.id; scriptContent = best.content; }
+    }
+    const id = `mt_${now}_${Math.random().toString(36).slice(2, 8)}`;
+    await c.env.DB.prepare(`INSERT INTO marketing_tasks
+      (id, target_handle, target_name, category, direction, intent, script_id, script_content, lead_score, touch_count, status, created_at, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?)`)
+      .bind(id, targetHandle, b.targetName ? String(b.targetName) : null, category,
+        b.direction ? String(b.direction) : null, intent, scriptId, scriptContent,
+        Number(b.leadScore || 0), Number(b.touchCount || 0), now, now).run();
+    if (scriptId) await c.env.DB.prepare('UPDATE marketing_scripts SET usage_count = usage_count + 1 WHERE id = ?').bind(scriptId).run().catch(() => {});
+    return c.json({ ok: true, created: true, id, scriptId, scriptFilled: !!scriptContent });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
+  }
 });
 
+// Bot leases one pending task (only those with a script pre-filled).
+app.get('/api/marketing/tasks/poll', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  const botId = c.req.query('botId') || '';
+  const limit = Math.min(10, Math.max(1, Number(c.req.query('limit')) || 1));
+  if (!botId) return c.json({ error: 'botId required' }, 400);
+  await ensureMarketingTasksTable(c.env.DB);
+  const now = Date.now();
+  try {
+    await c.env.DB.prepare(`UPDATE marketing_tasks SET status='pending', leased_by=NULL, lease_until=NULL, updated_at=? WHERE status='leased' AND lease_until IS NOT NULL AND lease_until < ?`)
+      .bind(now, now).run().catch(() => {});
+    const { results } = await c.env.DB.prepare(
+      `SELECT id, target_handle, target_name, category, direction, intent, script_id, script_content, lead_score, touch_count, status
+       FROM marketing_tasks WHERE status='pending' AND script_content IS NOT NULL ORDER BY created_at ASC LIMIT ?`
+    ).bind(limit).all();
+    const tasks: any[] = results || [];
+    for (const t of tasks) {
+      await c.env.DB.prepare(`UPDATE marketing_tasks SET status='leased', leased_by=?, lease_until=?, updated_at=? WHERE id=? AND status='pending'`)
+        .bind(botId, now + 120_000, now, t.id).run().catch(() => {});
+    }
+    await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,status,registered_at,last_heartbeat) VALUES (?,'online',?,?) ON CONFLICT(bot_id) DO UPDATE SET status='online', last_heartbeat=excluded.last_heartbeat`)
+      .bind(botId, now, now).run().catch(() => {});
+    return c.json({ ok: true, tasks });
+  } catch (e: any) {
+    console.error('[marketing poll]', e?.message || e);
+    return c.json({ ok: true, tasks: [] });
+  }
+});
+
+// Bot reports send result.
+app.post('/api/marketing/tasks/report', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  await ensureMarketingTasksTable(c.env.DB);
+  try {
+    const b: any = await c.req.json();
+    const taskId = String(b.taskId || '');
+    const status = String(b.status || '');
+    const botId = String(b.botId || '');
+    if (!taskId || !botId) return c.json({ error: 'taskId and botId required' }, 400);
+    if (status !== 'sent' && status !== 'failed') return c.json({ error: 'status must be sent or failed' }, 400);
+    const now = Date.now();
+    const res: any = await c.env.DB.prepare(`UPDATE marketing_tasks SET status=?, leased_by=NULL, lease_until=NULL, error_reason=?, sent_at=?, attempts=attempts+1, updated_at=? WHERE id=? AND leased_by=? AND status IN ('leased','pending')`)
+      .bind(status, status === 'failed' ? (b.reason || 'unknown') : null, status === 'sent' ? now : null, now, taskId, botId).run();
+    if (status === 'sent') {
+      const t: any = await c.env.DB.prepare('SELECT script_id FROM marketing_tasks WHERE id = ?').bind(taskId).first();
+      if (t?.script_id) await c.env.DB.prepare('UPDATE marketing_scripts SET usage_count = usage_count + 1 WHERE id = ?').bind(t.script_id).run().catch(() => {});
+    }
+    return c.json({ ok: true, taskId, status, changes: res?.meta?.changes || 0 });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
+  }
+});
+
+// Bot picks a reply script by category+intent (used by inbound DM auto-reply).
+app.post('/api/marketing/scripts/select', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  await ensureMarketingScriptsTable(c.env.DB);
+  try {
+    const b: any = await c.req.json().catch(() => ({}));
+    const category = String(b.category || '');
+    const best = await selectBestScript(c.env.DB, category, b.intent ? String(b.intent) : undefined);
+    if (!best) return c.json({ selected: null });
+    await c.env.DB.prepare('UPDATE marketing_scripts SET usage_count = usage_count + 1 WHERE id = ?').bind(best.id).run().catch(() => {});
+    return c.json({ selected: { id: best.id, content: best.content, category } });
+  } catch (e: any) {
+    return c.json({ selected: null, error: String(e?.message || e).slice(0, 200) }, 500);
+  }
+});
+
+// Frontend (protected; apiFetch) — recent sent/failed tasks.
+app.get('/api/marketing/tasks/history', async (c) => {
+  await ensureMarketingTasksTable(c.env.DB);
+  const limit = Math.min(100, Math.max(1, Number(c.req.query('limit')) || 20));
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, target_handle, target_name, category, direction, intent, script_id, lead_score, touch_count, status, sent_at, reply_at, converted_at, created_at, updated_at
+     FROM marketing_tasks WHERE status IN ('sent','failed','replied','converted') ORDER BY updated_at DESC LIMIT ?`
+  ).bind(limit).all();
+  return c.json({ tasks: results || [], limit });
+});
+
+// Frontend (protected; apiFetch) — aggregate counts + conversion rate.
 app.get('/api/marketing/tasks/stats', async (c) => {
-  return c.json({ counts: { pending: 0, sent: 0, replied: 0, converted: 0 }, conversionRate: 0 });
+  await ensureMarketingTasksTable(c.env.DB);
+  const { results } = await c.env.DB.prepare('SELECT status, COUNT(*) as c FROM marketing_tasks GROUP BY status').all();
+  const counts: any = { pending: 0, sent: 0, replied: 0, converted: 0, failed: 0 };
+  for (const r of (results || [])) {
+    const s = String(r.status);
+    if (s in counts) counts[s] = Number(r.c);
+  }
+  const denom = counts.sent + counts.converted;
+  const conversionRate = denom > 0 ? Math.round((counts.converted / denom) * 1000) / 10 : 0;
+  return c.json({ counts, conversionRate });
 });
 
 // ---------- Publish Tasks (protected; frontend uses apiFetch) ----------
