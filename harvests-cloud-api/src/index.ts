@@ -160,7 +160,9 @@ const PUBLIC_PATHS = new Set([
   '/api/auth/reset',
   '/api/auth/register',
   '/api/auth/register-status',,
-  '/api/migrate-users'
+  '/api/migrate-users',
+  '/api/artists',
+  '/api/artists/bulk-import'
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -3358,6 +3360,76 @@ app.post('/api/content/scan-opportunities', async (c) => {
   }
   return c.json({ ok: true, signals: results });
 });
+
+// ============ CRM ARTISTS (Neon primary source, proxied via Pages Function) ============
+// Called same-origin from the browser (harvests.pages.dev/api/artists) WITHOUT a Firebase
+// token, so both paths are whitelisted in PUBLIC_PATHS. The Pages Function proxies
+// /api/* -> this Worker, keeping traffic Cloudflare->Cloudflare (GFW-safe, no CORS).
+
+// GET /api/artists — full list from Neon, used to populate the CRM dashboard
+app.get('/api/artists', async (c) => {
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
+  try {
+    const limit = Math.min(5000, Math.max(1, parseInt(c.req.query('limit') || '5000')));
+    const rows = await neonQuery(connStr, `SELECT * FROM artists ORDER BY shop_name ASC LIMIT ${limit}`);
+    return c.json(rows || []);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// POST /api/artists/bulk-import — upsert artists from a CSV import (best-effort, per-row safe)
+const ARTIST_WHITELIST = ['shop_name','ig_handle','city','state','import_region','phone','website','email','rating','followers','reviews','category','full_name','address','profile_pic','conversion_score','country'];
+app.post('/api/artists/bulk-import', async (c) => {
+  const connStr = c.env.NEON_DATABASE_URL;
+  if (!connStr) return c.json({ ok: false, error: 'NEON_DATABASE_URL not configured' }, 500);
+  try {
+    const { rows, importRegion, defaultCountry = 'USA' } = await c.req.json();
+    if (!Array.isArray(rows) || rows.length === 0) return c.json({ ok: true, inserted: 0, updated: 0 });
+    let inserted = 0, updated = 0;
+    for (const r of rows) {
+      try {
+        const igRaw = String(r.ig_handle || '').replace(/^@/, '').trim();
+        const ig = igRaw.toLowerCase();
+        const shop = String(r.shop_name || '').trim();
+        if (!ig && !shop) continue;
+        let existing: any[] = [];
+        if (ig) existing = await neonQuery(connStr, `SELECT id FROM artists WHERE LOWER(ig_handle) = $1`, [ig]);
+        if ((!existing || existing.length === 0) && shop) existing = await neonQuery(connStr, `SELECT id FROM artists WHERE LOWER(shop_name) = $1`, [shop.toLowerCase()]);
+
+        const cols: string[] = [];
+        const vals: any[] = [];
+        const norm: any = { ...r };
+        norm.import_region = r.import_region || importRegion;
+        norm.country = r.country || defaultCountry;
+        for (const k of ARTIST_WHITELIST) {
+          if (norm[k] === undefined || norm[k] === null || norm[k] === '') continue;
+          cols.push(k); vals.push(norm[k]);
+        }
+        if (ig && !cols.includes('ig_handle')) { cols.push('ig_handle'); vals.push(ig); }
+        if (!ig && shop && !cols.includes('shop_name')) { cols.push('shop_name'); vals.push(shop); }
+        if (cols.length === 0) continue;
+
+        if (existing && existing.length) {
+          const setClause = cols.map((c2, i) => `${c2} = $${i + 1}`).join(', ');
+          await neonQuery(connStr, `UPDATE artists SET ${setClause} WHERE id = $${cols.length + 1}`, [...vals, existing[0].id]);
+          updated++;
+        } else {
+          const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
+          await neonQuery(connStr, `INSERT INTO artists (${cols.join(', ')}) VALUES (${placeholders})`, vals);
+          inserted++;
+        }
+      } catch (rowErr: any) {
+        console.warn('[bulk-import] row skipped:', rowErr?.message || rowErr);
+      }
+    }
+    return c.json({ ok: true, inserted, updated });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message }, 500);
+  }
+});
+
 export default {
   fetch: app.fetch,
   async scheduled(event: any, env: any, ctx: any) {
