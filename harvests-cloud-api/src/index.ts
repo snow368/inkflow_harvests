@@ -1398,6 +1398,31 @@ app.post('/api/auth/signup', async (c) => {
   return c.json(data, resp.ok ? 200 : 400);
 });
 
+// POST /api/auth/refresh
+// Refreshes a Firebase ID token using the long-lived refresh token.
+// Runs on Cloudflare -> Google (NOT browser -> Google), so it works behind the GFW
+// where identitytoolkit.googleapis.com is blocked from the client.
+app.post('/api/auth/refresh', async (c) => {
+  const { refreshToken } = await c.req.json();
+  if (!refreshToken) return c.json({ error: 'refreshToken required' }, 400);
+  const url = 'https://securetoken.googleapis.com/v1/token?key=AIzaSyCiCeZ7cyqtDW6NeLk6Ikvv3H3MX1_UbXs';
+  try {
+    const resp = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: refreshToken })
+    });
+    const data = await resp.json();
+    if (!resp.ok) return c.json(data, 400);
+    return c.json({
+      idToken: data.access_token,
+      refreshToken: data.refresh_token || refreshToken,
+      expiresIn: data.expires_in,
+    });
+  } catch (e: any) {
+    return c.json({ error: 'refresh_failed', detail: e?.message || String(e) }, 502);
+  }
+});
+
 // POST /api/auth/reset
 app.post('/api/auth/reset', async (c) => {
   const { email } = await c.req.json();

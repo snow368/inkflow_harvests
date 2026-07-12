@@ -17,10 +17,44 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeout = API
 let cachedToken: string | null = null;
 let tokenPromise: Promise<string | null> | null = null;
 
+/** Refresh a Firebase ID token via the Worker proxy (Cloudflare -> Google).
+ *  This avoids the browser -> identitytoolkit.googleapis.com call that is
+ *  blocked behind the GFW, so tokens can be refreshed from China. */
+async function refreshTokenViaWorker(): Promise<string | null> {
+  // Source 1: Firebase SDK current user (holds a refreshToken internally)
+  const user = auth.currentUser;
+  let refreshToken: string | undefined = (user as any)?.refreshToken;
+  // Source 2: stored email-auth refresh token (proxy login users)
+  if (!refreshToken) {
+    const stored = getStoredEmailAuth();
+    refreshToken = stored?.refreshToken;
+  }
+  if (!refreshToken) return null;
+  try {
+    const res = await fetchWithTimeout(`${API_BASE}/api/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data?.idToken) {
+      cachedToken = data.idToken;
+      // Persist refreshed token for email-auth users too
+      const stored = getStoredEmailAuth();
+      if (stored) {
+        try { localStorage.setItem('email_auth', JSON.stringify({ ...stored, idToken: data.idToken, refreshToken: data.refreshToken || refreshToken })); } catch {}
+      }
+      return data.idToken;
+    }
+  } catch { /* network error — fall through */ }
+  return null;
+}
+
 export async function getAuthToken(): Promise<string | null> {
   if (cachedToken) return cachedToken;
 
-  // Try Firebase SDK first (Google auth users)
+  // Try Firebase SDK first (Google auth users) — works if not behind GFW
   const user = auth.currentUser;
   if (user) {
     if (!tokenPromise) {
@@ -29,7 +63,11 @@ export async function getAuthToken(): Promise<string | null> {
           const token = await user.getIdToken();
           cachedToken = token;
           resolve(token);
-        } catch { resolve(null); }
+        } catch {
+          // GFW may block the refresh — fall back to Worker proxy
+          const proxied = await refreshTokenViaWorker();
+          resolve(proxied);
+        }
       });
     }
     const token = await tokenPromise;
@@ -57,10 +95,10 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
 
   const res = await fetchWithTimeout(`${API_BASE}${path}`, { ...options, headers });
 
-  // If 401, token might be expired — refresh and retry once
+  // If 401, token might be expired — refresh via Worker proxy and retry once
   if (res.status === 401) {
     cachedToken = null;
-    const newToken = await getAuthToken();
+    const newToken = await refreshTokenViaWorker();
     if (newToken) {
       headers['Authorization'] = `Bearer ${newToken}`;
       return fetchWithTimeout(`${API_BASE}${path}`, { ...options, headers });
