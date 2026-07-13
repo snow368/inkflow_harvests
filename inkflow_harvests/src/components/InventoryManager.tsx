@@ -103,7 +103,7 @@ export default function InventoryManager() {
     setLoading(false);
   };
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); const i = setInterval(loadAll, 60000); return () => clearInterval(i); }, []);
 
   const TABS: { key: Tab; label: string; color: string }[] = [
     { key: 'stock', label: `Stock (${products.length})`, color: '#2563eb' },

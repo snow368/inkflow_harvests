@@ -1113,9 +1113,9 @@ app.post('/api/shopify/webhook/orders-create', async (c) => {
   const existing = await c.env.DB.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? LIMIT 1').bind(orderId).first()
   if (existing) return c.json({ ok: true, skipped: true, reason: 'already processed' })
 
-  const financialStatus = String(order.financial_status || '').toLowerCase()
-  if (financialStatus !== 'paid' && financialStatus !== 'partially_paid') {
-    return c.json({ ok: true, skipped: true, reason: `not paid (${financialStatus})` })
+  const fulfillmentStatus = String(order.fulfillment_status || '').toLowerCase()
+  if (fulfillmentStatus !== 'fulfilled') {
+    return c.json({ ok: true, skipped: true, reason: `not fulfilled (${fulfillmentStatus})` })
   }
 
   const customerName = order.customer ? `${order.customer.first_name||''} ${order.customer.last_name||''}`.trim() : ''
@@ -3849,7 +3849,7 @@ export default {
       const accessToken = config.api_key;
       const storeDomain = config.api_base_url ? new URL(config.api_base_url).hostname : 'dptattoo.myshopify.com';
       const apiVersion = '2024-10';
-      let ordersUrl = `https://${storeDomain}/admin/api/${apiVersion}/orders.json?status=any&fulfillment_status=any&created_at_min=${new Date(Date.now() - 7*86400000).toISOString()}&limit=250`;
+      let ordersUrl = `https://${storeDomain}/admin/api/${apiVersion}/orders.json?status=any&fulfillment_status=shipped&created_at_min=${new Date(Date.now() - 7*86400000).toISOString()}&limit=250`;
       let totalOrders = 0, deductedItems: any[] = [];
       while (ordersUrl) {
         const resp = await fetch(ordersUrl, { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } });
@@ -3857,14 +3857,15 @@ export default {
         const payload = await resp.json() as any;
         const orders = payload.orders || [];
         for (const order of orders) {
-          const orderId = '#' + (order.order_number || order.name || '');
+          const orderId = String(order.id);
+          const orderNumber = String(order.order_number || '');
           totalOrders++;
           const existing = await env.DB.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? LIMIT 1').bind(orderId).first();
           if (existing) continue;
           for (const item of (order.line_items || [])) {
             const sku = (item.sku || item.variant_sku || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
             if (!sku || item.quantity <= 0) continue;
-            const note = `Shopify Order ${orderId}`;
+            const note = `Shopify Order #${orderNumber}`;
             await env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
               .bind(sku, item.quantity, 'B2C', (order.customer?.firstName||'')+' '+(order.customer?.lastName||'') || order.customer?.email || '', orderId, (order.createdAt||'').slice(0,10), note, Date.now()).run();
             deductedItems.push({ sku, qty: item.quantity });
