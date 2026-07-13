@@ -291,9 +291,11 @@ const EVENT_COLORS: Record<string, string> = {
   dm_failed: 'text-rose-400', dm_poll_error: 'text-orange-400',
   dm_reply_sent: 'text-teal-400', dm_replied_reported: 'text-fuchsia-400 font-bold', dm_reply_error: 'text-red-400',
   dm_check_error: 'text-amber-500',
+  dm_purchase_confirmed: 'text-lime-400 font-bold', dm_converted_reported: 'text-yellow-400 font-bold',
 };
 const LOG_EVENTS = ['', 'open_profile', 'open_post', 'browse_selection', 'human_break_start', 'task_done', 'task_failed', 'action_blocked', 'rate_limited', 'fresh_profile', 'media_opened_total', 'comment_posted', 'comment_failed',
-  'dm_start', 'dm_task_acquired', 'dm_sent', 'dm_failed', 'dm_poll_error', 'dm_reply_sent', 'dm_replied_reported', 'dm_reply_error', 'dm_check_error'];
+  'dm_start', 'dm_task_acquired', 'dm_sent', 'dm_failed', 'dm_poll_error', 'dm_reply_sent', 'dm_replied_reported', 'dm_reply_error', 'dm_check_error',
+  'dm_purchase_confirmed', 'dm_converted_reported'];
 function BehaviorLogSection({ searchBotId, onSearchDone }: { searchBotId?: string | null; onSearchDone?: () => void }) {
   const [logs, setLogs] = useState<any[]>([]);
   const [botIds, setBotIds] = useState<string[]>([]);

@@ -20,6 +20,11 @@ export default defineConfig(({mode}) => {
       // 添加代理配置
       proxy: {
         '/api': 'http://localhost:3000',   // 将所有 /api 请求转发到后端
+        // 本地预览时把 /harvests/* 转发到 AI Core worker（与生产 Pages Function 行为一致）
+        '/harvests': {
+          target: 'https://harvests-ai-core-api.inkflowapp.workers.dev',
+          changeOrigin: true,
+        },
       },
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify — file watching is disabled to prevent flickering during agent edits.

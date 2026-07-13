@@ -24,7 +24,9 @@ import {
   Box,
   ListTodo,
   Bot,
-  Calendar
+  Calendar,
+  Database,
+  Sparkles,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
@@ -46,6 +48,9 @@ import AutomationCommandCenter from './components/AutomationCommandCenter';
 import TaskManager from './components/TaskManager';
 
 import InventoryManager from './components/InventoryManager';
+import ProductCatalog from './components/ProductCatalog';
+import NewArrivals from './components/NewArrivals';
+import SalesChat from './components/SalesChat';
 import OrderManager from './components/OrderManager';
 import BotWorkerManager from './components/BotWorkerManager';
 import BotTaskStatus from './components/BotTaskStatus';
@@ -60,7 +65,7 @@ import ScrapeConfig from './components/ScrapeConfig';
 import AdminUsers from './components/AdminUsers';
 
 
-type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'content-intelligence' | 'competitor-intelligence' | 'market-intelligence' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'settings' | 'publish' | 'scrape' | 'admin' | 'inkflow-outreach';
+type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'content-intelligence' | 'competitor-intelligence' | 'market-intelligence' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'settings' | 'publish' | 'scrape' | 'product-catalog' | 'new-arrivals' | 'sales-chat' | 'admin' | 'inkflow-outreach';
 
 const DynamicLoad = ({ component: load, fallback }: { component: () => Promise<any>, fallback?: any }) => {
   const [Comp, setComp] = useState<any>(null);
@@ -85,6 +90,9 @@ const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab
     { id: 'competitor-intelligence', label: 'Competitor Intelligence', icon: Building2 },
     { id: 'market-intelligence', label: 'Market Intelligence', icon: BarChart3 },
     { id: 'inventory', label: 'Inventory', icon: Box },
+    { id: 'product-catalog', label: '商品知识库', icon: Database },
+    { id: 'new-arrivals', label: '新品情报', icon: Sparkles },
+    { id: 'sales-chat', label: '聊单情报', icon: MessageSquare },
     { id: 'orders', label: 'Orders', icon: Box },
     { id: 'tasks', label: 'Tasks', icon: ListTodo },
     { id: 'automation', label: 'Automation', icon: Zap },
@@ -170,7 +178,7 @@ const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab
 
           <div className="space-y-1">
             <p className="px-4 text-[10px] font-black text-zinc-600 uppercase tracking-widest mb-2">System</p>
-            {allTabs.filter(t => ['inventory','orders','tasks','automation','publish','botworkers','scrape','settings'].includes(t.id)).map(renderTab)}
+            {allTabs.filter(t => ['inventory','orders','tasks','automation','publish','botworkers','scrape','settings','product-catalog','new-arrivals','sales-chat'].includes(t.id)).map(renderTab)}
           </div>
 
           {isSnow368 && (
@@ -337,6 +345,9 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     publish: 'Publish Calendar',
     'inkflow-outreach': 'InkFlow 获客',
     scrape: 'Scrape',
+    'product-catalog': '商品知识库',
+    'new-arrivals': '新品情报',
+    'sales-chat': '聊单情报',
     admin: 'Admin'
   };
 
@@ -354,6 +365,9 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     publish: "Schedule and publish content to social platforms.",
     'inkflow-outreach': "Shared resource pool for InkFlow customer outreach. Only visible to dev users.",
     scrape: 'Configure and submit data scraping tasks by keyword and location.',
+    'product-catalog': 'AI Core 商品知识库：从 harvests-db 导入的纹身器材商品，支持搜索与一键重新导入。',
+    'new-arrivals': '新品情报：竞品上新聚合（跨品牌）+ 我方选品候选池，按首见时间窗筛选。',
+    'sales-chat': '聊单情报：意大利等本土客户聊天录音/文本入库，自动分析情感与信号，区分批发商/纹身师，跟踪成交阶段。',
     admin: 'User management, quotas, and system stats.'
   };
 
@@ -404,6 +418,9 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
               {activeTab === 'content-intelligence' && <ContentIntelligence />}
           {activeTab === 'crm' && <CRMManager />}
           {activeTab === 'inventory' && <InventoryManager />}
+          {activeTab === 'product-catalog' && <ProductCatalog />}
+          {activeTab === 'new-arrivals' && <NewArrivals />}
+          {activeTab === 'sales-chat' && <SalesChat />}
           {activeTab === 'orders' && <OrderManager />}
           {activeTab === 'tasks' && <TaskManager />}
           {activeTab === 'automation' && <AutomationCommandCenter />}
@@ -429,7 +446,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const hash = window.location.hash.replace(/^#\/?/, '');
-    const validTabs: Tab[] = ['dashboard','outreach','analyzer','training','crm','inventory','orders','tasks','automation','botworkers','settings','publish','scrape','admin','inkflow-outreach'];
+    const validTabs: Tab[] = ['dashboard','outreach','analyzer','training','crm','inventory','orders','tasks','automation','botworkers','settings','publish','scrape','product-catalog','new-arrivals','sales-chat','admin','inkflow-outreach'];
     return validTabs.includes(hash as Tab) ? (hash as Tab) : 'dashboard';
   });
   const [userTabs, setUserTabs] = useState<string[] | null>(null);
@@ -479,7 +496,7 @@ export default function App() {
   useEffect(() => {
     const onHashChange = () => {
       const hash = window.location.hash.replace(/^#\/?/, '');
-      const validTabs: Tab[] = ['dashboard','outreach','analyzer','training','crm','inventory','orders','tasks','automation','botworkers','settings','publish','scrape','admin','inkflow-outreach'];
+      const validTabs: Tab[] = ['dashboard','outreach','analyzer','training','crm','inventory','orders','tasks','automation','botworkers','settings','publish','scrape','product-catalog','new-arrivals','sales-chat','admin','inkflow-outreach'];
       if (validTabs.includes(hash as Tab)) setActiveTab(hash as Tab);
     };
     window.addEventListener('hashchange', onHashChange);
