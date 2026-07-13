@@ -1795,8 +1795,6 @@ app.post('/api/automation/behavior-logs', async (c) => {
 });
 
 app.get('/api/automation/behavior-logs', async (c) => {
-  // Require auth (bot token)
-  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
   const botId = c.req.query('botId') || '';
   const event = c.req.query('event') || '';
   const limit = Math.min(200, Math.max(1, Number(c.req.query('limit')) || 100));
@@ -1826,7 +1824,6 @@ app.get('/api/automation/behavior-logs', async (c) => {
 
 // Return unique bot IDs for frontend dropdown
 app.get('/api/automation/behavior-bots', async (c) => {
-  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
   try {
     await ensureBehaviorLogsTable(c.env.DB);
     const result = await c.env.DB.prepare(

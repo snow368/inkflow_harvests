@@ -286,8 +286,14 @@ const EVENT_COLORS: Record<string, string> = {
   fresh_profile: 'text-rose-400', task_done: 'text-emerald-400', task_failed: 'text-red-400',
   action_blocked: 'text-red-500 font-bold', rate_limited: 'text-orange-500 font-bold',
   comment_posted: 'text-purple-400', comment_failed: 'text-orange-400',
+  // DM marketing funnel
+  dm_start: 'text-sky-400', dm_task_acquired: 'text-indigo-400', dm_sent: 'text-emerald-400',
+  dm_failed: 'text-rose-400', dm_poll_error: 'text-orange-400',
+  dm_reply_sent: 'text-teal-400', dm_replied_reported: 'text-fuchsia-400 font-bold', dm_reply_error: 'text-red-400',
+  dm_check_error: 'text-amber-500',
 };
-const LOG_EVENTS = ['', 'open_profile', 'open_post', 'browse_selection', 'human_break_start', 'task_done', 'task_failed', 'action_blocked', 'rate_limited', 'fresh_profile', 'media_opened_total', 'comment_posted', 'comment_failed'];
+const LOG_EVENTS = ['', 'open_profile', 'open_post', 'browse_selection', 'human_break_start', 'task_done', 'task_failed', 'action_blocked', 'rate_limited', 'fresh_profile', 'media_opened_total', 'comment_posted', 'comment_failed',
+  'dm_start', 'dm_task_acquired', 'dm_sent', 'dm_failed', 'dm_poll_error', 'dm_reply_sent', 'dm_replied_reported', 'dm_reply_error', 'dm_check_error'];
 function BehaviorLogSection({ searchBotId, onSearchDone }: { searchBotId?: string | null; onSearchDone?: () => void }) {
   const [logs, setLogs] = useState<any[]>([]);
   const [botIds, setBotIds] = useState<string[]>([]);
