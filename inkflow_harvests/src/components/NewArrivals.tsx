@@ -56,6 +56,7 @@ import {
   type TriangulatedLead,
   type LeadEvidence,
 } from "@/lib/aicore";
+import { aggregateProductFamilies } from "@/lib/aggregateProducts";
 
 function parseMeta(raw: unknown): Record<string, unknown> {
   if (typeof raw === "string") {
@@ -293,6 +294,17 @@ function CompetitorNewArrivals() {
   const [windowDays, setWindowDays] = useState(30);
   const [brand, setBrand] = useState("all");
 
+  // Collapse same-model variants (different size / packaging) into one card.
+  const [mergeFamilies, setMergeFamilies] = useState(true);
+  const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
+  const toggleFamily = (key: string) =>
+    setExpandedFamilies((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -338,6 +350,18 @@ function CompetitorNewArrivals() {
       .sort((a, b) => b.discovered.getTime() - a.discovered.getTime());
   }, [items, windowDays, brand]);
 
+  // Collapse same-model variants (different size / packaging) into one card.
+  const families = useMemo(() => {
+    if (!mergeFamilies) {
+      return newArrivals.map(({ it }) => ({
+        key: it.id || it.entity_id || "",
+        representative: it,
+        variants: [it],
+      }));
+    }
+    return aggregateProductFamilies(newArrivals.map(({ it }) => it));
+  }, [newArrivals, mergeFamilies]);
+
   return (
     <section className="rounded-2xl border border-zinc-800/50 bg-zinc-900/30 p-5">
       <div className="flex items-center gap-2 mb-1">
@@ -376,6 +400,15 @@ function CompetitorNewArrivals() {
         <span className="text-xs text-zinc-400">
           命中 <span className="font-bold text-rose-400">{newArrivals.length}</span> 条上新
         </span>
+        <label className="flex items-center gap-2 px-3 py-2 bg-zinc-900/60 border border-zinc-800/60 rounded-xl cursor-pointer select-none" title="同款不同尺寸/包装只显示一款">
+          <input
+            type="checkbox"
+            checked={mergeFamilies}
+            onChange={(e) => setMergeFamilies(e.target.checked)}
+            className="accent-rose-600 w-4 h-4"
+          />
+          <span className="text-xs font-medium text-zinc-300">合并同款</span>
+        </label>
         <button
           onClick={load}
           className="ml-auto px-3 py-2 text-xs bg-zinc-800/60 hover:bg-zinc-700/60 rounded-xl text-zinc-300"
@@ -394,14 +427,19 @@ function CompetitorNewArrivals() {
         <div className="text-sm text-zinc-500 py-6">该时间窗口内没有新上架记录。</div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {newArrivals.map(({ it, discovered, brand: b }) => {
+          {families.map((fam) => {
+            const it = fam.representative;
             const meta = parseMeta(it.metadata);
             const image = meta.image as string | undefined;
             const price = meta.unit_price as number | null;
             const category = meta.category as string | undefined;
+            const b = (meta.brand as string) ?? "";
+            const discovered = new Date((meta.first_seen as string) || it.created_at);
+            const expanded = expandedFamilies.has(fam.key);
+            const variantCount = fam.variants.length;
             return (
               <div
-                key={it.id || it.entity_id}
+                key={fam.key}
                 className="rounded-xl border border-zinc-800/60 bg-zinc-900/50 p-3 flex flex-col gap-2"
               >
                 {image ? (
@@ -419,13 +457,18 @@ function CompetitorNewArrivals() {
                 <div className="text-sm font-medium text-zinc-100 line-clamp-2 leading-snug">
                   {it.title}
                 </div>
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap items-center gap-1">
                   <span className="px-1.5 py-0.5 rounded bg-rose-600/15 text-[10px] text-rose-300 font-medium">
                     {b}
                   </span>
                   {category && (
                     <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-[10px] text-zinc-400">
                       {category}
+                    </span>
+                  )}
+                  {variantCount > 1 && (
+                    <span className="px-1.5 py-0.5 rounded bg-rose-600/15 text-[10px] text-rose-300 font-medium">
+                      ×{variantCount}
                     </span>
                   )}
                 </div>
@@ -437,6 +480,33 @@ function CompetitorNewArrivals() {
                     {discovered.toISOString().slice(0, 10)}
                   </span>
                 </div>
+                {variantCount > 1 && (
+                  <button
+                    onClick={() => toggleFamily(fam.key)}
+                    className="text-[10px] text-zinc-400 hover:text-rose-300 underline text-left"
+                  >
+                    {expanded ? "收起变体" : `展开 ${variantCount} 个尺寸/包装`}
+                  </button>
+                )}
+                {expanded && variantCount > 1 && (
+                  <div className="mt-1 pt-2 border-t border-zinc-800 space-y-1">
+                    {fam.variants.slice(1).map((v) => {
+                      const vm = parseMeta(v.metadata);
+                      const vp = vm.unit_price as number | null;
+                      return (
+                        <div
+                          key={v.id || v.entity_id}
+                          className="flex items-center justify-between gap-2 text-[11px]"
+                        >
+                          <span className="text-zinc-400 truncate">{v.title}</span>
+                          <span className="text-emerald-400 font-semibold whitespace-nowrap">
+                            {vp != null ? `$${vp}` : "—"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}

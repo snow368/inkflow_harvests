@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, Fragment } from "react";
 import { motion } from "framer-motion";
 import {
   Search,
@@ -10,10 +10,12 @@ import {
   Database,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Globe,
   ArrowLeftRight,
   Wand2,
   Check,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -27,6 +29,7 @@ import {
   type ShopifyImportResult,
 } from "@/lib/aicore";
 import ProductCompare from "./ProductCompare";
+import { aggregateProductFamilies } from "@/lib/aggregateProducts";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZES = [20, 50, 100];
@@ -91,6 +94,17 @@ export default function ProductCatalog() {
   const [showCompare, setShowCompare] = useState(false);
   const [normalizingId, setNormalizingId] = useState<string | null>(null);
   const [bulkNormalizing, setBulkNormalizing] = useState(false);
+
+  // ── Collapse same-model variants (different size / packaging) into one row ──
+  const [mergeFamilies, setMergeFamilies] = useState(true);
+  const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
+  const toggleFamily = (key: string) =>
+    setExpandedFamilies((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   const selCategory = selected[0]
     ? ((parseMeta(selected[0].metadata).category as string) ?? "")
@@ -288,6 +302,12 @@ export default function ProductCatalog() {
     new Set(tenant.startsWith("competitors") ? [...KNOWN_COMPETITOR_BRANDS, ...baseBrands] : baseBrands)
   ).sort();
 
+  // Collapse same-model variants (size / packaging) into one representative row.
+  const families = mergeFamilies
+    ? aggregateProductFamilies(items)
+    : items.map((it) => ({ key: it.id, representative: it, variants: [it] }));
+  const mergedVariants = families.reduce((n, f) => n + Math.max(0, f.variants.length - 1), 0);
+
   return (
     <div className="space-y-6">
       {/* Controls */}
@@ -403,6 +423,17 @@ export default function ProductCatalog() {
 
         <div className="w-px h-6 bg-zinc-800/60" />
 
+        <label className="flex items-center gap-2 px-3 py-2 bg-zinc-900/50 border border-zinc-800/50 rounded-xl cursor-pointer select-none" title="同款不同尺寸/包装只显示一款，点展开看全部变体">
+          <input
+            type="checkbox"
+            checked={mergeFamilies}
+            onChange={(e) => setMergeFamilies(e.target.checked)}
+            className="accent-rose-600 w-4 h-4"
+          />
+          <Layers className="w-4 h-4 text-rose-400" />
+          <span className="text-xs font-medium text-zinc-300">合并同款</span>
+        </label>
+
         <Button
           variant="outline"
           size="sm"
@@ -504,6 +535,14 @@ export default function ProductCatalog() {
           <span className="text-zinc-400">商品总数</span>
           <span className="font-bold text-white">{total}</span>
         </div>
+        {mergeFamilies && mergedVariants > 0 && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-rose-600/10 border border-rose-600/30 rounded-lg">
+            <Layers className="w-4 h-4 text-rose-400" />
+            <span className="text-zinc-400">已合并为</span>
+            <span className="font-bold text-white">{families.length}</span>
+            <span className="text-zinc-400">款（折叠 {mergedVariants} 个变体）</span>
+          </div>
+        )}
         {loading && (
           <div className="flex items-center gap-2 text-zinc-500">
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -559,88 +598,182 @@ export default function ProductCatalog() {
                   </td>
                 </tr>
               )}
-              {items.map((it, i) => {
-                const meta = parseMeta(it.metadata);
-                const cat = (meta.category as string | undefined) ?? "";
-                const price = meta.unit_price;
+              {families.map((fam, fi) => {
+                const rep = fam.representative;
+                const expanded = expandedFamilies.has(fam.key);
+                const variantCount = fam.variants.length;
+                const repMeta = parseMeta(rep.metadata);
+                const repCat = (repMeta.category as string | undefined) ?? "";
+                const repPrice = repMeta.unit_price;
                 return (
-                <motion.tr
-                  key={it.id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className={cn(
-                    "border-b border-zinc-800/30 hover:bg-zinc-900/40 transition-colors",
-                    isSelected(it.id) && "bg-rose-600/5"
-                  )}
-                >
-                  <td className="px-3 py-3">
-                    <input
-                      type="checkbox"
-                      checked={isSelected(it.id)}
-                      onChange={() => toggleSelect(it)}
-                      className="accent-rose-600 w-4 h-4"
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-zinc-600 font-mono">{from + i}</td>
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-zinc-100 max-w-[260px] truncate">{it.title || "—"}</div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      {it.entity_id && (
-                        <span className="text-[10px] text-zinc-600 font-mono truncate">{it.entity_id}</span>
+                  <Fragment key={fam.key}>
+                    <motion.tr
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className={cn(
+                        "border-b border-zinc-800/30 hover:bg-zinc-900/40 transition-colors",
+                        isSelected(rep.id) && "bg-rose-600/5"
                       )}
-                      {cat && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-zinc-800/70 text-[10px] text-zinc-300 truncate max-w-[180px]">
-                          {cat}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-rose-600/10 text-rose-400 text-[10px] font-bold uppercase">
-                      {it.type}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-zinc-400 text-xs">{it.source || "—"}</td>
-                  <td className="px-4 py-3 text-zinc-400 text-xs max-w-[320px]">
-                    <div className="line-clamp-2 leading-relaxed">{it.content || "—"}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap items-center gap-1 max-w-[260px]">
-                      {price != null && (
-                        <span className="px-1.5 py-0.5 rounded bg-emerald-600/10 text-emerald-400 text-[10px] font-bold">
-                          ¥{String(price)}
-                        </span>
-                      )}
-                      {metaChips(it.metadata).map((c, idx) => (
-                        <span
-                          key={idx}
-                          className="px-1.5 py-0.5 rounded bg-zinc-800/60 text-[10px] text-zinc-400 font-mono"
-                        >
-                          {c}
-                        </span>
-                      ))}
-                      {price == null && metaChips(it.metadata).length === 0 && (
-                        <span className="text-zinc-600 text-xs">—</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-zinc-500 text-xs whitespace-nowrap">{fmtDate(it.updated_at)}</td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => handleNormalizeOne(it)}
-                      disabled={normalizingId === it.id}
-                      title="把自由文本规格归一化为可对比字段"
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-800/70 text-[10px] text-zinc-300 hover:bg-rose-600/20 hover:text-rose-300 disabled:opacity-40"
                     >
-                      {normalizingId === it.id ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <Wand2 className="w-3 h-3" />
-                      )}
-                      归一化
-                    </button>
-                  </td>
-                </motion.tr>
+                      <td className="px-3 py-3">
+                        <input
+                          type="checkbox"
+                          checked={isSelected(rep.id)}
+                          onChange={() => toggleSelect(rep)}
+                          className="accent-rose-600 w-4 h-4"
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-zinc-600 font-mono">{from + fi}</td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-zinc-100 max-w-[260px] truncate">{rep.title || "—"}</div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {rep.entity_id && (
+                            <span className="text-[10px] text-zinc-600 font-mono truncate">{rep.entity_id}</span>
+                          )}
+                          {repCat && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-zinc-800/70 text-[10px] text-zinc-300 truncate max-w-[180px]">
+                              {repCat}
+                            </span>
+                          )}
+                          {variantCount > 1 && (
+                            <button
+                              onClick={() => toggleFamily(fam.key)}
+                              title="展开 / 收起同款变体"
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-600/15 text-[10px] text-rose-300 hover:bg-rose-600/30"
+                            >
+                              <span className="font-bold">×{variantCount}</span>
+                              {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-rose-600/10 text-rose-400 text-[10px] font-bold uppercase">
+                          {rep.type}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-zinc-400 text-xs">{rep.source || "—"}</td>
+                      <td className="px-4 py-3 text-zinc-400 text-xs max-w-[320px]">
+                        <div className="line-clamp-2 leading-relaxed">{rep.content || "—"}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-1 max-w-[260px]">
+                          {repPrice != null && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-600/10 text-emerald-400 text-[10px] font-bold">
+                              ¥{String(repPrice)}
+                            </span>
+                          )}
+                          {metaChips(rep.metadata).map((c, idx) => (
+                            <span
+                              key={idx}
+                              className="px-1.5 py-0.5 rounded bg-zinc-800/60 text-[10px] text-zinc-400 font-mono"
+                            >
+                              {c}
+                            </span>
+                          ))}
+                          {repPrice == null && metaChips(rep.metadata).length === 0 && (
+                            <span className="text-zinc-600 text-xs">—</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-zinc-500 text-xs whitespace-nowrap">{fmtDate(rep.updated_at)}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => handleNormalizeOne(rep)}
+                          disabled={normalizingId === rep.id}
+                          title="把自由文本规格归一化为可对比字段"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-800/70 text-[10px] text-zinc-300 hover:bg-rose-600/20 hover:text-rose-300 disabled:opacity-40"
+                        >
+                          {normalizingId === rep.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Wand2 className="w-3 h-3" />
+                          )}
+                          归一化
+                        </button>
+                      </td>
+                    </motion.tr>
+                    {expanded && variantCount > 1 && fam.variants.slice(1).map((v) => {
+                      const vMeta = parseMeta(v.metadata);
+                      const vCat = (vMeta.category as string | undefined) ?? "";
+                      const vPrice = vMeta.unit_price;
+                      return (
+                        <motion.tr
+                          key={v.id}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className={cn(
+                            "border-b border-zinc-800/20 bg-zinc-950/40 hover:bg-zinc-900/40",
+                            isSelected(v.id) && "bg-rose-600/5"
+                          )}
+                        >
+                          <td className="px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={isSelected(v.id)}
+                              onChange={() => toggleSelect(v)}
+                              className="accent-rose-600 w-4 h-4"
+                            />
+                          </td>
+                          <td className="px-4 py-2 text-zinc-700 font-mono text-xs">↳</td>
+                          <td className="px-4 py-2 pl-8">
+                            <div className="font-medium text-zinc-300 max-w-[250px] truncate">{v.title || "—"}</div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {v.entity_id && (
+                                <span className="text-[10px] text-zinc-600 font-mono truncate">{v.entity_id}</span>
+                              )}
+                              {vCat && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-zinc-800/70 text-[10px] text-zinc-400 truncate max-w-[180px]">
+                                  {vCat}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-zinc-800/60 text-zinc-500 text-[10px] font-bold uppercase">
+                              {v.type}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-zinc-500 text-xs">{v.source || "—"}</td>
+                          <td className="px-4 py-2 text-zinc-500 text-xs max-w-[320px]">
+                            <div className="line-clamp-1 leading-relaxed">{v.content || "—"}</div>
+                          </td>
+                          <td className="px-4 py-2">
+                            <div className="flex flex-wrap items-center gap-1 max-w-[260px]">
+                              {vPrice != null && (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-600/10 text-emerald-400 text-[10px] font-bold">
+                                  ¥{String(vPrice)}
+                                </span>
+                              )}
+                              {metaChips(v.metadata).map((c, idx) => (
+                                <span
+                                  key={idx}
+                                  className="px-1.5 py-0.5 rounded bg-zinc-800/60 text-[10px] text-zinc-400 font-mono"
+                                >
+                                  {c}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2 text-zinc-600 text-xs whitespace-nowrap">{fmtDate(v.updated_at)}</td>
+                          <td className="px-4 py-2">
+                            <button
+                              onClick={() => handleNormalizeOne(v)}
+                              disabled={normalizingId === v.id}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-800/70 text-[10px] text-zinc-400 hover:bg-rose-600/20 hover:text-rose-300 disabled:opacity-40"
+                            >
+                              {normalizingId === v.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Wand2 className="w-3 h-3" />
+                              )}
+                              归一化
+                            </button>
+                          </td>
+                        </motion.tr>
+                      );
+                    })}
+                  </Fragment>
                 );
               })}
             </tbody>
