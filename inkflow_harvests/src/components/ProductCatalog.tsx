@@ -11,6 +11,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Globe,
+  ArrowLeftRight,
+  Wand2,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -18,10 +21,12 @@ import {
   listProducts,
   pullHarvests,
   pullShopify,
+  normalizeMemory,
   type MemoryItemDTO,
   type ImportSummary,
   type ShopifyImportResult,
 } from "@/lib/aicore";
+import ProductCompare from "./ProductCompare";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZES = [20, 50, 100];
@@ -80,6 +85,98 @@ export default function ProductCatalog() {
 
   const [shopify, setShopify] = useState<ShopifyImportResult | null>(null);
   const [shopifyLoading, setShopifyLoading] = useState<"verify" | "enrich" | null>(null);
+
+  // ── Horizontal comparison selection ─────────────────────────────────────
+  const [selected, setSelected] = useState<MemoryItemDTO[]>([]);
+  const [showCompare, setShowCompare] = useState(false);
+  const [normalizingId, setNormalizingId] = useState<string | null>(null);
+  const [bulkNormalizing, setBulkNormalizing] = useState(false);
+
+  const selCategory = selected[0]
+    ? ((parseMeta(selected[0].metadata).category as string) ?? "")
+    : "";
+
+  const toggleSelect = (it: MemoryItemDTO) => {
+    setSelected((prev) => {
+      if (prev.some((p) => p.id === it.id)) return prev.filter((p) => p.id !== it.id);
+      const cat = (parseMeta(it.metadata).category as string) ?? "";
+      if (selCategory && cat && cat !== selCategory) {
+        toast.error("只能对比同类目商品", {
+          description: `已选类目「${selCategory}」，该项为「${cat}」`,
+        });
+        return prev;
+      }
+      return [...prev, it];
+    });
+  };
+  const isSelected = (id: string) => selected.some((p) => p.id === id);
+
+  const toggleSelectAll = () => {
+    setSelected((prev) => {
+      if (items.length > 0 && items.every((it) => isSelected(it.id))) {
+        return prev.filter((p) => !items.some((it) => it.id === p.id));
+      }
+      const base = [...prev];
+      for (const it of items) {
+        const cat = (parseMeta(it.metadata).category as string) ?? "";
+        if (base.some((p) => p.id === it.id)) continue;
+        if (selCategory && cat && cat !== selCategory) continue; // 跳过异类目
+        base.push(it);
+      }
+      return base;
+    });
+  };
+
+  const effectiveTenant = (it: MemoryItemDTO) => (all ? it.tenant_id : tenant);
+
+  const handleNormalizeOne = async (it: MemoryItemDTO) => {
+    setNormalizingId(it.id);
+    try {
+      const res = await normalizeMemory({ tenant: effectiveTenant(it), id: it.id });
+      if (!res.ok) {
+        toast.error("归一化失败", { description: res.error });
+        return;
+      }
+      const updated = res.item ?? {
+        ...it,
+        metadata: { ...parseMeta(it.metadata), specs: res.specs },
+      };
+      setItems((prev) => prev.map((x) => (x.id === it.id ? updated : x)));
+      setSelected((prev) => prev.map((x) => (x.id === it.id ? updated : x)));
+      toast.success("已归一化", {
+        description: `${it.title} → ${Object.keys(res.specs).length} 个规格字段`,
+      });
+    } catch (e) {
+      toast.error("归一化失败", { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setNormalizingId(null);
+    }
+  };
+
+  const handleBulkNormalize = async () => {
+    setBulkNormalizing(true);
+    let done = 0;
+    const pending = items.filter((it) => {
+      const s = parseMeta(it.metadata).specs;
+      return !s || (typeof s === "object" && Object.keys(s).length === 0);
+    });
+    for (const it of pending) {
+      try {
+        const res = await normalizeMemory({ tenant: effectiveTenant(it), id: it.id });
+        if (res.ok && res.item) {
+          setItems((prev) => prev.map((x) => (x.id === it.id ? res.item! : x)));
+          setSelected((prev) => prev.map((x) => (x.id === it.id ? res.item! : x)));
+          done++;
+        }
+      } catch {
+        /* skip individual failures */
+      }
+    }
+    setBulkNormalizing(false);
+    toast.success("本页归一化完成", {
+      description: `已处理 ${done} / ${pending.length} 项`,
+    });
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -303,6 +400,43 @@ export default function ProductCatalog() {
           )}
           抓取竞品入库
         </Button>
+
+        <div className="w-px h-6 bg-zinc-800/60" />
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleBulkNormalize}
+          disabled={bulkNormalizing}
+          title="对本页尚未归一化的商品批量生成规格字段"
+        >
+          {bulkNormalizing ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Wand2 className="w-4 h-4" />
+          )}
+          归一化本页
+        </Button>
+
+        <Button
+          variant="default"
+          size="sm"
+          onClick={() => setShowCompare(true)}
+          disabled={selected.length < 2}
+          title="勾选 2 个以上同类目商品后对比"
+        >
+          <ArrowLeftRight className="w-4 h-4" />
+          对比 {selected.length > 0 ? selected.length : ""} 项
+        </Button>
+
+        {selected.length > 0 && (
+          <button
+            onClick={() => setSelected([])}
+            className="text-xs text-zinc-500 hover:text-zinc-300 underline whitespace-nowrap"
+          >
+            清除选择
+          </button>
+        )}
       </div>
 
       {/* Shopify / competitor fetch result */}
@@ -398,6 +532,15 @@ export default function ProductCatalog() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[10px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800/50 bg-zinc-900/30">
+                <th className="px-3 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    checked={items.length > 0 && items.every((it) => isSelected(it.id))}
+                    onChange={toggleSelectAll}
+                    className="accent-rose-600 w-4 h-4"
+                    title="全选本页（同类目）"
+                  />
+                </th>
                 <th className="px-4 py-3 font-black w-12">#</th>
                 <th className="px-4 py-3 font-black">标题</th>
                 <th className="px-4 py-3 font-black w-24">类型</th>
@@ -405,6 +548,7 @@ export default function ProductCatalog() {
                 <th className="px-4 py-3 font-black">内容预览</th>
                 <th className="px-4 py-3 font-black">元数据</th>
                 <th className="px-4 py-3 font-black w-32">更新时间</th>
+                <th className="px-4 py-3 font-black w-20">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -424,8 +568,19 @@ export default function ProductCatalog() {
                   key={it.id}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="border-b border-zinc-800/30 hover:bg-zinc-900/40 transition-colors"
+                  className={cn(
+                    "border-b border-zinc-800/30 hover:bg-zinc-900/40 transition-colors",
+                    isSelected(it.id) && "bg-rose-600/5"
+                  )}
                 >
+                  <td className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={isSelected(it.id)}
+                      onChange={() => toggleSelect(it)}
+                      className="accent-rose-600 w-4 h-4"
+                    />
+                  </td>
                   <td className="px-4 py-3 text-zinc-600 font-mono">{from + i}</td>
                   <td className="px-4 py-3">
                     <div className="font-medium text-zinc-100 max-w-[260px] truncate">{it.title || "—"}</div>
@@ -470,6 +625,21 @@ export default function ProductCatalog() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-zinc-500 text-xs whitespace-nowrap">{fmtDate(it.updated_at)}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => handleNormalizeOne(it)}
+                      disabled={normalizingId === it.id}
+                      title="把自由文本规格归一化为可对比字段"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-800/70 text-[10px] text-zinc-300 hover:bg-rose-600/20 hover:text-rose-300 disabled:opacity-40"
+                    >
+                      {normalizingId === it.id ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Wand2 className="w-3 h-3" />
+                      )}
+                      归一化
+                    </button>
+                  </td>
                 </motion.tr>
                 );
               })}
@@ -521,6 +691,10 @@ export default function ProductCatalog() {
             </Button>
           </div>
         </div>
+      )}
+
+      {showCompare && selected.length >= 2 && (
+        <ProductCompare items={selected} onClose={() => setShowCompare(false)} />
       )}
     </div>
   );

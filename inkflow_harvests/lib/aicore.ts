@@ -73,6 +73,22 @@ export async function listProducts(opts: {
   return res.json();
 }
 
+export async function normalizeMemory(opts: {
+  tenant: string;
+  id: string;
+}): Promise<{ ok: boolean; specs: Record<string, string>; item?: MemoryItemDTO; error?: string }> {
+  const res = await aicoreFetch(`/${opts.tenant}/memory/${opts.id}/normalize`, {
+    method: "POST",
+    body: "{}",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    return { ok: false, specs: {}, error: (err as { error?: string }).error || `AI Core ${res.status}` };
+  }
+  const data = await res.json();
+  return { ok: true, specs: (data.specs ?? {}) as Record<string, string>, item: data.item as MemoryItemDTO | undefined };
+}
+
 export async function pullHarvests(opts: {
   tenant?: string;
   vendor?: string;
