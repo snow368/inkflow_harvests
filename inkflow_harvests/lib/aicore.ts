@@ -163,6 +163,7 @@ export async function pullShopify(opts: {
 
 // Create / upsert a single memory. Powers the "我方选品" candidate pool and
 // ad-hoc product entries. Upserts on (tenant, entity_id); stamps first_seen.
+// Returns the new record id so callers can immediately normalize specs.
 export async function createMemory(
   tenant: string,
   payload: {
@@ -172,12 +173,51 @@ export async function createMemory(
     content?: string;
     metadata?: Record<string, unknown>;
   }
-): Promise<{ ok: boolean; created?: number; error?: string }> {
+): Promise<{ ok: boolean; id?: string; item?: MemoryItemDTO; created?: number; error?: string }> {
   const res = await aicoreFetch(`/${tenant}/memory`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
-  const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; created?: number };
+  const data = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    error?: string;
+    item?: MemoryItemDTO;
+    created?: number;
+  };
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error || `AI Core ${res.status}`);
+  }
+  return { ok: true, id: data.item?.id, item: data.item, created: data.created };
+}
+
+// C channel — paste a product-page URL; AI Core fetches + extracts + writes a
+// product memory. Returns the created memory id(s) so the UI can immediately
+// run on-demand normalization for AI-quality specs.
+export interface UrlImportResult {
+  ok: boolean;
+  tenant_id: string;
+  url: string;
+  imported: number;
+  memory_ids: string[];
+  extracted?: {
+    title?: string;
+    brand?: string;
+    category?: string;
+    unit_price?: number | null;
+    image_url?: string | null;
+  };
+  error?: string;
+}
+
+export async function importFromUrl(
+  tenant: string,
+  payload: { url: string; brand?: string }
+): Promise<UrlImportResult> {
+  const res = await aicoreFetch(`/${tenant}/import/from-url`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const data = (await res.json().catch(() => ({}))) as UrlImportResult & { error?: string };
   if (!res.ok || !data.ok) {
     throw new Error(data.error || `AI Core ${res.status}`);
   }

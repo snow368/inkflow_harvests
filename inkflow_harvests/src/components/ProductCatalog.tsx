@@ -16,6 +16,8 @@ import {
   Wand2,
   Check,
   Layers,
+  Plus,
+  Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -29,6 +31,8 @@ import {
   type ShopifyImportResult,
 } from "@/lib/aicore";
 import ProductCompare from "./ProductCompare";
+import ProductAddDialog from "./ProductAddDialog";
+import ProductImportUrlDialog from "./ProductImportUrlDialog";
 import { aggregateProductFamilies } from "@/lib/aggregateProducts";
 import { cn } from "@/lib/utils";
 
@@ -94,6 +98,8 @@ export default function ProductCatalog() {
   const [showCompare, setShowCompare] = useState(false);
   const [normalizingId, setNormalizingId] = useState<string | null>(null);
   const [bulkNormalizing, setBulkNormalizing] = useState(false);
+  const [openAdd, setOpenAdd] = useState(false);
+  const [openImportUrl, setOpenImportUrl] = useState(false);
 
   // ── Collapse same-model variants (different size / packaging) into one row ──
   const [mergeFamilies, setMergeFamilies] = useState(true);
@@ -458,6 +464,26 @@ export default function ProductCatalog() {
         >
           <ArrowLeftRight className="w-4 h-4" />
           对比 {selected.length > 0 ? selected.length : ""} 项
+        </Button>
+
+        <Button
+          variant="default"
+          size="sm"
+          onClick={() => setOpenAdd(true)}
+          title="手动录入任意品牌商品（不依赖 Shopify / 官网架构）"
+        >
+          <Plus className="w-4 h-4" />
+          新增商品
+        </Button>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setOpenImportUrl(true)}
+          title="粘贴任意商品页网址，AI 自动抽取并入库（C 渠道）"
+        >
+          <Link2 className="w-4 h-4" />
+          从网址采集
         </Button>
 
         {selected.length > 0 && (
@@ -829,6 +855,18 @@ export default function ProductCatalog() {
       {showCompare && selected.length >= 2 && (
         <ProductCompare items={selected} onClose={() => setShowCompare(false)} />
       )}
+      <ProductAddDialog
+        open={openAdd}
+        tenant={tenant}
+        onClose={() => setOpenAdd(false)}
+        onCreated={load}
+      />
+      <ProductImportUrlDialog
+        open={openImportUrl}
+        tenant={tenant}
+        onClose={() => setOpenImportUrl(false)}
+        onCreated={load}
+      />
     </div>
   );
 }
