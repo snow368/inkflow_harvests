@@ -3867,7 +3867,7 @@ export default {
             if (!sku || item.quantity <= 0) continue;
             const note = `Shopify Order #${orderNumber}`;
             await env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-              .bind(sku, item.quantity, 'B2C', (order.customer?.firstName||'')+' '+(order.customer?.lastName||'') || order.customer?.email || '', orderId, (order.createdAt||'').slice(0,10), note, Date.now()).run();
+              .bind(sku, item.quantity, 'B2C', (order.customer?.firstName||'')+' '+(order.customer?.lastName||'') || order.customer?.email || '', orderId, (order.created_at||'').slice(0,10), note, Date.now()).run();
             deductedItems.push({ sku, qty: item.quantity });
           }
         }
