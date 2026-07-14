@@ -7,6 +7,7 @@ import type { MemoryItemDTO } from "@/lib/aicore";
 // specNormalizer NEEDLE_SPEC_KEYS + generic extras). Unknown keys fall back to
 // their raw key name.
 const SPEC_LABELS: Record<string, string> = {
+  // needle / cartridge
   gauge_g: "规格号",
   gauge_mm: "针径 (mm)",
   configuration: "排布",
@@ -15,6 +16,16 @@ const SPEC_LABELS: Record<string, string> = {
   cartridge: "卡针式",
   membrane: "隔膜",
   material: "材质",
+  // pen / rotary machine
+  stroke_length: "行程",
+  motor: "马达",
+  voltage: "工作电压",
+  rpm: "转速",
+  give: "给针",
+  wireless: "供电",
+  grip_diameter: "握把直径",
+  battery: "续航",
+  // generic extras
   color: "颜色",
   capacity: "容量",
   size: "尺寸",
@@ -24,8 +35,10 @@ const SPEC_LABELS: Record<string, string> = {
 };
 
 // Canonical spec keys are shown first (in this order), then any extra keys
-// found across the selection, alphabetically.
+// found across the selection, alphabetically. Keys not present in the current
+// selection are filtered out, so needle + pen orders can coexist here.
 const CANON_ORDER = [
+  // needle / cartridge
   "gauge_g",
   "gauge_mm",
   "configuration",
@@ -33,6 +46,17 @@ const CANON_ORDER = [
   "taper",
   "cartridge",
   "membrane",
+  // pen / rotary machine
+  "stroke_length",
+  "motor",
+  "voltage",
+  "rpm",
+  "give",
+  "wireless",
+  "weight",
+  "grip_diameter",
+  "battery",
+  // shared
   "material",
 ];
 
