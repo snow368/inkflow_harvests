@@ -1,6 +1,10 @@
 import { auth, getStoredEmailAuth } from './firebase';
 
-const API_BASE = 'https://harvests-cloud-api.inkflowapp.workers.dev';
+// NOTE: Use a RELATIVE path (empty base) so requests go through the Pages
+// Function proxy (/api/* -> cloud-api Worker, CF->CF) instead of hitting
+// `*.workers.dev` directly. Direct workers.dev URLs are DNS-poisoned / blocked
+// behind the GFW in China, which made every apiFetch call fail there.
+const API_BASE = '';
 const API_TIMEOUT = 20000; // 20s — Worker can be slow under GFW
 
 /** fetch with timeout wrapper */

@@ -91,7 +91,7 @@ export default function AutomationCommandCenter() {
   const [d1Accounts, setD1Accounts] = useState<InstagramAccount[]>([]);
 
   /* Load bot accounts from D1 (harvests-cloud-api) */
-  const D1_API = 'https://harvests-cloud-api.inkflowapp.workers.dev';
+  const D1_API = '';
   useEffect(() => {
     fetch(D1_API + '/api/automation/bot-account?botId=all')
       .then(r => r.json().catch(() => ({ accounts: [] })))

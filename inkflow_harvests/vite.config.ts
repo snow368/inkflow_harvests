@@ -22,7 +22,7 @@ export default defineConfig(({mode}) => {
         '/api': 'http://localhost:3000',   // 将所有 /api 请求转发到后端
         // 本地预览时把 /harvests/* 转发到 AI Core worker（与生产 Pages Function 行为一致）
         '/harvests': {
-          target: 'https://harvests-ai-core-api.inkflowapp.workers.dev',
+          target: 'https://harvests-api.inkflowapp.workers.dev',
           changeOrigin: true,
         },
       },

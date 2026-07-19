@@ -1294,7 +1294,7 @@ export default function ChatTrainer() {
             )}
 
             {/* Conversation Log */}
-            {Array.isArray(selectedConversation.conversation_log) && selectedConversation.conversation_log.length > 0 && (
+            {Array.isArray(selectedConversation?.conversation_log) && selectedConversation.conversation_log.length > 0 && (
               <div className="mb-4">
                 <div className="flex items-center gap-2 mb-2">
                   <MessageCircle className="w-3 h-3 text-amber-500" />

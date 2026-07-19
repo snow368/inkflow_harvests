@@ -530,10 +530,10 @@ export default function ProductCatalog() {
             </div>
           </div>
 
-          {shopify.unmatched_existing.length > 0 && (
+          {shopify?.unmatched_existing?.length > 0 && (
             <details className="text-xs group">
               <summary className="cursor-pointer text-zinc-400 hover:text-zinc-200">
-                本租户中 {shopify.unmatched_existing.length} 条未在官网出现的 SKU（点开查看）
+                本租户中 {shopify?.unmatched_existing?.length} 条未在官网出现的 SKU（点开查看）
               </summary>
               <div className="mt-2 flex flex-wrap gap-1 max-h-32 overflow-auto">
                 {shopify.unmatched_existing.slice(0, 80).map((s, i) => (
@@ -545,10 +545,10 @@ export default function ProductCatalog() {
             </details>
           )}
 
-          {shopify.sample_shopify_skus.length > 0 && (
+          {shopify?.sample_shopify_skus?.length > 0 && (
             <div className="text-xs text-zinc-500">
               <span className="text-zinc-400">官网 SKU 样本：</span>
-              {shopify.sample_shopify_skus.slice(0, 12).join("、")}
+              {shopify?.sample_shopify_skus?.slice(0, 12).join("、")}
             </div>
           )}
         </div>

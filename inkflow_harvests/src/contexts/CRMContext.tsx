@@ -187,7 +187,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (stored.email === 'snow368@gmail.com') { setRegisterStatus('approved'); }
         else {
           try {
-            const r = await fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/auth/register-status/' + encodeURIComponent(stored.email || ''));
+            const r = await fetch('/api/auth/register-status/' + encodeURIComponent(stored.email || ''));
             if (r.ok) { const d = await r.json(); setRegisterStatus(d.status || 'approved'); }
             else setRegisterStatus('approved');
           } catch { setRegisterStatus('approved'); }
@@ -205,7 +205,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Check registration status
         if (u.email === 'snow368@gmail.com') { setRegisterStatus('approved'); setIsAuthReady(true); return; }
         try {
-          const r = await fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/auth/register-status/' + encodeURIComponent(u.email || ''));
+          const r = await fetch('/api/auth/register-status/' + encodeURIComponent(u.email || ''));
           if (r.ok) { const d = await r.json(); setRegisterStatus(d.status || 'approved'); }
           else setRegisterStatus('approved');
         } catch { setRegisterStatus('approved'); }
@@ -1926,7 +1926,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       registerStatus,
       registerUser: async (name: string, reason: string): Promise<boolean> => {
         try {
-          const r = await fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/auth/register', {
+          const r = await fetch('/api/auth/register', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: user?.email || '', name, reason })
           });

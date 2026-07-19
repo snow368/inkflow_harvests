@@ -138,6 +138,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (tab: any) => v
         const t = await tasksRes.json();
         setDmStats(prev => ({ ...prev, pending: t?.counts?.pending || 0 }));
       }
+    } catch {
+      // Network/GFW or 5xx — keep current (empty) state; don't crash the dashboard.
     } finally {
       setStatsLoading(false);
     }
@@ -941,7 +943,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (tab: any) => v
         </div>
 
         {/* Bot list */}
-        {botHealth && botHealth.bots.length > 0 ? (
+        {botHealth?.bots?.length > 0 ? (
           <div className="space-y-1.5 max-h-64 overflow-y-auto">
             {botHealth.bots.map((b: any) => {
               const timeAgo = b.lastHeartbeatTs > 0

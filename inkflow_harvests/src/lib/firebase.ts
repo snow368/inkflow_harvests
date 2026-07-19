@@ -10,7 +10,7 @@ export const db = initializeFirestore(app, {
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-const AUTH_API = 'https://harvests-cloud-api.inkflowapp.workers.dev/api/auth';
+const AUTH_API = '/api/auth';
 const AUTH_TIMEOUT = 15000; // 15s — Worker can be slow under GFW
 
 /** Fetch with timeout — wraps AbortController for iOS Safari compat */

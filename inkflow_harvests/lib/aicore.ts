@@ -45,6 +45,21 @@ async function aicoreFetch(path: string, options: RequestInit = {}): Promise<Res
   return fetch(`${AI_CORE_PREFIX}${path}`, { ...options, headers });
 }
 
+/** Safe JSON parse — returns fallback data when response is non-JSON (e.g. Worker HTML page). */
+async function fetchJson<T = any>(url: string, options: RequestInit = {}, fallback: T): Promise<T> {
+  try {
+    const res = await fetch(url, options);
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      console.warn(`[aicore] non-JSON from ${url}: ${(await res.text()).slice(0, 80)}`);
+      return fallback;
+    }
+    return res.ok ? res.json() : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function listProducts(opts: {
   tenant?: string;
   all?: boolean;
@@ -71,6 +86,16 @@ export async function listProducts(opts: {
     throw new Error((err as { error?: string }).error || `AI Core ${res.status}`);
   }
   return res.json();
+}
+
+// Read the full competitor posts (caption + images + comments + engagement)
+// captured by the competitor_ig bot. Powers the "竞品内容库" panel and feeds
+// the content pipeline as raw material for social image/video generation.
+export async function listCompetitorPosts(
+  tenant = "competitors:tattoo",
+  opts: { brand?: string; limit?: number; offset?: number } = {}
+): Promise<MemoryListResponse> {
+  return listProducts({ tenant, type: "competitor_post", ...opts });
 }
 
 export async function normalizeMemory(opts: {
@@ -979,3 +1004,178 @@ export async function suggestReply(
   if (!res.ok || !data.ok) throw new Error(data.error || `AI Core ${res.status}`);
   return data;
 }
+
+// ── 技术借鉴 (cross-category technology matrix) ─────────────────────────────
+// Global knowledge base (not per-industry-tenant). Metrics are a flexible
+// key→value map until the user defines the exact dimensions (profit margin,
+// tech difficulty, competition level, …).
+export interface TechSource {
+  product: string;
+  category: string;
+  source_url: string;
+}
+
+export interface Technology {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  status: "suggested" | "confirmed";
+  applicable_categories: string[];
+  metrics: Record<string, number | string>;
+  sources: TechSource[];
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TechListResponse {
+  items: Technology[];
+  total: number;
+}
+
+export async function listTechnologies(opts: { status?: string; category?: string } = {}): Promise<TechListResponse> {
+  const params = new URLSearchParams();
+  if (opts.status) params.set("status", opts.status);
+  if (opts.category) params.set("category", opts.category);
+  const qs = params.toString();
+  const url = `${AI_CORE_PREFIX}/tech${qs ? `?${qs}` : ""}`;
+  const headers: Record<string, string> = { "Content-Type": "application/json", Authorization: "Bearer dev" };
+  return fetchJson<TechListResponse>(url, { headers }, { items: [], total: 0 });
+}
+
+export async function createTechnology(payload: Partial<Technology>): Promise<Technology> {
+  const res = await aicoreFetch(`/tech`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; technology?: Technology };
+  if (!res.ok || !data.ok) throw new Error(data.error || `AI Core ${res.status}`);
+  return data.technology as Technology;
+}
+
+export async function updateTechnology(id: string, payload: Partial<Technology>): Promise<Technology> {
+  const res = await aicoreFetch(`/tech/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; technology?: Technology };
+  if (!res.ok || !data.ok) throw new Error(data.error || `AI Core ${res.status}`);
+  return data.technology as Technology;
+}
+
+// AI suggests technologies from product pages. Returns suggested tech names.
+export async function extractTech(payload: { urls: string[]; category?: string; industry?: string }): Promise<{
+  ok: boolean;
+  suggested: string[];
+  count: number;
+  errors: string[];
+}> {
+  const res = await aicoreFetch(`/tech/extract`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    suggested?: string[];
+    count?: number;
+    errors?: string[];
+    error?: string;
+  };
+  if (!res.ok || !data.ok) throw new Error(data.error || `AI Core ${res.status}`);
+  return { ok: true, suggested: data.suggested || [], count: data.count || 0, errors: data.errors || [] };
+}
+
+// ── 机会雷达 (Niche Opportunity Radar) ──────────────────────────────────────
+// Global cross-tenant discovery of ultra-narrow niches (1-2 players, high
+// margin, slow churn). AI brainstorms candidates (status 'suggested'); the user
+// confirms + tweaks scores. Opportunity score is a weighted blend of 4 dims.
+export interface NicheOpportunity {
+  id: string;
+  key: string;
+  name: string;
+  seed: string;
+  description: string;
+  players: string[];
+  competition_score: number; // 0-100, higher = fewer players
+  margin_score: number; // 0-100, higher = fatter margins
+  refresh_score: number; // 0-100, higher = slower churn
+  demand_score: number; // 0-100, higher = steadier demand
+  opportunity_score: number; // weighted blend
+  status: "suggested" | "confirmed";
+  metrics: Record<string, number | string>;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NicheListResponse {
+  items: NicheOpportunity[];
+  total: number;
+}
+
+export async function listNiches(
+  opts: { status?: string; seed?: string; minScore?: number } = {}
+): Promise<NicheListResponse> {
+  const params = new URLSearchParams();
+  if (opts.status) params.set("status", opts.status);
+  if (opts.seed) params.set("seed", opts.seed);
+  if (opts.minScore) params.set("minScore", String(opts.minScore));
+  const qs = params.toString();
+  const url = `${AI_CORE_PREFIX}/niche${qs ? `?${qs}` : ""}`;
+  const headers: Record<string, string> = { "Content-Type": "application/json", Authorization: "Bearer dev" };
+  return fetchJson<NicheListResponse>(url, { headers }, { items: [], total: 0 });
+}
+
+export async function createNiche(payload: Partial<NicheOpportunity>): Promise<NicheOpportunity> {
+  const res = await aicoreFetch(`/niche`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; niche?: NicheOpportunity };
+  if (!res.ok || !data.ok) throw new Error(data.error || `AI Core ${res.status}`);
+  return data.niche as NicheOpportunity;
+}
+
+export async function updateNiche(id: string, payload: Partial<NicheOpportunity>): Promise<NicheOpportunity> {
+  const res = await aicoreFetch(`/niche/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; niche?: NicheOpportunity };
+  if (!res.ok || !data.ok) throw new Error(data.error || `AI Core ${res.status}`);
+  return data.niche as NicheOpportunity;
+}
+
+export async function deleteNiche(id: string): Promise<void> {
+  const res = await aicoreFetch(`/niche/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || `AI Core ${res.status}`);
+  }
+}
+
+// AI brainstorms ultra-narrow niches from a seed direction (+ optional URLs).
+export async function scanNiches(payload: { seed?: string; count?: number; urls?: string[] }): Promise<{
+  ok: boolean;
+  seed: string;
+  suggested: string[];
+  count: number;
+  errors: string[];
+}> {
+  const res = await aicoreFetch(`/niche/scan`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    seed?: string;
+    suggested?: string[];
+    count?: number;
+    errors?: string[];
+    error?: string;
+  };
+  if (!res.ok || !data.ok) throw new Error(data.error || `AI Core ${res.status}`);
+  return { ok: true, seed: data.seed || "", suggested: data.suggested || [], count: data.count || 0, errors: data.errors || [] };
+}
+

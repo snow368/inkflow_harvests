@@ -3,6 +3,27 @@ import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import { apiFetch } from '../lib/api-auth';
+import { auth, getStoredEmailAuth } from '../lib/firebase';
+
+const DEV_EMAILS = ['snow368@gmail.com'];
+function useIsDev(): boolean {
+  const [isDev, setIsDev] = useState<boolean>(() => {
+    const stored = getStoredEmailAuth();
+    if (stored?.email && DEV_EMAILS.includes(stored.email)) return true;
+    return DEV_EMAILS.includes(auth?.currentUser?.email || '');
+  });
+  useEffect(() => {
+    const unsub = auth?.onAuthStateChanged?.((u) => {
+      const stored = getStoredEmailAuth();
+      setIsDev(
+        (!!stored?.email && DEV_EMAILS.includes(stored.email)) ||
+        DEV_EMAILS.includes(u?.email || '')
+      );
+    });
+    return () => { try { unsub && unsub(); } catch { /* noop */ } };
+  }, []);
+  return isDev;
+}
 import {
   Bot, Play, Square, Loader2, Instagram, ShoppingCart, Search,
   MessageSquare, Zap, Activity, Clock, Settings, Globe, Monitor,
@@ -37,6 +58,8 @@ type BotFunction = {
   businessValue?: string[];
   outputs?: string[];
   useCases?: string[];
+  devOnly?: boolean;
+  researchMode?: boolean;
   configs: BotConfig[];
 };
 
@@ -65,6 +88,7 @@ const FUNCTION_ICONS: Record<string, React.ElementType> = {
   forum_monitor: MessageSquare,
   product_tracker: Activity,
   supply_comments: MessageCircle,
+  general_intel: Brain,
 };
 
 const FUNCTION_COLORS: Record<string, string> = {
@@ -75,6 +99,7 @@ const FUNCTION_COLORS: Record<string, string> = {
   forum_monitor: 'green',
   product_tracker: 'blue',
   supply_comments: 'purple',
+  general_intel: 'teal',
 };
 
 const COLOR_MAP: Record<string, { bg: string; border: string; text: string; btn: string; ring: string; dot: string; lightBg: string }> = {
@@ -85,6 +110,7 @@ const COLOR_MAP: Record<string, { bg: string; border: string; text: string; btn:
   green:   { bg: 'bg-green-500/10', border: 'border-green-500/30', text: 'text-green-500', btn: 'bg-green-600 hover:bg-green-500', ring: 'ring-green-500/30', dot: 'bg-green-500', lightBg: 'bg-green-500/5' },
   blue:    { bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-500', btn: 'bg-blue-600 hover:bg-blue-500', ring: 'ring-blue-500/30', dot: 'bg-blue-500', lightBg: 'bg-blue-500/5' },
   purple:  { bg: 'bg-purple-500/10', border: 'border-purple-500/30', text: 'text-purple-500', btn: 'bg-purple-600 hover:bg-purple-500', ring: 'ring-purple-500/30', dot: 'bg-purple-500', lightBg: 'bg-purple-500/5' },
+  teal:    { bg: 'bg-teal-500/10', border: 'border-teal-500/30', text: 'text-teal-500', btn: 'bg-teal-600 hover:bg-teal-500', ring: 'ring-teal-500/30', dot: 'bg-teal-500', lightBg: 'bg-teal-500/5' },
 };
 
 const BROWSER_MODE_LABELS: Record<string, { label: string; icon: React.ElementType }> = {
@@ -652,6 +678,7 @@ export default function BotWorkerManager() {
   const [dmTaskCount, setDmTaskCount] = useState(0);
   const [neonTasks, setNeonTasks] = useState<any[]>([]);
   const [behaviorSearchId, setBehaviorSearchId] = useState<string | null>(null);
+  const isDev = useIsDev();
 
   const fetchData = useCallback(async () => {
     try {
@@ -660,7 +687,7 @@ export default function BotWorkerManager() {
         fetch('/api/bot/workers').catch(() => null),
         apiFetch('/api/bot/learn/status').catch(() => null),
         apiFetch('/api/marketing/tasks/stats').catch(() => null),
-        fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/automation/neon-tasks?limit=100').catch(() => null),
+        fetch('/api/automation/neon-tasks?limit=100').catch(() => null),
       ]);
       if (fnRes?.ok) {
         const fnData = await fnRes.json();
@@ -733,7 +760,27 @@ export default function BotWorkerManager() {
     const key = `${fn.id}:${botId}`;
     setStarting(prev => new Set(prev).add(key));
     try {
-      const env: Record<string, string> = { ...configs[fn.id] };
+      const cfg = configs[fn.id] || {};
+      // ── Serverless "agent research" route (no VPS / pm2) ──
+      if (fn.researchMode) {
+        const res = await fetch('/harvests/competitors:general/research', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer dev' },
+          body: JSON.stringify({
+            industry: cfg.TARGET_INDUSTRY || '',
+            brands: cfg.TARGET_BRANDS || '',
+            urls: cfg.SOURCE_URLS || '',
+            keywords: cfg.KEYWORDS || '',
+            focus: cfg.INTEL_FOCUS || 'all',
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Research failed');
+        toast.success(`${fn.name} · agent research 完成（入库 ${data.ingested ?? 0} 条情报）`);
+        fetchData();
+        return;
+      }
+      const env: Record<string, string> = { ...cfg };
       if (extraEnv) Object.assign(env, extraEnv);
       const res = await fetch('/api/bot/worker/start', {
         method: 'POST',
@@ -751,16 +798,20 @@ export default function BotWorkerManager() {
     }
   };
 
-  const handleStop = async (botId: string) => {
+  const handleStop = async (botId: string, functionId?: string) => {
     setStopping(prev => new Set(prev).add(botId));
     try {
-      const res = await fetch(`/api/bot/worker/stop/${botId}`, { method: 'POST' });
+      const res = await fetch('/api/bot/worker/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ functionId: functionId || botId }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Stop failed');
-      toast.success(`${botId} 已停止`);
+      toast.success(`${functionId || botId} 已停止`);
       fetchData();
     } catch (e: any) {
-      toast.error(`停止 ${botId} 失败`, { description: e.message });
+      toast.error(`停止 ${functionId || botId} 失败`, { description: e.message });
     } finally {
       setStopping(prev => { const n = new Set(prev); n.delete(botId); return n; });
     }
@@ -769,7 +820,7 @@ export default function BotWorkerManager() {
   // 置顶任务（立即执行）
   const prioritizeTask = async (taskId: string | number) => {
     try {
-      const res = await fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/automation/tasks/prioritize/' + taskId, { method: 'POST' });
+      const res = await fetch('/api/automation/tasks/prioritize/' + taskId, { method: 'POST' });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed');
       toast.success('✅ 任务 #' + taskId + ' 已置顶');
       fetchData();
@@ -825,9 +876,9 @@ export default function BotWorkerManager() {
     }
   };
 
-  const stopAll = () => {
+  const stopAll = (fn: BotFunction) => {
     for (const acc of accounts) {
-      if (isRunning(acc.botId)) handleStop(acc.botId);
+      if (isRunning(acc.botId)) handleStop(acc.botId, fn.id);
     }
   };
 
@@ -1093,9 +1144,20 @@ export default function BotWorkerManager() {
         )}
       </div>
 
-      {/* Bot Function Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {functions.map(fn => {
+      {/* Bot Function Cards — grouped: 纹身行业 vs 跨行业通用 */}
+      {(() => {
+        const visible = functions.filter(fn => !fn.devOnly || isDev);
+        const genericFns = visible.filter(f => f.researchMode);
+        const verticalFns = visible.filter(f => !f.researchMode);
+
+        const SectionTitle = ({ title, sub, generic }: { title: string; sub: string; generic?: boolean }) => (
+          <div className="flex items-baseline gap-3">
+            <h3 className={cn("text-sm font-black tracking-tight", generic ? "text-teal-400" : "text-zinc-200")}>{title}</h3>
+            <span className="text-[11px] text-zinc-600">{sub}</span>
+          </div>
+        );
+
+        const renderCard = (fn: BotFunction) => {
           const Icon = FUNCTION_ICONS[fn.id] || Bot;
           const color = FUNCTION_COLORS[fn.id] || 'blue';
           const c = COLOR_MAP[color] || COLOR_MAP.blue;
@@ -1110,7 +1172,7 @@ export default function BotWorkerManager() {
             : (workers.some(w => w.functionId === fn.id && w.running) ? 1 : 0);
 
           return (
-            <motion.div key={fn.id} layout className={cn("rounded-2xl border transition-all overflow-hidden", runningCount > 0 ? `${c.bg} ${c.border}` : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700")}>
+            <motion.div key={fn.id} layout className={cn("rounded-2xl border transition-all overflow-hidden", runningCount > 0 ? `${c.bg} ${c.border}` : fn.researchMode ? "bg-teal-500/5 border-teal-500/30 hover:border-teal-500/50" : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700")}>
               <div className="p-5">
                 {/* Top row */}
                 <div className="flex items-start justify-between mb-4">
@@ -1123,11 +1185,21 @@ export default function BotWorkerManager() {
                       <div className="flex items-center gap-2 mt-1">
                         <span className={cn("inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold", runningCount > 0 ? "bg-green-500/10 text-green-500 border border-green-500/20" : "bg-zinc-800 text-zinc-500 border border-zinc-700")}>
                           <span className={cn("w-1.5 h-1.5 rounded-full", runningCount > 0 ? "bg-green-500 animate-pulse" : "bg-zinc-600")} />
-                          {runningCount > 0 ? `${runningCount} 运行中` : 'Stopped'}
+                          {runningCount > 0 ? `${runningCount} 运行中` : (fn.researchMode ? '提交即运行' : 'Stopped')}
                         </span>
                         <span className="flex items-center gap-1 text-[10px] text-zinc-600 font-medium">
                           <BmIcon className="w-3 h-3" />{bm.label}
                         </span>
+                        {fn.researchMode && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                            <Cpu className="w-3 h-3" />AI Core
+                          </span>
+                        )}
+                        {fn.devOnly && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                            <Shield className="w-3 h-3" />DEV
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1150,7 +1222,7 @@ export default function BotWorkerManager() {
                         </div>
                       </div>
                     )}
-                    {fn.businessValue && fn.businessValue.length > 0 && (
+                    {fn.businessValue?.length > 0 && (
                       <div>
                         <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">业务价值</p>
                         <div className="flex flex-wrap gap-1.5">
@@ -1160,7 +1232,7 @@ export default function BotWorkerManager() {
                         </div>
                       </div>
                     )}
-                    {fn.outputs && fn.outputs.length > 0 && (
+                    {fn.outputs?.length > 0 && (
                       <div>
                         <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">产出数据</p>
                         <div className="flex flex-wrap gap-1.5">
@@ -1170,7 +1242,7 @@ export default function BotWorkerManager() {
                         </div>
                       </div>
                     )}
-                    {fn.useCases && fn.useCases.length > 0 && (
+                    {fn.useCases?.length > 0 && (
                       <div>
                         <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">适用场景</p>
                         <div className="flex flex-wrap gap-1.5">
@@ -1187,7 +1259,7 @@ export default function BotWorkerManager() {
                 {!fn.multiAccount && (
                   <div className="flex gap-2">
                     {runningCount > 0 ? (
-                      <button disabled={stopping.has(fn.id)} onClick={() => { const w = workers.find(w => w.functionId === fn.id && w.running); if (w) handleStop(w.botId); }} className={cn("flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2", "bg-red-600/20 text-red-500 border border-red-500/30 hover:bg-red-600/30")}>
+                      <button disabled={stopping.has(fn.id)} onClick={() => { const w = workers.find(w => w.functionId === fn.id && w.running); if (w) handleStop(w.botId, fn.id); }} className={cn("flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2", "bg-red-600/20 text-red-500 border border-red-500/30 hover:bg-red-600/30")}>
                         {stopping.has(fn.id) ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Stopping...</> : <><Square className="w-3.5 h-3.5" /> Stop</>}
                       </button>
                     ) : (
@@ -1198,7 +1270,13 @@ export default function BotWorkerManager() {
                     {isExpanded && (
                       <div className="mt-4 pt-4 border-t border-zinc-800/50 space-y-3 w-full">
                         {fn.configs.map(cfg => renderConfig(fn.id, cfg))}
-                        <div className="pt-2"><p className="text-[10px] text-zinc-600 font-mono">npx tsx scripts/{fn.script}</p></div>
+                        <div className="pt-2">
+                          {fn.researchMode ? (
+                            <p className="text-[10px] text-teal-400 font-mono flex items-center gap-1.5"><Zap className="w-3 h-3" />AI Core · serverless · 免 VPS（结果写入 competitors:general）</p>
+                          ) : (
+                            <p className="text-[10px] text-zinc-600 font-mono">npx tsx scripts/{fn.script}</p>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1212,7 +1290,7 @@ export default function BotWorkerManager() {
                       <button onClick={() => startAll(fn)} className={cn("flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2", c.btn, "text-white")}>
                         <PlayCircle className="w-3.5 h-3.5" /> Start All
                       </button>
-                      <button onClick={stopAll} className="flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 bg-red-600/20 text-red-500 border border-red-500/30 hover:bg-red-600/30">
+                      <button onClick={() => stopAll(fn)} className="flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 bg-red-600/20 text-red-500 border border-red-500/30 hover:bg-red-600/30">
                         <StopCircle className="w-3.5 h-3.5" /> Stop All
                       </button>
                     </div>
@@ -1304,7 +1382,7 @@ export default function BotWorkerManager() {
                                   {/* Start / Stop */}
                                   <button
                                     disabled={isStarting || isStopping}
-                                    onClick={() => running ? handleStop(acc.botId) : handleStart(fn, acc.botId, { BOT_EXEC_MODE: acc.execMode, BOT_SPEED_FACTOR: String(acc.speedFactor), ...(acc.proxy ? { BOT_PROXY_SERVER: acc.proxy } : {}), ...configs[fn.id] })}
+                                    onClick={() => running ? handleStop(acc.botId, fn.id) : handleStart(fn, acc.botId, { BOT_EXEC_MODE: acc.execMode, BOT_SPEED_FACTOR: String(acc.speedFactor), ...(acc.proxy ? { BOT_PROXY_SERVER: acc.proxy } : {}), ...configs[fn.id] })}
                                     className={cn(
                                       "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 flex-shrink-0",
                                       running ? "bg-red-600/20 text-red-500 hover:bg-red-600/30" : "bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
@@ -1333,8 +1411,25 @@ export default function BotWorkerManager() {
               </div>
             </motion.div>
           );
-        })}
-      </div>
+        };
+
+        return (
+          <>
+            {verticalFns.length > 0 && (
+              <div className="space-y-4">
+                <SectionTitle title="纹身行业机器人" sub="对接 VPS 控制面 · 实时运行态" />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">{verticalFns.map(renderCard)}</div>
+              </div>
+            )}
+            {genericFns.length > 0 && (
+              <div className="space-y-4">
+                <SectionTitle title="跨行业通用情报" sub="运行于 AI Core · serverless 免 VPS" generic />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">{genericFns.map(renderCard)}</div>
+              </div>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 

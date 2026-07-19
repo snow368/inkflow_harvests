@@ -9299,6 +9299,34 @@ loadQueue('pending');
       }
     });
 
+    // ========== Research request API ==========
+    const RESEARCH_DIR = path.join(process.cwd(), 'data', 'research-requests');
+    if (!fs.existsSync(RESEARCH_DIR)) fs.mkdirSync(RESEARCH_DIR, { recursive: true });
+
+    app.post('/api/research', async (req, res) => {
+      try {
+        const { category, industry, keywords, description } = req.body;
+        if (!industry && !keywords) return res.status(400).json({ error: 'industry or keywords required' });
+        const id = Date.now().toString();
+        const request = { id, category: category || 'hardware', industry, keywords, description, status: 'pending', createdAt: new Date().toISOString(), result: null };
+        fs.writeFileSync(path.join(RESEARCH_DIR, `${id}.json`), JSON.stringify(request, null, 2));
+        res.json({ ok: true, requestId: id });
+      } catch (e: any) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+
+    app.get('/api/research/:id', async (req, res) => {
+      try {
+        const file = path.join(RESEARCH_DIR, `${req.params.id}.json`);
+        if (!fs.existsSync(file)) return res.json({ status: 'not-found' });
+        const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+        res.json(data);
+      } catch {
+        res.json({ status: 'error' });
+      }
+    });
+
     // ========== Vite dev server middleware ==========
     if (process.env.NODE_ENV !== 'production') {
       const vite = await createViteServer({

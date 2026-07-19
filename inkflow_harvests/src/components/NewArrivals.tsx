@@ -11,6 +11,7 @@ import {
   CircleDashed,
   ArchiveX,
   Camera,
+  Images,
   RefreshCw,
   MessagesSquare,
   Upload,
@@ -21,11 +22,21 @@ import {
   Hammer,
   Satellite,
   Radio,
+  Target,
+  AlertTriangle,
+  TrendingUp,
+  TrendingDown,
+  Star,
+  ShoppingCart,
+  ThumbsDown,
+  BatteryWarning,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   listProducts,
+  listCompetitorPosts,
   createMemory,
   deleteMemory,
   captureSnapshot,
@@ -58,6 +69,19 @@ import {
 } from "@/lib/aicore";
 import { aggregateProductFamilies } from "@/lib/aggregateProducts";
 
+const CLOUD_API = "";
+
+/** Create a content brief from an intelligence item (competitor / triangulation / gap). */
+async function createBriefFromIntel(source: string, title: string, product: string, score: number, extra?: Record<string, string>) {
+  const r = await fetch(CLOUD_API + "/api/content/briefs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, source, product, score, format: "Reel", platform: "Instagram", ...extra }),
+  });
+  if (!r.ok) throw new Error("Brief 创建失败");
+  return r.json();
+}
+
 function parseMeta(raw: unknown): Record<string, unknown> {
   if (typeof raw === "string") {
     try {
@@ -72,8 +96,22 @@ function parseMeta(raw: unknown): Record<string, unknown> {
   return {};
 }
 
-const COMPETITOR_TENANT = "competitors:tattoo";
 const SELECTION_TENANT = "selection";
+
+// Derive the intelligence tenant from a free-text industry keyword. This is what
+// makes the new-arrivals page reusable for ANY industry without a fixed enum:
+// the user just types the industry and an isolated tenant is created on the fly.
+//   "纹身"/"tattoo" → competitors:tattoo   (the original IG-bot-backed tenant)
+//   "通用"/"general" → competitors:general  (the serverless research tenant)
+//   anything else    → competitors:<slug>   (e.g. 美妆 → competitors:美妆)
+function tenantFromKeyword(kw: string): string {
+  const t = (kw || "").trim();
+  const low = t.toLowerCase();
+  if (!t || low === "纹身" || low === "tattoo") return "competitors:tattoo";
+  if (low === "通用" || low === "general") return "competitors:general";
+  const safe = t.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").toLowerCase();
+  return `competitors:${safe || "general"}`;
+}
 const WINDOWS = [
   { label: "近 7 天", days: 7 },
   { label: "近 30 天", days: 30 },
@@ -102,7 +140,7 @@ function Bar({ label, value, color }: { label: string; value: number; color: str
 const SRC_COLOR: Record<string, string> = { chat: "bg-sky-400", review: "bg-amber-400", intel: "bg-violet-400" };
 const SRC_LABEL: Record<string, string> = { chat: "聊单需求", review: "评论缺口", intel: "竞品动作" };
 
-function TriangulationLeads() {
+function TriangulationLeads({ tenant }: { tenant: string }) {
   const [leads, setLeads] = useState<TriangulatedLead[]>([]);
   const [counts, setCounts] = useState<{ chatDemandMessages: number; reviewGapReviews: number; intelEvents: number } | null>(null);
   const [windowDays, setWindowDays] = useState(90);
@@ -117,7 +155,7 @@ function TriangulationLeads() {
       if (push) setPushing(true);
       else setLoading(true);
       try {
-        const res = await getTriangulatedLeads(COMPETITOR_TENANT, { days: windowDays, autoPush: push });
+        const res = await getTriangulatedLeads(tenant, { days: windowDays, autoPush: push });
         setLeads(res.leads);
         setCounts(res.sourceCounts);
       } catch (e) {
@@ -241,9 +279,26 @@ function TriangulationLeads() {
                   </div>
                 )}
 
+                <div className="flex items-center gap-2">
                 <button onClick={() => setExpanded(open ? null : l.theme)} className="text-[11px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1">
                   <Lightbulb className="w-3.5 h-3.5" /> {open ? "收起证据链" : `查看证据链（${l.evidence.length}）`}
                 </button>
+                <button
+                  onClick={() => {
+                    createBriefFromIntel(
+                      "customer_feedback",
+                      `三角共振选题: ${l.themeLabel}`,
+                      "",
+                      l.score,
+                      { hook: `三源共振 ${l.resonance} 源: ${l.themeLabel}`, audience: "纹身师/PMU 操作者", pain_point: l.themeLabel }
+                    ).then(() => toast.success("选题已生成 → Content Operations 查看"))
+                      .catch((e: Error) => toast.error("生成失败", { description: e.message }));
+                  }}
+                  className="text-[11px] text-rose-300 hover:text-rose-200 flex items-center gap-1"
+                >
+                  <Sparkles className="w-3.5 h-3.5" /> 生成选题
+                </button>
+                </div>
                 {open && (
                   <div className="space-y-1.5 pt-1">
                     {l.evidence.length === 0 && <div className="text-[11px] text-zinc-500">暂无明细</div>}
@@ -272,22 +327,199 @@ function TriangulationLeads() {
   );
 }
 
+/* ── Section A2: 竞品内容库 (content pipeline 原料 / 留言洞察) ───────────── */
+function CompetitorContentLibrary({ tenant }: { tenant: string }) {
+  const [items, setItems] = useState<MemoryItemDTO[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await listCompetitorPosts(tenant, { limit: 500 });
+      setItems(res.items);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <section className="rounded-2xl border border-zinc-800/50 bg-zinc-900/30 p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <Images className="w-5 h-5 text-sky-400" />
+        <h3 className="text-lg font-bold text-zinc-100">竞品内容库</h3>
+        <span className="text-[11px] text-zinc-500">· content pipeline 原料</span>
+      </div>
+      <p className="text-xs text-zinc-500 mb-4">
+        竞品 IG bot 抓取的<b className="text-zinc-300">整篇帖子</b>（文案 + 全部图片 + 评论 + 互动量）。可直接作为社媒图/视频生成的参考素材；
+        评论已标注「有用 / 意图」，方便留言洞察筛选。
+      </p>
+
+      {loading && (
+        <div className="flex items-center gap-2 text-sm text-zinc-500">
+          <Loader2 className="w-4 h-4 animate-spin" /> 加载中…
+        </div>
+      )}
+      {error && <div className="text-sm text-red-400">加载失败：{error}</div>}
+      {!loading && !error && items.length === 0 && (
+        <div className="text-sm text-zinc-500">
+          暂无竞品帖子。先在 VPS 跑{' '}
+          <code className="text-zinc-300">npx tsx scripts/bot-competitor-ig-monitor.ts --baseline</code> 灌入。
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {items.map((it) => {
+          const m = parseMeta(it.metadata);
+          const imageUrls = (m.image_urls as string[] | undefined) || [];
+          const comments = (m.comments as { author: string; text: string; useful: boolean; intent: string }[] | undefined) || [];
+          const useful = comments.filter((c) => c.useful).slice(0, 2);
+          const brand = (m.brand as string) || '';
+          const likes = m.likes_count as number | null;
+          const ccount = m.comments_count as number | null;
+          const postUrl = (m.post_url as string) || '';
+          const caption = (m.caption as string) || it.content || '';
+          return (
+            <div key={it.id || it.entity_id} className="rounded-xl border border-zinc-800/50 bg-zinc-900/40 overflow-hidden flex flex-col">
+              {imageUrls[0] ? (
+                <img src={imageUrls[0]} alt="" className="w-full h-44 object-cover bg-zinc-800" loading="lazy" />
+              ) : (
+                <div className="w-full h-44 bg-zinc-800 flex items-center justify-center text-zinc-600 text-xs">无图片</div>
+              )}
+              <div className="p-3 flex-1 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-sky-400 font-semibold">{brand}</span>
+                  <span className="text-[10px] text-zinc-500">
+                    {likes != null ? `♥ ${likes}` : ''} {ccount != null ? `· 💬 ${ccount}` : ''}
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-300 line-clamp-3">{caption}</p>
+                {useful.length > 0 && (
+                  <div className="space-y-1">
+                    {useful.map((c, i) => (
+                      <div key={i} className="text-[11px] text-zinc-400 border-l-2 border-emerald-500/60 pl-2">
+                        <span className="text-emerald-400">@{c.author}</span>：{c.text}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {postUrl && (
+                  <a href={postUrl} target="_blank" rel="noreferrer" className="mt-auto text-[11px] text-sky-500 hover:underline">
+                    查看原帖 ↗
+                  </a>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export default function NewArrivals() {
+  const [keyword, setKeyword] = useState("纹身");
+  const tenant = tenantFromKeyword(keyword);
+  const [researchUrls, setResearchUrls] = useState("");
+  const [researching, setResearching] = useState(false);
+  const [researchMsg, setResearchMsg] = useState<string | null>(null);
+
+  const runResearch = async () => {
+    const urls = researchUrls
+      .split(/[\n,]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (urls.length === 0) {
+      toast.error("请填写要抓取的 URL");
+      return;
+    }
+    setResearching(true);
+    setResearchMsg(null);
+    try {
+      const res = await fetch(`/harvests/${tenant}/research`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer dev" },
+        body: JSON.stringify({ industry: keyword, urls, brands: [], keywords: [], focus: "all" }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { ingested?: number; error?: string };
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setResearchMsg(`已抓取 ${data.ingested ?? 0} 条信号写入 ${tenant}`);
+      toast.success(`已入库 ${data.ingested ?? 0} 条`);
+    } catch (e) {
+      setResearchMsg(e instanceof Error ? e.message : String(e));
+      toast.error("抓取失败", { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setResearching(false);
+    }
+  };
+
   return (
     <div className="space-y-10">
-      <CompetitorNewArrivals />
-      <CompetitorIntel />
-      <VoiceOfCustomer />
-      <RedditWatch />
-      <DirectResearch />
+      {/* 行业情报范围：按关键词驱动独立租户，免配置、无限行业 */}
+      <section className="rounded-2xl border border-zinc-800/50 bg-zinc-900/30 p-5">
+        <div className="flex items-center gap-2 mb-1">
+          <Globe className="w-5 h-5 text-sky-400" />
+          <h3 className="text-lg font-bold text-zinc-100">行业情报范围</h3>
+          <span className="text-[11px] text-zinc-500">· 按关键词驱动 · {tenant}</span>
+        </div>
+        <p className="text-xs text-zinc-500 mb-4">
+          输入行业关键词即可新建独立情报租户并查看该行业的新品 / 动作 / 原声。「纹身」看纹身行业、「通用」看通用行业；其他词自动建{' '}
+          <code className="text-zinc-300">competitors:&lt;关键词&gt;</code> 租户。下方可直接抓取网页情报入库。
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[180px]">
+            <label className="block text-[11px] text-zinc-500 mb-1">行业关键词</label>
+            <input
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="如 纹身 / 美妆 / 3C / 健身"
+              className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-sm text-zinc-100 outline-none"
+            />
+          </div>
+          <div className="flex-[2] min-w-[260px]">
+            <label className="block text-[11px] text-zinc-500 mb-1">抓取 URL（逗号 / 换行分隔，可选）</label>
+            <input
+              value={researchUrls}
+              onChange={(e) => setResearchUrls(e.target.value)}
+              placeholder="https://example.com/new-products …"
+              className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-sm text-zinc-100 outline-none"
+            />
+          </div>
+          <button
+            onClick={runResearch}
+            disabled={researching}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold disabled:opacity-50"
+          >
+            {researching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Satellite className="w-4 h-4" />}
+            抓取并入库
+          </button>
+        </div>
+        {researchMsg && <div className="text-[11px] text-zinc-400 mt-2">{researchMsg}</div>}
+      </section>
+
+      <CompetitorNewArrivals tenant={tenant} />
+      <CompetitorContentLibrary tenant={tenant} />
+      <CompetitorIntel tenant={tenant} />
+      <VoiceOfCustomer tenant={tenant} />
+      <RedditWatch tenant={tenant} />
+      <DirectResearch tenant={tenant} />
       <MySelection />
-      <TriangulationLeads />
+      <TriangulationLeads tenant={tenant} />
+      <GapAnalysis tenant={tenant} />
     </div>
   );
 }
 
 /* ── Section A: 竞品上新情报 (cross-brand within competitors:tattoo) ─────── */
-function CompetitorNewArrivals() {
+function CompetitorNewArrivals({ tenant }: { tenant: string }) {
   const [items, setItems] = useState<MemoryItemDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -309,7 +541,7 @@ function CompetitorNewArrivals() {
     setLoading(true);
     setError(null);
     try {
-      const res = await listProducts({ tenant: COMPETITOR_TENANT, limit: 1000 });
+      const res = await listProducts({ tenant, limit: 1000 });
       setItems(res.items);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -367,7 +599,7 @@ function CompetitorNewArrivals() {
       <div className="flex items-center gap-2 mb-1">
         <Globe className="w-5 h-5 text-rose-500" />
         <h3 className="text-lg font-bold text-zinc-100">竞品上新情报</h3>
-        <span className="text-[11px] text-zinc-500">· {COMPETITOR_TENANT}</span>
+        <span className="text-[11px] text-zinc-500">· {tenant}</span>
       </div>
       <p className="text-xs text-zinc-500 mb-4">
         跨所有竞品品牌聚合「最近新发现 / 新上架」的商品（按导入首见时间 first_seen 计算，数据不重复存储）。
@@ -480,6 +712,21 @@ function CompetitorNewArrivals() {
                     {discovered.toISOString().slice(0, 10)}
                   </span>
                 </div>
+                <button
+                  onClick={() => {
+                    createBriefFromIntel(
+                      "competitor_analysis",
+                      `${b} 新品选题: ${it.title}`,
+                      it.entity_id || "",
+                      75,
+                      { hook: `竞品 ${b} 上新 ${it.title}`, audience: "纹身师/PMU 操作者", pain_point: "竞品上新对比" }
+                    ).then(() => toast.success("选题已生成 → Content Operations 查看"))
+                      .catch((e: Error) => toast.error("生成失败", { description: e.message }));
+                  }}
+                  className="mt-1 w-full py-1 text-[10px] font-medium text-rose-300 bg-rose-600/15 hover:bg-rose-600/30 rounded-lg transition-colors"
+                >
+                  + 生成选题
+                </button>
                 {variantCount > 1 && (
                   <button
                     onClick={() => toggleFamily(fam.key)}
@@ -796,7 +1043,7 @@ function priceText(e: IntelEventDTO): string {
   return f ?? t ?? "—";
 }
 
-function CompetitorIntel() {
+function CompetitorIntel({ tenant }: { tenant: string }) {
   const [events, setEvents] = useState<IntelEventDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -810,7 +1057,7 @@ function CompetitorIntel() {
     setLoading(true);
     setError(null);
     try {
-      const res = await listIntelEvents(COMPETITOR_TENANT, { days, type, brand, limit: 200 });
+      const res = await listIntelEvents(tenant, { days, type, brand, limit: 200 });
       setEvents(res.items);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -839,7 +1086,7 @@ function CompetitorIntel() {
     setCapturing(true);
     setSnapInfo(null);
     try {
-      const r = await captureSnapshot(COMPETITOR_TENANT);
+      const r = await captureSnapshot(tenant);
       setSnapInfo(
         r.baseline
           ? `已建立基线快照 · 收录 ${r.captured ?? 0} 条 · 下次快照开始产出变化事件`
@@ -859,7 +1106,7 @@ function CompetitorIntel() {
       <div className="flex items-center gap-2 mb-1">
         <Camera className="w-5 h-5 text-rose-500" />
         <h3 className="text-lg font-bold text-zinc-100">竞品动作流</h3>
-        <span className="text-[11px] text-zinc-500">· 快照对比 · {COMPETITOR_TENANT}</span>
+        <span className="text-[11px] text-zinc-500">· 快照对比 · {tenant}</span>
       </div>
       <p className="text-xs text-zinc-500 mb-4">
         对竞品池「拍快照」并与上一次对比，自动识别：上新 / 下架清仓 / 涨价 / 降价。首次为基线，之后每次对比产出变化事件。
@@ -1036,8 +1283,8 @@ function parseReviewsInput(text: string, fallbackPlatform: string) {
   return out;
 }
 
-function VoiceOfCustomer() {
-  const TENANT = COMPETITOR_TENANT;
+function VoiceOfCustomer({ tenant }: { tenant: string }) {
+  const TENANT = tenant;
   const [items, setItems] = useState<ReviewDTO[]>([]);
   const [stats, setStats] = useState<ReviewStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1182,7 +1429,7 @@ function VoiceOfCustomer() {
       </div>
 
       {/* Top unmet-need voices */}
-      {stats && stats.topWishes.length > 0 && (
+      {stats?.topWishes?.length > 0 && (
         <div className="mb-4 rounded-xl border border-amber-600/20 bg-amber-600/5 p-3">
           <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-amber-300">
             <Lightbulb className="w-3.5 h-3.5" /> 高价值「未满足需求」原声 Top
@@ -1419,8 +1666,8 @@ const inputCls = "w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg
    订阅 subreddit×关键词，由 worker 的 Cron 触发器每 6 小时自动抓取并入库；
    也可手动「立即运行」。评论下钻可拉每帖评论（许愿句常藏在评论里）。
 */
-function RedditWatch() {
-  const TENANT = COMPETITOR_TENANT;
+function RedditWatch({ tenant }: { tenant: string }) {
+  const TENANT = tenant;
   const [subs, setSubs] = useState<StoredRedditWatchDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -1641,8 +1888,8 @@ function RedditWatch() {
   );
 }
 
-function DirectResearch() {
-  const TENANT = COMPETITOR_TENANT;
+function DirectResearch({ tenant }: { tenant: string }) {
+  const TENANT = tenant;
   const [tab, setTab] = useState<"pool" | "campaign" | "feedback">("pool");
   return (
     <section className="rounded-2xl border border-rose-800/30 bg-rose-950/10 p-5">
@@ -2358,6 +2605,348 @@ function DirectFeedback({ tenant }: { tenant: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+/* ── Section H: 竞品 Gap 分析 (实时基于市场评分 + 竞品目录计算) ──────── */
+const MARKET_API = "";
+const CAT_LABELS: Record<string, string> = {
+  cartridge: "纹身针嘴", machine: "纹身机", ink: "墨水",
+  transfer_paper: "转印纸", stencil_printer: "描线打印机", aftercare: "售后护理",
+};
+const catLabel = (c: string) => CAT_LABELS[c] || c;
+
+function GapAnalysis({ tenant }: { tenant: string }) {
+  const [seeding, setSeeding] = useState(false);
+  const [surveyForm, setSurveyForm] = useState<{ title: string; question: string; target_brand: string; channels: string[] } | null>(null);
+  const [surveySaving, setSurveySaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [competitorProducts, setCompetitorProducts] = useState<any[]>([]);
+  const [allScores, setAllScores] = useState<any[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const [prodRes, scoreRes] = await Promise.all([
+          listProducts({ tenant, limit: 1000 }),
+          fetch(MARKET_API + "/api/market/scores").then((r) => (r.ok ? r.json() : { scores: [] })).catch(() => ({ scores: [] })),
+        ]);
+        if (!active) return;
+        setCompetitorProducts((prodRes.items || []).filter((p: any) => p.type === "product"));
+        setAllScores(scoreRes.scores || []);
+      } catch {
+        /* keep empty — panels show empty states */
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  // 主推新品：真实竞品目录
+  const featuredProducts = useMemo(() => competitorProducts.slice(0, 12), [competitorProducts]);
+
+  // 市场空缺机会：每 (品类×国家) 头部品牌分 → vacancy = 100 - top，降序取前 6
+  const opportunities = useMemo(() => {
+    if (!allScores.length) return [];
+    const map = new Map<string, { category: string; country: string; top: number; topBrand: string }>();
+    for (const s of allScores) {
+      const key = `${s.category}|${s.country}`;
+      const cur = map.get(key);
+      if (!cur || (s.score || 0) > cur.top) map.set(key, { category: s.category, country: s.country, top: s.score || 0, topBrand: s.brand });
+    }
+    const arr = [...map.values()].map((m) => ({ ...m, vacancy: 100 - m.top }));
+    arr.sort((a, b) => b.vacancy - a.vacancy);
+    return arr.slice(0, 6);
+  }, [allScores]);
+
+  // 维度短板：每品类 5 维平均最低者
+  const dimensionWeakness = useMemo(() => {
+    if (!allScores.length) return [];
+    const dims = [
+      { key: "google_score", label: "搜索可见性" },
+      { key: "amazon_score", label: "电商销量" },
+      { key: "social_score", label: "社媒声量" },
+      { key: "artist_score", label: "艺术家背书" },
+      { key: "dist_score", label: "渠道覆盖" },
+    ];
+    const cats = [...new Set(allScores.map((s: any) => s.category))];
+    const out: any[] = [];
+    for (const cat of cats) {
+      const rows = allScores.filter((s: any) => s.category === cat);
+      let worst: any = null;
+      for (const d of dims) {
+        const avg = rows.reduce((a: number, s: any) => a + (s[d.key] || 0), 0) / rows.length;
+        if (!worst || avg < worst.avg) worst = { dim: d.label, avg: Math.round(avg) };
+      }
+      out.push({ category: cat, dim: worst.dim, avg: worst.avg });
+    }
+    out.sort((a, b) => a.avg - b.avg);
+    return out.slice(0, 6);
+  }, [allScores]);
+
+  const seedToKB = async () => {
+    setSeeding(true);
+    let ok = 0, fail = 0;
+    for (const o of opportunities) {
+      try {
+        await createMemory(tenant, {
+          type: "gap_analysis",
+          entity_id: `gap::opportunity-${o.category}-${o.country}`,
+          title: `${catLabel(o.category)} × ${o.country} 市场空缺 ${o.vacancy}%`,
+          content: `头部品牌 ${o.topBrand} 仅 ${o.top} 分，市场空缺 ${o.vacancy}%，存在空白切入空间。`,
+          metadata: { source: "market_intelligence_realtime", category: o.category, country: o.country, vacancy: o.vacancy, top_brand: o.topBrand, top_score: o.top, researched_at: new Date().toISOString() },
+        });
+        ok++;
+      } catch { fail++; }
+    }
+    for (const w of dimensionWeakness) {
+      try {
+        await createMemory(tenant, {
+          type: "pain_point",
+          entity_id: `gap::dimension-weakness-${w.category}-${w.dim}`,
+          title: `${catLabel(w.category)}︰${w.dim}维度短板`,
+          content: `该品类 ${w.dim} 维度平均仅 ${w.avg}/100，是行业共同短板，可作内容 / 选品切入方向。`,
+          metadata: { source: "market_intelligence_realtime", severity: w.avg < 40 ? "critical" : w.avg < 55 ? "high" : "medium", category: w.category, dimension: w.dim, avg_score: w.avg, researched_at: new Date().toISOString() },
+        });
+        ok++;
+      } catch { fail++; }
+    }
+    setSeeding(false);
+    if (fail === 0) toast.success(`全部 ${ok} 条已写入 ${tenant} 知识库`);
+    else toast.warning(`已写入 ${ok} 条，${fail} 条失败`);
+  };
+
+  const openSurvey = (title: string, question: string) => {
+    setSurveyForm({ title, question, target_brand: "painfulpleasures", channels: ["instagram"] });
+  };
+
+  const submitSurvey = async () => {
+    if (!surveyForm) return;
+    setSurveySaving(true);
+    try {
+      const r = await createCampaign(tenant, {
+        title: surveyForm.title,
+        question: surveyForm.question,
+        target_brand: surveyForm.target_brand || undefined,
+        channels: surveyForm.channels,
+        audience_filter: { platforms: ["instagram"], limit: 50 },
+      });
+      if (r.campaign) {
+        toast.success(`调研活动已创建 → 去「主动调研」tab 查看并 dispatch`);
+        setSurveyForm(null);
+      } else throw new Error(r.error || "创建失败");
+    } catch (e) {
+      toast.error("创建调研失败", { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setSurveySaving(false);
+    }
+  };
+
+  return (
+    <section className="rounded-2xl border border-zinc-800/50 bg-zinc-900/30 p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <Target className="w-5 h-5 text-emerald-400" />
+        <h3 className="text-lg font-bold text-zinc-100">Gap 分析</h3>
+        <span className="text-[11px] text-zinc-500">· 实时市场缺口 (评分驱动)</span>
+        {loading && <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500" />}
+      </div>
+      <p className="text-xs text-zinc-500 mb-4">
+        实时基于 Market Intelligence 品牌评分（品类×国家×品牌 5 维分）与竞品目录动态计算市场空缺与维度短板，不再依赖静态调研快照。数据可写入 AI Core 知识库供三角共振引擎使用。
+      </p>
+
+      {/* 竞品目录 — 真实产品 */}
+      <div className="mb-5">
+        <div className="flex items-center gap-1.5 mb-2">
+          <ShoppingCart className="w-4 h-4 text-zinc-400" />
+          <span className="text-sm font-semibold text-zinc-200">竞品目录在售产品</span>
+          <span className="text-[10px] text-zinc-500">· {tenant}</span>
+        </div>
+        {featuredProducts.length === 0 ? (
+          <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/50 p-4 text-xs text-zinc-500">
+            {loading ? "加载中…" : "竞品目录暂无产品。请通过「商品知识库 → 手动录入 / 从网址采集 / B 渠道 IG 采集」补充竞品数据后此处自动显示。"}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            {featuredProducts.map((p) => {
+              const m = parseMeta(p.metadata);
+              const brand = (m.brand as string) || "—";
+              const price = (m.price as string) || "—";
+              const cat = (m.category as string) || "";
+              return (
+                <div key={p.id} className="rounded-xl border border-zinc-800/60 bg-zinc-900/50 p-2.5">
+                  <div className="text-xs font-bold text-zinc-100 truncate" title={p.title}>{p.title}</div>
+                  <div className="text-[10px] text-zinc-500">{price}</div>
+                  <div className="flex items-center gap-1 mt-1">
+                    <span className="px-1 py-0.5 rounded bg-emerald-600/15 text-[9px] text-emerald-300">{brand}</span>
+                    {cat && <span className="text-[9px] text-zinc-500 truncate">{catLabel(cat)}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 行业维度短板 — 基于品牌评分实时计算 */}
+      <div className="mb-5">
+        <div className="flex items-center gap-1.5 mb-2">
+          <TrendingDown className="w-4 h-4 text-rose-400" />
+          <span className="text-sm font-semibold text-zinc-200">行业维度短板 (5 维评分最低项)</span>
+        </div>
+        {dimensionWeakness.length === 0 ? (
+          <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/50 p-4 text-xs text-zinc-500">
+            {loading ? "计算中…" : "暂无市场评分数据，请先填充 Market Intelligence。"}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {dimensionWeakness.map((w) => {
+              const severity = w.avg < 40 ? "critical" : w.avg < 55 ? "high" : "medium";
+              return (
+                <div key={w.category + w.dim} className="rounded-xl border border-zinc-800/60 bg-zinc-900/50 p-3">
+                  <div className="flex items-start gap-3">
+                    <div className="shrink-0"><TrendingDown className="w-4 h-4 text-rose-400 mt-0.5" /></div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-zinc-100">{catLabel(w.category)}︰{w.dim}</span>
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded text-[9px] font-medium",
+                          severity === "critical" ? "bg-red-600/15 text-red-300" :
+                          severity === "high" ? "bg-orange-600/15 text-orange-300" :
+                          "bg-zinc-800 text-zinc-400"
+                        )}>
+                          {severity === "critical" ? "致命" : severity === "high" ? "严重" : "中等"}
+                        </span>
+                        <span className="text-[10px] text-zinc-500 ml-1">均分 {w.avg}/100</span>
+                        <button
+                          onClick={() => openSurvey(`${catLabel(w.category)}︰${w.dim}短板`, `你觉得 ${catLabel(w.category)} 这个品类在「${w.dim}」上最缺什么？`)}
+                          className="ml-auto shrink-0 px-2 py-0.5 rounded bg-rose-600/20 hover:bg-rose-600/40 text-[10px] text-rose-300 font-medium transition-colors"
+                        >
+                          发起调研
+                        </button>
+                      </div>
+                      <p className="text-xs text-zinc-400 mt-1 leading-relaxed">该维度平均仅 {w.avg}/100，是行业共同短板，可作内容选题 / 选品切入方向。</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 核心 Gap 机会 — 市场空缺排名 */}
+      <div className="mb-4">
+        <div className="flex items-center gap-1.5 mb-2">
+          <TrendingUp className="w-4 h-4 text-emerald-400" />
+          <span className="text-sm font-semibold text-zinc-200">你的机会 — 市场空缺 Top 6</span>
+        </div>
+        {opportunities.length === 0 ? (
+          <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/50 p-4 text-xs text-zinc-500">
+            {loading ? "计算中…" : "暂无市场评分数据，请先填充 Market Intelligence。"}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {opportunities.map((o, idx) => {
+              const stars = o.vacancy >= 50 ? "⭐⭐⭐⭐⭐" : o.vacancy >= 40 ? "⭐⭐⭐⭐" : o.vacancy >= 30 ? "⭐⭐⭐" : "⭐⭐";
+              return (
+                <div key={o.category + o.country} className="rounded-xl border border-emerald-800/40 bg-emerald-900/20 p-3 flex flex-col">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="w-5 h-5 rounded-full bg-emerald-600/30 text-emerald-300 flex items-center justify-center text-[10px] font-bold shrink-0">
+                      {idx + 1}
+                    </span>
+                    <span className="text-sm font-bold text-emerald-100">{catLabel(o.category)} × {o.country}</span>
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-relaxed flex-1">市场空缺 <b className="text-emerald-300">{o.vacancy}%</b> — 头部品牌 {o.topBrand} 仅 {o.top} 分，存在空白切入空间。</p>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-emerald-800/30">
+                    <span className="text-[10px] text-amber-400">{stars}</span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          createBriefFromIntel(
+                            "gap_analysis",
+                            `Gap 选题: ${catLabel(o.category)} × ${o.country} 市场空缺`,
+                            "",
+                            o.vacancy >= 40 ? 90 : 75,
+                            { hook: `市场空缺 #${idx + 1}: ${catLabel(o.category)} @ ${o.country} (${o.vacancy}%)`, audience: "纹身师/PMU 操作者", pain_point: `头部 ${o.topBrand} 仅 ${o.top} 分` }
+                          ).then(() => toast.success("选题已生成 → Content Operations 查看"))
+                            .catch((e: Error) => toast.error("生成失败", { description: e.message }));
+                        }}
+                        className="shrink-0 px-2 py-0.5 rounded bg-rose-600/20 hover:bg-rose-600/40 text-[10px] text-rose-300 font-medium transition-colors flex items-center gap-1"
+                      >
+                        <Sparkles className="w-3 h-3" /> 生成选题
+                      </button>
+                      <button
+                        onClick={() => openSurvey(`【Gap】${catLabel(o.category)} × ${o.country}`, `你觉得 ${catLabel(o.category)} 在 ${o.country} 市场最缺什么品牌 / 产品？`)}
+                        className="shrink-0 px-2 py-0.5 rounded bg-emerald-600/20 hover:bg-emerald-600/40 text-[10px] text-emerald-300 font-medium transition-colors"
+                      >
+                        发起调研
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 写入知识库按钮 */}
+      <div className="flex items-center justify-between rounded-xl border border-zinc-800/60 bg-zinc-900/50 p-3">
+        <span className="text-xs text-zinc-400">
+          将此分析写入 <code className="text-rose-300">{tenant}</code> 知识库，让三角共振引擎（聊单需求×评论缺口×竞品动作）自动交叉验证。
+        </span>
+        <button
+          onClick={seedToKB}
+          disabled={seeding}
+          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold disabled:opacity-50"
+        >
+          {seeding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Target className="w-3.5 h-3.5" />}
+          写入知识库
+        </button>
+      </div>
+
+      {/* Survey creation modal */}
+      {surveyForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setSurveyForm(null)}>
+          <div className="w-full max-w-lg rounded-2xl border border-zinc-700/60 bg-zinc-900 p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h4 className="text-base font-bold text-zinc-100 mb-1">向终端客户发起调研</h4>
+            <p className="text-xs text-zinc-500 mb-4">创建后进入「精准反馈 / 主动调研 → 调研活动」tab dispatch，bot worker 将向已授权用户发送 DM。</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[11px] text-zinc-500 mb-1">调研标题</label>
+                <input value={surveyForm.title} onChange={(e) => setSurveyForm((f) => f ? { ...f, title: e.target.value } : null)} className="w-full rounded-lg bg-zinc-950 border border-zinc-800 px-2.5 py-1.5 text-sm text-zinc-100" />
+              </div>
+              <div>
+                <label className="block text-[11px] text-zinc-500 mb-1">问题（发送给客户的内容）</label>
+                <textarea rows={3} value={surveyForm.question} onChange={(e) => setSurveyForm((f) => f ? { ...f, question: e.target.value } : null)} className="w-full rounded-lg bg-zinc-950 border border-zinc-800 px-2.5 py-1.5 text-sm text-zinc-100" />
+              </div>
+              <div className="flex items-center gap-3">
+                <div>
+                  <label className="block text-[11px] text-zinc-500 mb-1">渠道</label>
+                  <div className="flex gap-2">
+                    {["instagram", "facebook", "whatsapp"].map((ch) => (
+                      <button key={ch} onClick={() => setSurveyForm((f) => f ? { ...f, channels: f.channels.includes(ch) ? f.channels.filter((x) => x !== ch) : [...f.channels, ch] } : null)}
+                        className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors", surveyForm.channels.includes(ch) ? "bg-rose-600 text-white" : "bg-zinc-800 text-zinc-400")}>
+                        {ch}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setSurveyForm(null)} className="px-3 py-1.5 rounded-lg text-xs text-zinc-400 hover:bg-zinc-800">取消</button>
+                <button onClick={submitSurvey} disabled={surveySaving} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold disabled:opacity-50">
+                  {surveySaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MessagesSquare className="w-3.5 h-3.5" />}
+                  创建调研
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

@@ -1,5 +1,5 @@
 // Inventory API service — calls cloud-api Worker
-const API = 'https://harvests-cloud-api.inkflowapp.workers.dev/api';
+const API = '/api';
 
 // 自动重试：Worker冷启动时可能EOF，重试3次
 async function apiFetch(url: string, options?: RequestInit, retries = 3): Promise<Response> {

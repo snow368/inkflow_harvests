@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BarChart3, Globe, TrendingUp, Plus, Trash2, RefreshCw, Loader2, Lightbulb, Target } from 'lucide-react';
 
-const API = 'https://harvests-cloud-api.inkflowapp.workers.dev';
+const API = '';
 const COUNTRIES = ['USA','Germany','UK','France','Italy','Spain','Canada','Australia','Japan','Brazil'];
 
 export default function MarketIntelligence() {

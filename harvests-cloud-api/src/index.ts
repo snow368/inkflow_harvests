@@ -1,6 +1,7 @@
-﻿import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
+import { parseOrderNote } from './lib/parse-order-notes'
 // Neon ��y?Y?a2��?�� ?a ��1��? HTTP D-�����ꡧ/sql endpoint��?��?����?a WebSocket ?�� Worker ?D2??��?��
 // @neondatabase/serverless ��? neon() o����y?������ WebSocket��??�� Cloudflare Worker ?D����o?����?��
 // ??��? HTTP neonQuery��?��??��?��?����?
@@ -107,6 +108,7 @@ async function verifyToken(token: string): Promise<UserInfo | null> {
 // ?��?�� Auth middleware (protects /api/* except whitelisted paths) ?��?��
 const PUBLIC_PATHS = new Set([
   '/api/shopify/webhook/orders-create',
+  '/api/shopify/callback',
   '/api/fulfillment/shopify/callback',
   '/api/automation/bot-account',
   '/api/automation/bot-account/delete',
@@ -132,6 +134,13 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/poll-debug',
   '/api/bot/noise-sites',
   '/api/bot/observe',
+  '/api/bot/functions',
+  '/api/bot/workers',
+  '/api/bot/learn/status',
+  '/api/bot/worker/start',
+  '/api/bot/worker/stop',
+  '/api/bot/commands',
+  '/api/bot/commands/report',
   '/api/tasks/create',
   '/api/tasks/count',
   '/api/amazon/pending',
@@ -181,6 +190,8 @@ app.use('/api/*', async (c, next) => {
   const path = new URL(c.req.url).pathname
   if ([...PUBLIC_PATHS].some(p => path === p || path.startsWith(p + '/'))) return next()
   if (path === '/api/shopify/status' || path === '/api/shopify/orders/deduct' || path.startsWith('/api/shopify/order/') || path.startsWith('/api/shopify/fix-name/')) return next()
+  // Manual Shopify backfill uses its own bot-token check (?token=), not Firebase auth
+  if (path === '/api/sync/shopify-orders') return next()
 
   const auth = c.req.header('Authorization')
   if (!auth?.startsWith('Bearer ')) {
@@ -540,7 +551,7 @@ app.get('/api/inventory/outbounds', async (c) => {
   const binds: any[] = []
   if (channel && channel !== 'all') { sql += ' AND channel = ?'; binds.push(channel) }
   if (sku) { sql += ' AND product_sku = ?'; binds.push(sku) }
-  sql += ' ORDER BY outbound_date DESC LIMIT 500'
+  sql += ' ORDER BY outbound_date DESC LIMIT 5000'
   const rows = await c.env.DB.prepare(sql).bind(...binds).all()
   return c.json({ ok: true, items: rows.results || [] })
 })
@@ -825,39 +836,20 @@ app.delete('/api/fulfillment/orders/:id', async (c) => {
 
 // ============ SHOPIFY ============
 
-const parseNote = (note: string): any[] => {
-  try {
-    const gifts: any[] = []
-    const needleRegex = /(\d{3,4})(RL|RS|RG|RT|F|M)\s*[xX*]?\s*(\d+)?\s*(oD|20)?/gi
-    const seen = new Set<string>()
-    let match
-    while ((match = needleRegex.exec(note)) !== null) {
-      const label = match[1].toUpperCase() + match[2].toUpperCase()
-      if (seen.has(label)) continue
-      seen.add(label)
-      const qty = parseInt(match[3] || '1', 10)
-      gifts.push({ type: 'needle', label, quantity: qty })
-    }
-    // bare codes
-    const bareRegex = /\b(\d{3,4})(RL|RS|RG|RT|F|M)\b/gi
-    while ((match = bareRegex.exec(note)) !== null) {
-      const label = match[1].toUpperCase() + match[2].toUpperCase()
-      if (seen.has(label)) continue
-      seen.add(label)
-      gifts.push({ type: 'needle', label, quantity: 1 })
-    }
-    const posterMatch = note.match(/(D?o�����|�䨮o�����|o�����)[\sxX*?��]*(\d+)?/i)
-    if (posterMatch) gifts.push({ type: 'poster', label: 'o�����', quantity: parseInt(posterMatch[2] || '1', 10) })
-    return gifts
-  } catch { return [] }
-}
-
-const parseGiftSkus = (note: string): Array<{ sku: string; qty: number; name: string }> => {
-  return parseNote(note).map(g => ({
-    sku: g.type === 'needle' ? g.label : 'POSTER',
-    qty: g.quantity,
-    name: g.type === 'needle' ? g.label : 'o�����'
-  }))
+/**
+ * 从订单 line_items 中推断系列（CON/COG/AES）
+ * 如果所有 line_items 都是同一个系列 → 返回该系列作为默认
+ * 如果混合多个系列或无系列 → 返回 null（不确定，需要人工处理）
+ */
+function inferSeriesFromItems(items: any[]): string | null {
+  const series = new Set<string>();
+  for (const item of items) {
+    const sku = (item.sku || item.variant_sku || '').toUpperCase();
+    const m = sku.match(/^(CON|COG|AES)[-_]/);
+    if (m) series.add(m[1]);
+  }
+  if (series.size === 1) return [...series][0];
+  return null; // 0 或 2+ 系列 → 无法确定
 }
 
 app.get('/api/shopify/status', async (c) => {
@@ -906,16 +898,17 @@ app.get('/api/shopify/orders/deduct', async (c) => {
   const now = Date.now()
   let totalOrders = 0
   let deductedItems: any[] = []
-  let ordersUrl = `https://${storeDomain}/admin/api/${apiVersion}/orders.json?status=any&fulfillment_status=any&created_at_min=${new Date(Date.now() - 7*86400000).toISOString()}&limit=250`
+  let ordersUrl = `https://${storeDomain}/admin/api/${apiVersion}/orders.json?status=any&fulfillment_status=any&updated_at_min=${new Date(Date.now() - 7*86400000).toISOString()}&limit=250`
 
   while (ordersUrl) {
     const resp = await fetch(ordersUrl, { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } })
     if (!resp.ok) return c.json({ error: `Shopify API ${resp.status}: ${(await resp.text()).slice(0,240)}` }, 502)
     const payload = await resp.json() as any
-    const orders = Array.isArray(payload?.orders) ? payload.orders : []
+    let orders = Array.isArray(payload?.orders) ? payload.orders : []
 
-    // Force import a specific order by number
-    if (forceOrder && orders.length === 0) {
+    // Force import a specific order by number (覆盖其他订单)
+    if (forceOrder) {
+      orders = [];
       const forceResp = await fetch(`https://${storeDomain}/admin/api/${apiVersion}/orders.json?name=%23${forceOrder}&status=any&limit=1`, {
         headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' }
       });
@@ -951,13 +944,18 @@ app.get('/api/shopify/orders/deduct', async (c) => {
 
       // Gift deduction from notes
       if (customerNote) {
-        for (const gift of parseGiftSkus(customerNote)) {
-          const gp = await c.env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(gift.sku).first()
+        const defaultSeries = inferSeriesFromItems(order.line_items || []);
+        const parsedGifts = parseOrderNote(customerNote, { defaultSeries: defaultSeries || undefined });
+        for (const gift of parsedGifts) {
+          const sku = gift.type === 'needle' 
+            ? (gift.series ? `${gift.series}-${gift.label}` : gift.label)
+            : 'POSTER';
+          const gp = await c.env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first()
           if (!gp) continue
           const outboundDate = new Date().toISOString().split('T')[0]
           await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-            .bind(gift.sku, gift.qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | ?��?��?��: ${gift.name}`, now).run()
-          deductedItems.push({ sku: gift.sku, qty: gift.qty, order: orderName, item: `???��?�� ${gift.name}` })
+            .bind(sku, gift.quantity, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | Gift: ${sku}`, now).run()
+          deductedItems.push({ sku, qty: gift.quantity, order: orderName, item: `Gift ${sku}` })
         }
       }
       totalOrders++
@@ -973,7 +971,11 @@ app.get('/api/shopify/order/:orderNumber', async (c) => {
   const config = await c.env.DB.prepare("SELECT * FROM carrier_configs WHERE carrier='shopify'").first() as any;
   if (!config) return c.json({ error: 'Shopify not configured' }, 400);
   const accessToken = config.api_key;
-  const storeDomain = config.api_base_url ? new URL(config.api_base_url).hostname : 'dptattoo.myshopify.com';
+  let storeDomain = 'dptattoo.myshopify.com';
+  if (config.api_base_url) {
+    try { storeDomain = new URL(config.api_base_url).hostname; }
+    catch { storeDomain = String(config.api_base_url).replace(/^https?:\/\//, '').replace(/\/.*$/, ''); }
+  }
   const apiVersion = '2024-10';
   const resp = await fetch(`https://${storeDomain}/admin/api/${apiVersion}/orders.json?name=%23${orderNumber}&status=any&limit=10`, {
     headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' }
@@ -1006,7 +1008,11 @@ app.get('/api/shopify/order/:orderNumber/import', async (c) => {
   const config = await c.env.DB.prepare("SELECT * FROM carrier_configs WHERE carrier='shopify'").first() as any;
   if (!config) return c.json({ error: 'Shopify not configured' }, 400);
   const accessToken = config.api_key;
-  const storeDomain = config.api_base_url ? new URL(config.api_base_url).hostname : 'dptattoo.myshopify.com';
+  let storeDomain = 'dptattoo.myshopify.com';
+  if (config.api_base_url) {
+    try { storeDomain = new URL(config.api_base_url).hostname; }
+    catch { storeDomain = String(config.api_base_url).replace(/^https?:\/\//, '').replace(/\/.*$/, ''); }
+  }
   const apiVersion = '2024-10';
   const resp = await fetch(`https://${storeDomain}/admin/api/${apiVersion}/orders.json?name=%23${orderNumber}&status=any&limit=1`, {
     headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' }
@@ -1072,34 +1078,195 @@ app.post('/api/fulfillment/shopify/sync', async (c) => {
   if (!config) return c.json({ error: 'Shopify not configured, run OAuth first' }, 400)
   const token = config.api_key
   const baseUrl = config.api_base_url || 'https://dptattoo.myshopify.com/admin/api/2024-04'
-  const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
-  let page = 1, synced = 0, hasMore = true
+  const mode = c.req.query('mode') || 'incremental'
+  // incremental: 最近30天 updated_at; full: 从 2020 年起 created_at
+  const since = mode === 'full'
+    ? new Date('2020-01-01').toISOString()
+    : new Date(Date.now() - 30 * 86400000).toISOString()
+  let ordersUrl = baseUrl + `/orders.json?limit=250&${mode === 'full' ? 'created_at_min' : 'updated_at_min'}=${since}`
+  let synced = 0, updated = 0
 
-  while (hasMore) {
-    const r = await fetch(baseUrl + '/orders.json?limit=50&created_at_min=' + since + '&page=' + page, {
+  while (ordersUrl) {
+    const r = await fetch(ordersUrl, {
       headers: { 'X-Shopify-Access-Token': token }
     })
+    if (!r.ok) return c.json({ error: `Shopify ${r.status}: ${(await r.text()).slice(0,240)}` }, 502)
     const data = await r.json() as any
     const orders = data.orders || []
-    if (orders.length === 0) { hasMore = false; break }
+    if (orders.length === 0) break
 
     for (const o of orders) {
       const addr = o.shipping_address || o.customer?.default_address || {}
       const now = Date.now()
-      const r2 = await c.env.DB.prepare(`INSERT OR IGNORE INTO orders (order_number,source,status,customer_name,customer_email,country,state,city,zip_code,address,phone,currency,notes,created_at,updated_at) VALUES (?,'shopify','pending',?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .bind(String(o.order_number), o.shipping_address?.name||o.customer?.name||'', o.email||'', addr.country_code||addr.country||'', addr.province||'', addr.city||'', addr.zip||'', addr.address1||'', addr.phone||'', o.currency||'USD', o.note||'', new Date(o.created_at).getTime()||now, now).run()
-      if (r2.meta.changes > 0) {
-        const orderId = r2.meta.last_row_id
+      const customerNote = String(o.note || '').trim()
+
+      // UPSERT into orders table
+      const r2 = await c.env.DB.prepare(`
+        INSERT INTO orders (order_number,source,status,customer_name,customer_email,country,state,city,zip_code,address,phone,currency,notes,created_at,updated_at)
+        VALUES (?,'shopify','pending',?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(order_number) DO UPDATE SET
+          notes=excluded.notes, updated_at=excluded.updated_at, status='pending',
+          customer_name=excluded.customer_name, customer_email=excluded.customer_email,
+          country=excluded.country, state=excluded.state, city=excluded.city,
+          zip_code=excluded.zip_code, address=excluded.address, phone=excluded.phone
+      `)
+        .bind(String(o.order_number), o.shipping_address?.name||o.customer?.name||'', o.email||'',
+          addr.country_code||addr.country||'', addr.province||'', addr.city||'', addr.zip||'',
+          addr.address1||'', addr.phone||'', o.currency||'USD', o.note||'',
+          new Date(o.created_at).getTime()||now, now).run()
+
+      if (r2.meta.changes > 0) synced++
+      else updated++
+
+      // Always refresh order_items (delete old + re-insert)
+      const orderRow = await c.env.DB.prepare('SELECT id FROM orders WHERE order_number = ?').bind(String(o.order_number)).first() as any
+      if (orderRow) {
+        const orderId = orderRow.id
+        await c.env.DB.prepare('DELETE FROM order_items WHERE order_id = ?').bind(orderId).run()
+
+        // Shopify line items
         for (const item of (o.line_items || [])) {
-          await c.env.DB.prepare('INSERT OR IGNORE INTO order_items (order_id,sku,product_name,quantity,unit_price) VALUES (?,?,?,?,?)')
+          await c.env.DB.prepare('INSERT INTO order_items (order_id,sku,product_name,quantity,unit_price) VALUES (?,?,?,?,?)')
             .bind(orderId, item.sku||'', item.name||'', item.quantity||1, Number(item.price)||0).run()
         }
-        synced++
+
+        // Parsed gifts from note
+        if (customerNote) {
+          const defaultSeries = inferSeriesFromItems(o.line_items || []);
+          const parsedGifts = parseOrderNote(customerNote, { defaultSeries: defaultSeries || undefined });
+          for (const gift of parsedGifts) {
+            const sku = gift.type === 'needle'
+              ? (gift.series ? `${gift.series}-${gift.label}` : gift.label)
+              : gift.label;
+            await c.env.DB.prepare('INSERT INTO order_items (order_id,sku,product_name,quantity,unit_price) VALUES (?,?,?,?,?)')
+              .bind(orderId, sku, `Gift: ${sku}`, gift.quantity, 0).run()
+          }
+        }
       }
     }
-    page++
+
+    // Cursor-based pagination via Link header
+    const linkHeader = r.headers.get('link') || ''
+    const relNext = linkHeader.match(/<([^>]+)>;\s*rel="next"/)
+    ordersUrl = relNext ? relNext[1] : null
   }
-  return c.json({ ok: true, synced, message: `Synced ${synced} orders` })
+  return c.json({ ok: true, synced, updated, message: `Synced ${synced} new + ${updated} updated orders` })
+})
+
+// ============ Shopify OAuth Callback ============
+
+app.get('/api/fulfillment/shopify/callback', async (c) => {
+  const code = c.req.query('code');
+  if (!code) return c.text('Missing code', 400);
+  try {
+    // 获取 Shopify 配置中的 client_id 和 client_secret
+    const config = await c.env.DB.prepare("SELECT * FROM carrier_configs WHERE carrier='shopify'").first() as any;
+    if (!config) return c.text('Shopify not configured', 400);
+    let storeDomain = 'dptattoo.myshopify.com';
+  if (config.api_base_url) {
+    try { storeDomain = new URL(config.api_base_url).hostname; }
+    catch { storeDomain = String(config.api_base_url).replace(/^https?:\/\//, '').replace(/\/.*$/, ''); }
+  }
+    let clientId = '7b5a3625ac60ba058a54ca02d675e47a';
+    let clientSecret = '';
+    if (config.extra_config) {
+      try {
+        const ec = JSON.parse(config.extra_config);
+        if (ec.client_id) clientId = ec.client_id;
+      } catch {}
+    }
+    if (config.api_secret) clientSecret = config.api_secret;
+
+    const r = await fetch(`https://${storeDomain}/admin/oauth/access_token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        grant_type: 'authorization_code',
+      }),
+    });
+    const data = await r.json() as any;
+    const accessToken = data.access_token;
+    if (!accessToken) return c.text('Failed to get token: ' + JSON.stringify(data), 400);
+
+    // 保存到 carrier_configs
+    const now = Date.now();
+    await c.env.DB.prepare(`
+      INSERT INTO carrier_configs (carrier, label, api_base_url, api_key, api_secret, extra_config, enabled, created_at)
+      VALUES ('shopify', 'Shopify', ?, ?, ?, ?, 1, ?)
+      ON CONFLICT(carrier) DO UPDATE SET
+        api_key = excluded.api_key, api_secret = excluded.api_secret, extra_config = excluded.extra_config
+    `).bind(
+      `https://${storeDomain}/admin/api/2024-10`,
+      accessToken,
+      clientSecret,
+      JSON.stringify({ scopes: data.scope || '', client_id: clientId }),
+      now
+    ).run();
+
+    return c.text('✅ Shopify 授权成功！可以关闭此页面。');
+  } catch (e: any) {
+    return c.text('Error: ' + e.message, 500);
+  }
+})
+
+// ============ Shopify OAuth Callback (正确路径) ============
+
+app.get('/api/shopify/callback', async (c) => {
+  const code = c.req.query('code');
+  if (!code) return c.text('Missing code', 400);
+  try {
+    const config = await c.env.DB.prepare("SELECT * FROM carrier_configs WHERE carrier='shopify'").first() as any;
+    if (!config) return c.text('Shopify not configured', 400);
+    let storeDomain = 'dptattoo.myshopify.com';
+  if (config.api_base_url) {
+    try { storeDomain = new URL(config.api_base_url).hostname; }
+    catch { storeDomain = String(config.api_base_url).replace(/^https?:\/\//, '').replace(/\/.*$/, ''); }
+  }
+    let clientId = '7b5a3625ac60ba058a54ca02d675e47a';
+    let clientSecret = '';
+    if (config.extra_config) {
+      try {
+        const ec = JSON.parse(config.extra_config);
+        if (ec.client_id) clientId = ec.client_id;
+      } catch {}
+    }
+    if (config.api_secret) clientSecret = config.api_secret;
+
+    const r = await fetch(`https://${storeDomain}/admin/oauth/access_token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        grant_type: 'authorization_code',
+      }),
+    });
+    const data = await r.json() as any;
+    const accessToken = data.access_token;
+    if (!accessToken) return c.text('Failed to get token: ' + JSON.stringify(data), 400);
+
+    const now = Date.now();
+    await c.env.DB.prepare(`
+      INSERT INTO carrier_configs (carrier, label, api_base_url, api_key, api_secret, extra_config, enabled, created_at)
+      VALUES ('shopify', 'Shopify', ?, ?, ?, ?, 1, ?)
+      ON CONFLICT(carrier) DO UPDATE SET
+        api_key = excluded.api_key, api_secret = excluded.api_secret, extra_config = excluded.extra_config
+    `).bind(
+      `https://${storeDomain}/admin/api/2024-10`,
+      accessToken,
+      clientSecret,
+      JSON.stringify({ scopes: data.scope || '', client_id: clientId }),
+      now
+    ).run();
+
+    return c.text('✅ Shopify 授权成功！可以关闭此页面。');
+  } catch (e: any) {
+    return c.text('Error: ' + e.message, 500);
+  }
 })
 
 // ============ Shopify Webhook ============
@@ -1140,12 +1307,17 @@ app.post('/api/shopify/webhook/orders-create', async (c) => {
 
   // Gift deduction
   if (customerNote) {
-    for (const gift of parseGiftSkus(customerNote)) {
-      const gp = await c.env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(gift.sku).first()
+    const defaultSeries = inferSeriesFromItems(order.line_items || []);
+    const parsedGifts = parseOrderNote(customerNote, { defaultSeries: defaultSeries || undefined });
+    for (const gift of parsedGifts) {
+      const sku = gift.type === 'needle'
+        ? (gift.series ? `${gift.series}-${gift.label}` : gift.label)
+        : 'POSTER';
+      const gp = await c.env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first()
       if (!gp) continue
       const outboundDate = new Date().toISOString().split('T')[0]
       await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-        .bind(gift.sku, gift.qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | ?��?��?��: ${gift.name}`, now).run()
+        .bind(sku, gift.quantity, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | Gift: ${sku}`, now).run()
       deductedCount++
     }
   }
@@ -1714,20 +1886,7 @@ app.get('/api/automation/task-counts', async (c) => {
       else if (r.status === 'failed') counts.failed += total;
     }
   } catch {}
-  // VPS Express (has historical data in SQLite)
-  try {
-    const vps = await fetch(`http://163.245.212.169:3000/api/dashboard/status-counts`, { signal: AbortSignal.timeout(3000) });
-    if (vps.ok) {
-      const d = await vps.json() as any;
-      if (d?.counts) {
-        const v = d.counts;
-        if (v.pending) counts.pending = Math.max(counts.pending, v.pending);
-        if (v.leased) counts.leased = Math.max(counts.leased, v.leased);
-        if (v.done) counts.done = Math.max(counts.done, v.done);
-        if (v.failed) counts.failed = Math.max(counts.failed, v.failed);
-      }
-    }
-  } catch {}
+  // 历史数据现取自 D1 daily_task_stats（原 VPS :3000 已于 2026-06 迁云废弃，不再回源）
   // Neon automation_tasks (use neon WebSQL, not HTTP API)
   try {
     const connStr = c.env.NEON_DATABASE_URL;
@@ -1750,11 +1909,7 @@ app.get('/api/automation/task-counts', async (c) => {
 // Debug: check VPS + Neon + D1 raw data
 app.get('/api/automation/task-counts-debug', async (c) => {
   const result: any = { vps: null, neon: null, d1: null, error: null };
-  try {
-    const vps = await fetch(`http://163.245.212.169:3000/api/dashboard/status-counts`, { signal: AbortSignal.timeout(3000) });
-    if (vps.ok) result.vps = await vps.json();
-    else result.vps = { status: vps.status, statusText: vps.statusText };
-  } catch (e: any) { result.vps = { error: e?.message || 'vps timeout/refused' }; }
+  result.vps = 'VPS :3000 已于 2026-06 迁云废弃，历史数据取自 D1/Neon';
   try {
     const connStr = c.env.NEON_DATABASE_URL;
     if (connStr) result.neon = await neonQuery(connStr,
@@ -1867,6 +2022,288 @@ app.post('/api/bot/heartbeat', async (c) => {
   return c.json({ ok: true, botId, ts: now });
 });
 
+// ============ BOT FRONTEND READ ENDPOINTS (A-layer: light up BotWorkerManager) ============
+// Frontend BotWorkerManager already fetches these 3 paths; they were missing server-side,
+// leaving the panel empty. These are read-only mirrors of bot_instances / bot_profile_adjustments
+// plus a static function catalog. No control-plane (start/stop) here.
+
+// Static catalog of the 7 bot functions (ids must match FUNCTION_ICONS/FUNCTION_COLORS in frontend).
+const BOT_FUNCTION_CATALOG: any[] = [
+  {
+    id: 'ig_outreach',
+    name: 'IG 拓客机器人',
+    description: '登录 Instagram 自动浏览/点赞目标纹身师主页与帖子，模拟真人行为积累互动，为主账号沉淀潜在客户。',
+    businessValue: ['沉淀高意向纹身师线索', '提升主页自然触达', '低成本规模化获客'],
+    outputs: ['behavior_logs 行为日志', '潜在客户画像', '互动记录'],
+    useCases: ['新账号冷启动', '日常养号互动', '定向州/标签拓客'],
+    workflow: 'poll → 打开主页 → 浏览/点赞 → 记录行为 → 心跳',
+    browserMode: 'cdp',
+    multiAccount: false,
+    configs: [],
+  },
+  {
+    id: 'supply_analysis',
+    name: '供应商分析机器人',
+    description: '分析纹身耗材供应商页面与竞品，提取价格/品类/评分，沉淀供应链情报。',
+    businessValue: ['供应商比价', '品类缺口发现', '成本优化'],
+    outputs: ['供应商档案', '比价表', '缺货预警'],
+    useCases: ['选品决策', '补货规划', '竞品对标'],
+    workflow: '抓取供应商页 → 解析字段 → 入库 → 生成情报',
+    browserMode: 'playwright',
+    multiAccount: false,
+    configs: [],
+  },
+  {
+    id: 'reddit_intel',
+    name: 'Reddit 舆情机器人',
+    description: '监控 Reddit 纹身相关版块，提取需求与口碑信号，反哺内容选题。',
+    businessValue: ['需求洞察', '口碑监测', '选题灵感'],
+    outputs: ['舆情信号', '热点话题', '用户痛点'],
+    useCases: ['选题挖掘', '品牌监听'],
+    workflow: '订阅版块 → 抓取热帖 → NLP 打标 → 入库',
+    browserMode: 'none',
+    multiAccount: false,
+    configs: [],
+  },
+  {
+    id: 'content_pipeline',
+    name: '内容生产机器人',
+    description: '将采集的素材按品牌调性生成图文/短视频草稿，推进发布队列。',
+    businessValue: ['规模化内容产出', '品牌一致性', '降低人力'],
+    outputs: ['内容草稿', '发布队列任务'],
+    useCases: ['社媒日更', '促销素材', '教程类内容'],
+    workflow: 'claim → 生成 → 审核 → 入队',
+    browserMode: 'persistent',
+    multiAccount: false,
+    configs: [],
+  },
+  {
+    id: 'forum_monitor',
+    name: '论坛监测机器人',
+    description: '监测纹身垂类论坛与社区，提取讨论热点与潜在客户。',
+    businessValue: ['社区洞察', '长尾线索', '趋势预判'],
+    outputs: ['讨论摘要', '线索列表'],
+    useCases: ['社区运营', '趋势捕捉'],
+    workflow: '抓取帖子 → 聚类 → 入库',
+    browserMode: 'none',
+    multiAccount: false,
+    configs: [],
+  },
+  {
+    id: 'product_tracker',
+    name: '竞品商品追踪机器人',
+    description: '追踪竞品店铺上新与价格变动，输出竞品情报。',
+    businessValue: ['竞品上新监控', '价格变动预警', '选品参考'],
+    outputs: ['竞品 SKU', '价格曲线', '上新提醒'],
+    useCases: ['竞品对标', '定价参考'],
+    workflow: '抓竞品页 → diff → 告警',
+    browserMode: 'cdp',
+    multiAccount: false,
+    configs: [],
+  },
+  {
+    id: 'supply_comments',
+    name: '供应商评论分析机器人',
+    description: '分析耗材商品评论，提取质量反馈与差评信号。',
+    businessValue: ['质量反馈', '差评预警', '选品避坑'],
+    outputs: ['评论摘要', '差评信号'],
+    useCases: ['选品质检', '供应商评估'],
+    workflow: '抓评论 → 情感分析 → 入库',
+    browserMode: 'none',
+    multiAccount: false,
+    configs: [],
+  },
+  {
+    id: 'general_intel',
+    name: '通用行业情报机器人',
+    description: '面向任意行业/产品的通用情报采集：追踪竞品新品、产品改进方向、客户抱怨与差评等一系列信号，沉淀可复用的产品与市场情报。不写死垂类，通过配置指定行业/品牌/目标源，可复制到任意新行业。',
+    businessValue: ['跨行业复用', '新品机会发现', '产品改进线索', '客户之声(VoC)监测', '差评/抱怨预警'],
+    outputs: ['行业情报档案', '新品/改进机会清单', '客户抱怨与差评摘要', '竞品对标报告'],
+    useCases: ['新行业市场调研', '新品开发方向', '产品迭代改进', '客户满意度监测', '差评根因分析'],
+    workflow: '配置行业/品牌/目标源 → 抓取竞品页/评论/社区 → AI 分类(新品/改进/抱怨/差评/口碑) → 情感与主题打标 → 入库通用情报表 → 生成机会清单与预警',
+    browserMode: 'none',
+    multiAccount: false,
+    devOnly: true,
+    researchMode: true,
+    defaultBotId: 'general_intel_01',
+    configs: [
+      { key: 'TARGET_INDUSTRY', label: '目标行业', type: 'text', default: '' },
+      { key: 'TARGET_BRANDS', label: '品牌/竞品(逗号分隔)', type: 'text', default: '' },
+      { key: 'SOURCE_URLS', label: '目标源 URL(逗号分隔)', type: 'text', default: '' },
+      { key: 'KEYWORDS', label: '关键词(逗号分隔)', type: 'text', default: '' },
+      { key: 'INTEL_FOCUS', label: '情报聚焦', type: 'select', options: ['new_product', 'improvement', 'complaints', 'reviews', 'all'], default: 'all' },
+    ],
+  },
+];
+
+// Map a bot_instances.meta → functionId (best-effort). Unmatched bots still count in the
+// top "运行中" counter via workers[].running; they just won't light a specific card.
+function inferFunctionId(meta: any): string | undefined {
+  if (!meta || typeof meta !== 'object') return undefined;
+  const mode = String(meta.mode || '').toLowerCase();
+  const role = String(meta.role || '').toLowerCase();
+  if (mode === 'persistent') return 'content_pipeline';
+  if (role === 'data') return 'supply_analysis';
+  if (mode.includes('comment')) return 'supply_comments';
+  if (mode.includes('supply') || mode.includes('competitive')) return 'supply_analysis';
+  if (mode.includes('real') || mode.includes('browse') || mode.includes('ig')) return 'ig_outreach';
+  return undefined;
+}
+
+app.get('/api/bot/functions', async (c) => {
+  return c.json({ ok: true, functions: BOT_FUNCTION_CATALOG });
+});
+
+app.get('/api/bot/workers', async (c) => {
+  try {
+    await ensureBotTables(c.env.DB);
+    const rows = await c.env.DB.prepare(
+      'SELECT bot_id, host, version, status, registered_at, last_heartbeat, meta FROM bot_instances'
+    ).all();
+    const now = Date.now();
+    const STALE_MS = 3 * 60 * 1000; // treat heartbeats older than 3 min as not running
+    const workers = (rows.results || []).map((r: any) => {
+      let meta: any = {};
+      try { meta = r.meta ? JSON.parse(r.meta) : {}; } catch {}
+      const lastHb = Number(r.last_heartbeat || 0);
+      const running = r.status === 'online' && (now - lastHb) < STALE_MS;
+      return {
+        botId: r.bot_id,
+        host: r.host || '',
+        version: r.version || '',
+        running,
+        functionId: inferFunctionId(meta),
+        startedAt: Number(r.registered_at || lastHb || 0),
+        lastHeartbeat: lastHb,
+      };
+    });
+    return c.json({ ok: true, workers });
+  } catch (e: any) {
+    return c.json({ ok: false, workers: [], error: String(e?.message || e) }, 500);
+  }
+});
+
+app.get('/api/bot/learn/status', async (c) => {
+  try {
+    await ensureBotTables(c.env.DB);
+    const rows = await c.env.DB.prepare(
+      'SELECT bot_id, adjustments_json, analysis_json, confidence, analyzed_at FROM bot_profile_adjustments'
+    ).all();
+    const profiles = (rows.results || []).map((r: any) => {
+      let adjustments: any = {};
+      try { adjustments = r.adjustments_json ? JSON.parse(r.adjustments_json) : {}; } catch {}
+      return {
+        botId: r.bot_id,
+        adjustments,
+        confidence: Number(r.confidence || 0),
+        analyzedAt: Number(r.analyzed_at || 0),
+      };
+    });
+    return c.json({ ok: true, profiles });
+  } catch (e: any) {
+    return c.json({ ok: false, profiles: [], error: String(e?.message || e) }, 500);
+  }
+});
+
+// ── Bot control plane (B layer): frontend → cloud-api → VPS pm2 ──────────
+// Map a frontend functionId to the pm2 process name on the VPS.
+const FUNCTION_TO_PM2: Record<string, string> = {
+  ig_outreach: 'bot-worker',
+  competitor_ig: 'competitor-ig-monitor',
+  supply_analysis: 'backlink-worker',
+  reddit_intel: 'backlink-worker',
+  content_pipeline: 'bot-worker',
+  general_intel: 'general-intel',
+};
+
+// Enqueue a start command for a function.
+app.post('/api/bot/worker/start', async (c) => {
+  try {
+    await ensureBotTables(c.env.DB);
+    const body = await c.req.json().catch(() => ({}));
+    const functionId = body.functionId || body.botId;
+    if (!functionId) return c.json({ ok: false, error: 'functionId required' }, 400);
+    if (!FUNCTION_TO_PM2[functionId]) {
+      return c.json({ ok: false, error: `no runnable process for function ${functionId}` }, 400);
+    }
+    const id = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const now = Date.now();
+    const envJson = body.env ? JSON.stringify(body.env) : null;
+    await c.env.DB.prepare(
+      `INSERT INTO bot_commands (id, function_id, action, status, env, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`
+    ).bind(id, functionId, 'start', 'pending', envJson, now, now).run();
+    return c.json({ ok: true, commandId: id, functionId, pm2: FUNCTION_TO_PM2[functionId] });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e) }, 500);
+  }
+});
+
+// Enqueue a stop command for a function.
+app.post('/api/bot/worker/stop', async (c) => {
+  try {
+    await ensureBotTables(c.env.DB);
+    const body = await c.req.json().catch(() => ({}));
+    const functionId = body.functionId || body.botId;
+    if (!functionId) return c.json({ ok: false, error: 'functionId required' }, 400);
+    if (!FUNCTION_TO_PM2[functionId]) {
+      return c.json({ ok: false, error: `no runnable process for function ${functionId}` }, 400);
+    }
+    const id = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const now = Date.now();
+    const envJson = body.env ? JSON.stringify(body.env) : null;
+    await c.env.DB.prepare(
+      `INSERT INTO bot_commands (id, function_id, action, status, env, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`
+    ).bind(id, functionId, 'stop', 'pending', envJson, now, now).run();
+    return c.json({ ok: true, commandId: id, functionId, pm2: FUNCTION_TO_PM2[functionId] });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e) }, 500);
+  }
+});
+
+// VPS listener polls this (guarded by BOT_API_TOKEN). Returns pending commands
+// and marks them claimed so each is executed exactly once.
+app.get('/api/bot/commands', async (c) => {
+  try {
+    await ensureBotTables(c.env.DB);
+    const token = c.req.query('token');
+    const expected = c.env.BOT_API_TOKEN || 'vps-bot-secret-2024';
+    if (token !== expected) return c.json({ ok: false, error: 'invalid token' }, 401);
+    const rows = await c.env.DB.prepare(
+      `SELECT * FROM bot_commands WHERE status = 'pending' ORDER BY created_at ASC`
+    ).all();
+    const cmds = (rows.results || []).map((r: any) => ({
+      id: r.id, functionId: r.function_id, action: r.action,
+      pm2: FUNCTION_TO_PM2[r.function_id] || null,
+      env: r.env ? (() => { try { return JSON.parse(r.env); } catch { return {}; } })() : {},
+    }));
+    for (const r of (rows.results || [])) {
+      await c.env.DB.prepare(`UPDATE bot_commands SET status='claimed', claimed_by=?, updated_at=? WHERE id=?`)
+        .bind('listener', Date.now(), r.id).run();
+    }
+    return c.json({ ok: true, commands: cmds });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e) }, 500);
+  }
+});
+
+// Listener reports execution result (optional, for frontend status display).
+app.post('/api/bot/commands/report', async (c) => {
+  try {
+    await ensureBotTables(c.env.DB);
+    const body = await c.req.json().catch(() => ({}));
+    const token = c.req.query('token') || body.token;
+    const expected = c.env.BOT_API_TOKEN || 'vps-bot-secret-2024';
+    if (token !== expected) return c.json({ ok: false, error: 'invalid token' }, 401);
+    const { id, ok, error } = body;
+    if (!id) return c.json({ ok: false, error: 'id required' }, 400);
+    await c.env.DB.prepare(`UPDATE bot_commands SET status=?, error_reason=?, updated_at=? WHERE id=?`)
+      .bind(ok ? 'done' : 'error', error || null, Date.now(), id).run();
+    return c.json({ ok: true });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e) }, 500);
+  }
+});
+
 // Ensure bot tables exist in D1
 async function ensureBotTables(db: D1Database) {
   try { await db.prepare(`CREATE TABLE IF NOT EXISTS bot_tasks (
@@ -1899,6 +2336,14 @@ async function ensureBotTables(db: D1Database) {
     day TEXT NOT NULL, status TEXT NOT NULL, cnt INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (day, status)
   )`).run(); } catch {}
+  // Control-plane command queue: frontend (or API) enqueues start/stop; the
+  // VPS bot-control-listener polls and executes via pm2.
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS bot_commands (
+    id TEXT PRIMARY KEY, function_id TEXT NOT NULL, action TEXT NOT NULL,
+    status TEXT DEFAULT 'pending', claimed_by TEXT, error_reason TEXT,
+    created_at INTEGER, updated_at INTEGER
+  )`).run(); } catch {}
+  try { await db.prepare(`ALTER TABLE bot_commands ADD COLUMN env TEXT`).run(); } catch {}
 }
 
 app.get('/api/automation/neon-tasks', async (c) => {
@@ -2274,18 +2719,7 @@ app.all('/api/automation/observations', async (c) => {
   if (c.req.method === 'GET') {
     const limit = Math.min(50, Math.max(1, Number(c.req.query('limit')) || 20));
     // ?����?��? VPS Express�ꡧ��D����??��y?Yo? summary_json / profile_facts_json��?
-    try {
-      const vps = await fetch(`http://163.245.212.169:3000/api/bot/observations?limit=${limit}`, { signal: AbortSignal.timeout(3000) });
-      if (vps.ok) {
-        const data = await vps.json() as any;
-        const items = (data.observations || []).map((o: any) => ({
-          bot_id: o.botId, artist_handle: o.artistHandle || '', mode: o.mode,
-          summary_json: JSON.stringify(o.summary || {}), profile_facts_json: JSON.stringify(o.profileFacts || {}),
-          created_at: o.createdAt
-        }));
-        return c.json({ ok: true, items });
-      }
-    } catch {}
+    // VPS :3000 已于 2026-06 迁云废弃，数据直接取自 Neon
     // Fallback: Neon
     try {
       const connStr = c.env.NEON_DATABASE_URL;
@@ -3839,6 +4273,103 @@ app.post('/api/publish/ingest', async (c) => {
   return c.json({ ok: true, id });
 });
 
+// Shared: sync shipped Shopify orders into inventory_outbounds (idempotent via per-item dedup).
+// opts.full = true → ignore the 7-day updated_at window and sweep ALL shipped orders (backfill mode).
+// Shared: sync shipped Shopify orders into inventory_outbounds (idempotent via per-item dedup).
+// opts.full = true → ignore the 7-day updated_at window and sweep ALL shipped orders (backfill mode).
+// opts.sinceId → resume cursor (Shopify order id). opts.maxOrders → hard cap per invocation so a
+//   single Worker request NEVER exceeds Cloudflare's request/CPU limit — the full sweep is chunked,
+//   the caller loops passing nextSinceId until done=true. (Returning one giant page loop inside one
+//   request was getting the Worker killed silently on large stores.)
+async function runShopifySync(env: any, opts: { full?: boolean; sinceId?: number; maxOrders?: number } = {}) {
+  const config = await env.DB.prepare("SELECT * FROM carrier_configs WHERE carrier='shopify'").first() as any;
+  if (!config) { console.log('[shopify-sync] not configured'); return { processed: 0, items: 0, skippedNoSku: [] as string[], done: true, nextSinceId: null }; }
+  const accessToken = config.api_key;
+  let storeDomain = 'dptattoo.myshopify.com';
+  if (config.api_base_url) {
+    try { storeDomain = new URL(config.api_base_url).hostname; }
+    catch { storeDomain = String(config.api_base_url).replace(/^https?:\/\//, '').replace(/\/.*$/, ''); }
+  }
+  const apiVersion = '2024-10';
+  const maxOrders = opts.maxOrders ?? 50;
+  let sinceId = opts.sinceId || 0;
+  let totalOrders = 0, deductedItems = 0, skippedNoSku: string[] = [];
+  let lastProcessedId = sinceId;
+  let reachedCap = false;
+  while (true) {
+    let ordersUrl = `https://${storeDomain}/admin/api/${apiVersion}/orders.json?status=any&fulfillment_status=shipped&limit=250&since_id=${sinceId}`;
+    if (!opts.full) {
+      // Incremental mode: only orders updated in the last 7 days (efficient for the normal case).
+      // NOTE: any shipped order NOT updated in 7+ days is permanently outside this window — use
+      // the full-backfill endpoint (POST /api/sync/shopify-orders) to catch that historical backlog.
+      ordersUrl += `&updated_at_min=${new Date(Date.now() - 7 * 86400000).toISOString()}`;
+    }
+    const resp = await fetch(ordersUrl, { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } });
+    if (!resp.ok) { console.log('[shopify-sync] Shopify error:', resp.status); break; }
+    const orders = ((await resp.json()) as any).orders || [];
+    if (orders.length === 0) break;
+    for (const order of orders) {
+      if (totalOrders >= maxOrders) { reachedCap = true; break; }
+      const orderNumber = String(order.order_number || '');
+      // Store the human order name "#4737" (NOT the internal numeric Shopify id) so the
+      // frontend can display/search it directly. Matches the manual import interface.
+      const orderId = orderNumber ? '#' + orderNumber : String(order.id);
+      totalOrders++;
+      lastProcessedId = Number(order.id);
+      let hadSku = false;
+      for (const item of (order.line_items || [])) {
+        const sku = (item.sku || item.variant_sku || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+        if (!sku || item.quantity <= 0) continue;
+        hadSku = true;
+        // Ensure the parent product exists (inventory_outbounds.product_sku → inventory_products.sku FK).
+        // Shopify SKUs may not yet live in the warehouse products table, so create a minimal stub if missing.
+        try {
+          const prod = await env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first();
+          if (!prod) {
+            await env.DB.prepare(`INSERT INTO inventory_products (sku,name,category,vendor,unit,unit_price,reorder_point,reorder_qty,lead_time_days,moq,carton_qty,source,shopify_variant_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+              .bind(sku, (item.title || sku), 'General', '', 'Box', 0, 50, 1000, 45, 500, 100, 'shopify', item.variant_id || null, Date.now(), Date.now()).run();
+          }
+        } catch (e: any) { console.log('[shopify-sync] stub product ensure failed for', sku, ':', e?.message || e); }
+        // Dedup per (order, sku) so a prior partial/mismatched row never blocks a correct re-sync.
+        const existing = await env.DB.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? AND product_sku = ? LIMIT 1').bind(orderId, sku).first();
+        if (existing) continue;
+        const note = `Shopify Order #${orderNumber}`;
+        await env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
+          .bind(sku, item.quantity, 'B2C', ((order.customer?.firstName || '') + ' ' + (order.customer?.lastName || '')).trim() || order.customer?.email || '', orderId, (order.created_at || '').slice(0, 10), note, Date.now()).run();
+        deductedItems++;
+      }
+      if (!hadSku) skippedNoSku.push('#' + orderNumber);
+    }
+    if (reachedCap) break;
+    if (orders.length < 250) break; // last page → sweep complete
+    sinceId = lastProcessedId;
+  }
+  const done = !reachedCap;
+  console.log('[shopify-sync] chunk:', totalOrders, 'orders,', deductedItems, 'items; done=', done, 'nextSinceId=', done ? null : lastProcessedId, '; skipped(no-sku):', skippedNoSku.join(','));
+  return { processed: totalOrders, items: deductedItems, skippedNoSku, done, nextSinceId: done ? null : lastProcessedId };
+}
+
+// Manual full backfill — sweeps ALL shipped orders (no 7-day window) to recover missed history
+// like #4737/#4738. Auth mirrors the bot endpoints (token=vps-bot-secret-2024).
+app.post('/api/sync/shopify-orders', async (c) => {
+  const token = c.req.query('token');
+  if (token !== 'vps-bot-secret-2024') return c.json({ error: 'unauthorized' }, 401);
+  const sinceId = Number(c.req.query('since_id') || 0) || 0;
+  try {
+    const result = await runShopifySync(c.env, { full: true, sinceId });
+    return c.json({ ok: true, ...result });
+  } catch (e: any) {
+    console.log('[shopify-sync] endpoint error:', e?.message || e, e?.stack || '');
+    return c.json({ ok: false, error: e?.message || String(e), stack: e?.stack || '' }, 200);
+  }
+});
+
+// Scheduled cron: sweep ALL shipped Shopify orders in the last 7 days into inventory_outbounds.
+// Restored to the long-standing inline logic that "ran fine for a long time" — one scheduled
+// invocation processes the ENTIRE window via Link-header pagination (no per-run order cap, which
+// previously caused the cron to only ever touch the first ~50 orders and silently miss the rest).
+// Idempotent via per-order dedup. Safety: ensure parent product exists (FK) and never let one bad
+// row abort the whole batch.
 export default {
   fetch: app.fetch,
   async scheduled(event: any, env: any, ctx: any) {
@@ -3847,28 +4378,44 @@ export default {
       const config = await env.DB.prepare("SELECT * FROM carrier_configs WHERE carrier='shopify'").first() as any;
       if (!config) { console.log('[scheduled] Shopify not configured'); return; }
       const accessToken = config.api_key;
-      const storeDomain = config.api_base_url ? new URL(config.api_base_url).hostname : 'dptattoo.myshopify.com';
+      let storeDomain = 'dptattoo.myshopify.com';
+      if (config.api_base_url) {
+        try { storeDomain = new URL(config.api_base_url).hostname; }
+        catch { storeDomain = String(config.api_base_url).replace(/^https?:\/\//, '').replace(/\/.*$/, ''); }
+      }
       const apiVersion = '2024-10';
-      let ordersUrl = `https://${storeDomain}/admin/api/${apiVersion}/orders.json?status=any&fulfillment_status=shipped&created_at_min=${new Date(Date.now() - 7*86400000).toISOString()}&limit=250`;
-      let totalOrders = 0, deductedItems: any[] = [];
+      let ordersUrl = `https://${storeDomain}/admin/api/${apiVersion}/orders.json?status=any&fulfillment_status=shipped&created_at_min=${new Date(Date.now() - 7 * 86400000).toISOString()}&limit=250`;
+      let totalOrders = 0, deductedItems = 0;
       while (ordersUrl) {
         const resp = await fetch(ordersUrl, { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } });
         if (!resp.ok) { console.log('[scheduled] Shopify error:', resp.status); break; }
         const payload = await resp.json() as any;
         const orders = payload.orders || [];
         for (const order of orders) {
-          const orderId = String(order.id);
           const orderNumber = String(order.order_number || '');
+          // Store the human order name "#4737" (NOT the internal numeric Shopify id) so the
+          // frontend can display/search it directly. Matches the manual import interface.
+          const orderId = orderNumber ? '#' + orderNumber : String(order.id);
           totalOrders++;
           const existing = await env.DB.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? LIMIT 1').bind(orderId).first();
           if (existing) continue;
           for (const item of (order.line_items || [])) {
             const sku = (item.sku || item.variant_sku || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
             if (!sku || item.quantity <= 0) continue;
+            // Ensure parent product exists (inventory_outbounds.product_sku → inventory_products.sku FK).
+            try {
+              const prod = await env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first();
+              if (!prod) {
+                await env.DB.prepare(`INSERT INTO inventory_products (sku,name,category,vendor,unit,unit_price,reorder_point,reorder_qty,lead_time_days,moq,carton_qty,source,shopify_variant_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+                  .bind(sku, (item.title || sku), 'General', '', 'Box', 0, 50, 1000, 45, 500, 100, 'shopify', item.variant_id || null, Date.now(), Date.now()).run();
+              }
+            } catch (e: any) { console.log('[scheduled] stub product ensure failed for', sku, ':', e?.message || e); }
             const note = `Shopify Order #${orderNumber}`;
-            await env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-              .bind(sku, item.quantity, 'B2C', (order.customer?.firstName||'')+' '+(order.customer?.lastName||'') || order.customer?.email || '', orderId, (order.created_at||'').slice(0,10), note, Date.now()).run();
-            deductedItems.push({ sku, qty: item.quantity });
+            try {
+              await env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
+                .bind(sku, item.quantity, 'B2C', ((order.customer?.firstName || '') + ' ' + (order.customer?.lastName || '')).trim() || order.customer?.email || '', orderId, (order.created_at || '').slice(0, 10), note, Date.now()).run();
+              deductedItems++;
+            } catch (e: any) { console.log('[scheduled] insert failed for', sku, ':', e?.message || e); }
           }
         }
         ordersUrl = null;
@@ -3876,7 +4423,18 @@ export default {
         const relNext = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
         if (relNext) ordersUrl = relNext[1];
       }
-      console.log('[scheduled] done:', totalOrders, 'orders,' , deductedItems.length, 'items');
+      // Rolling retention (user-approved): keep only the newest 5000 outbound rows.
+      // Beyond that, old records are physically purged from D1 ("new replaces old").
+      // Keep D1 lean: hot inventory data only; bulky/cold data (reviews, chat transcripts,
+      // competitor snapshots) goes to R2 later. 2000 rows ≈ 1-2 months of B2C traceability.
+      // Currently a no-op at 609 rows; self-manages once we approach 2000.
+      try {
+        const del = await env.DB.prepare(
+          `DELETE FROM inventory_outbounds WHERE id IN (SELECT id FROM inventory_outbounds ORDER BY id DESC LIMIT -1 OFFSET 2000)`
+        ).run();
+        if (del.meta && del.meta.changes) console.log('[scheduled] retention purged', del.meta.changes, 'old rows');
+      } catch (e: any) { console.log('[scheduled] retention cleanup error:', e?.message || e); }
+      console.log('[scheduled] done:', totalOrders, 'orders,', deductedItems, 'items');
     } catch (e: any) { console.log('[scheduled] error:', e?.message || e); }
   }
 };

@@ -91,7 +91,7 @@ export default function OrderManager() {
             <strong>📝 Notes:</strong> {selected.notes}
           </div>
         )}
-        {selected.gifts && selected.gifts.length > 0 && (
+        {selected.gifts?.length > 0 && (
           <div style={{ marginBottom: 16 }}>
             <h3>🎁 Gifts</h3>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -111,7 +111,7 @@ export default function OrderManager() {
             </table>
           </div>
         )}
-        {selected.items && selected.items.length > 0 && (
+        {selected.items?.length > 0 && (
           <div>
             <h3>Items</h3>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>

@@ -10,12 +10,9 @@ import {
   Users,
   ShoppingBag,
   Clock,
-  Clock,
   Flame,
   Search,
   Target,
-  Lightbulb,
-  Building2,
   BarChart3,
   LogIn,
   LogOut,
@@ -55,17 +52,16 @@ import OrderManager from './components/OrderManager';
 import BotWorkerManager from './components/BotWorkerManager';
 import BotTaskStatus from './components/BotTaskStatus';
 import PublishCalendar from './components/PublishCalendar';
-import ContentIntelligence from './components/ContentIntelligence';
-import CompetitorIntelligence from './components/CompetitorIntelligence';
 import MarketIntelligence from './components/MarketIntelligence';
 import ContentOperations from './components/ContentOperations';
+
 import InkFlowOutreach from './components/InkFlowOutreach';
 import EmailAuthForm from './components/EmailAuthForm';
 import ScrapeConfig from './components/ScrapeConfig';
 import AdminUsers from './components/AdminUsers';
 
 
-type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'content-intelligence' | 'competitor-intelligence' | 'market-intelligence' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'settings' | 'publish' | 'scrape' | 'product-catalog' | 'new-arrivals' | 'sales-chat' | 'admin' | 'inkflow-outreach';
+type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'market-intelligence' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'settings' | 'publish' | 'scrape' | 'product-catalog' | 'new-arrivals' | 'sales-chat' | 'admin' | 'inkflow-outreach';
 
 const DynamicLoad = ({ component: load, fallback }: { component: () => Promise<any>, fallback?: any }) => {
   const [Comp, setComp] = useState<any>(null);
@@ -86,8 +82,6 @@ const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab
     { id: 'analyzer', label: 'Artist Analyzer', icon: Instagram },
     { id: 'training', label: 'AI Training', icon: MessageSquare },
     { id: 'crm', label: 'CRM (Lifecycle)', icon: Users },
-    { id: 'content-intelligence', label: 'Content Intelligence', icon: Lightbulb },
-    { id: 'competitor-intelligence', label: 'Competitor Intelligence', icon: Building2 },
     { id: 'market-intelligence', label: 'Market Intelligence', icon: BarChart3 },
     { id: 'inventory', label: 'Inventory', icon: Box },
     { id: 'product-catalog', label: '商品知识库', icon: Database },
@@ -173,7 +167,7 @@ const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab
 
           <div className="space-y-1">
             <p className="px-4 text-[10px] font-black text-zinc-600 uppercase tracking-widest mb-2">Intelligence</p>
-            {allTabs.filter(t => ['training','crm','content-intelligence','competitor-intelligence','market-intelligence'].includes(t.id)).map(renderTab)}
+            {allTabs.filter(t => ['training','crm','market-intelligence'].includes(t.id)).map(renderTab)}
           </div>
 
           <div className="space-y-1">
@@ -413,9 +407,8 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
           {activeTab === 'dashboard' && <Dashboard onNavigate={setActiveTab} />}
           {activeTab === 'outreach' && <ShopOutreach onNavigate={setActiveTab} />}
           {activeTab === 'analyzer' && <ArtistAnalyzer />}
-          {activeTab === 'training' && <ChatTrainer />}{activeTab === 'competitor-intelligence' && <CompetitorIntelligence />}
+          {activeTab === 'training' && <ChatTrainer />}
               {activeTab === 'market-intelligence' && <MarketIntelligence />}
-              {activeTab === 'content-intelligence' && <ContentIntelligence />}
           {activeTab === 'crm' && <CRMManager />}
           {activeTab === 'inventory' && <InventoryManager />}
           {activeTab === 'product-catalog' && <ProductCatalog />}

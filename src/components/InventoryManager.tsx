@@ -916,7 +916,7 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh }: { o
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #27272a' }}>
-                {['日期', '型号', '名称', '数量', '渠道', '客户', '备注'].map(h => (
+                {['日期', '型号', '名称', '数量', '渠道', '客户', '备注', '操作'].map(h => (
                   <th key={h} style={{ padding: '8px 10px', textAlign: 'left', color: '#71717a', fontWeight: 600 }}>{h}</th>
                 ))}
               </tr>
@@ -935,6 +935,9 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh }: { o
                   </td>
                   <td style={{ padding: '8px 10px', color: '#60a5fa' }}>{r.customer_name || '—'}</td>
                   <td style={{ padding: '8px 10px', color: '#71717a' }}>{r.note || ''}</td>
+                  <td style={{ padding: '8px 10px' }}>
+                    <button onClick={async()=>{if(!confirm('删除 '+r.product_sku+'?'))return;try{await api.deleteOutbound(r.id);onRefresh()}catch(e:any){alert(e.message||e)}}} style={{ padding:'2px 4px', borderRadius:3, border:'1px solid #ef4444', background:'transparent', color:'#ef4444', fontSize:9, cursor:'pointer' }}>🗑</button>
+                  </td>
                 </tr>
               ))}
             </tbody>

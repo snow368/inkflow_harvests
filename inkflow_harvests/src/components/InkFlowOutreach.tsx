@@ -23,13 +23,20 @@ import {
   Filter,
   ExternalLink,
   UserCheck,
+  Lightbulb,
+  Radar,
+  GitMerge,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import SeoKeywordTool from './SeoKeywordTool';
 import OgChecker from './OgChecker';
 import ContentGapAnalyzer from './ContentGapAnalyzer';
+import SeoBoardView from './SeoBoardView';
 import SeoSkillLibrary from './SeoSkillLibrary';
+import TechBorrowing from './TechBorrowing';
+import NicheRadar from './NicheRadar';
+import OpportunityMatrix from './OpportunityMatrix';
 
 const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30',
@@ -117,8 +124,9 @@ function DMTemplateSection({ target }: { target: any }) {
 }
 
 export default function InkFlowOutreach() {
-  const [section, setSection] = useState<'outreach' | 'seo'>('outreach');
-  const [seoTool, setSeoTool] = useState<'keyword-cluster' | 'og-checker' | 'content-gap' | 'skill-library'>('keyword-cluster');
+  const [section, setSection] = useState<'outreach' | 'seo' | 'product-strategy'>('outreach');
+  const [seoTool, setSeoTool] = useState<'keyword-cluster' | 'og-checker' | 'content-gap' | 'skill-library' | 'seo-board'>('keyword-cluster');
+  const [strategyTool, setStrategyTool] = useState<'tech-borrowing' | 'niche-radar' | 'opportunity-matrix'>('opportunity-matrix');
   const [activeView, setActiveView] = useState<'stats' | 'candidates' | 'targets' | 'target-detail'>('stats');
   const [candidates, setCandidates] = useState<any[]>([]);
   const [targets, setTargets] = useState<any[]>([]);
@@ -269,6 +277,11 @@ export default function InkFlowOutreach() {
           section === 'seo' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}>
         🔍 SEO 工具
       </button>
+      <button onClick={() => setSection('product-strategy')}
+        className={cn('px-4 py-1.5 text-xs font-semibold rounded-md transition-colors',
+          section === 'product-strategy' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200')}>
+        💡 产品战略
+      </button>
     </div>
   );
 
@@ -298,11 +311,92 @@ export default function InkFlowOutreach() {
               seoTool === 'skill-library' ? 'bg-rose-600/30 text-rose-400' : 'text-slate-500 hover:text-slate-300')}>
             📚 技能知识库
           </button>
+          <button onClick={() => setSeoTool('seo-board')}
+            className={cn('px-3 py-1 text-[10px] font-semibold rounded-md transition-colors',
+              seoTool === 'seo-board' ? 'bg-purple-600/30 text-purple-400' : 'text-slate-500 hover:text-slate-300')}>
+            📊 SEO 进度看板
+          </button>
         </div>
         {seoTool === 'keyword-cluster' ? <SeoKeywordTool /> :
          seoTool === 'og-checker' ? <OgChecker /> :
          seoTool === 'content-gap' ? <ContentGapAnalyzer /> :
+         seoTool === 'seo-board' ? <SeoBoardView /> :
          <SeoSkillLibrary />}
+      </div>
+    );
+  }
+
+  // ---- PRODUCT STRATEGY SECTION ----
+  if (section === 'product-strategy') {
+    return (
+      <div className="space-y-4">
+        {sectionTabs}
+
+        {/* Research input */}
+        <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/60">
+          <h3 className="text-sm font-semibold text-slate-200 mb-3">{'\uD83D\uDD0D'} 行业/品类研究</h3>
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <label className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs cursor-pointer border transition-colors', 'bg-slate-800 border-purple-500/40 text-purple-300')}>
+                <input type="radio" name="research-category" value="hardware" defaultChecked className="accent-purple-500" />
+                硬件/软硬件结合
+              </label>
+              <label className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs cursor-pointer border transition-colors', 'bg-slate-800 border-slate-700 text-slate-400')}>
+                <input type="radio" name="research-category" value="software" className="accent-purple-500" />
+                软件品类
+              </label>
+            </div>
+            <input id="research-industry" placeholder="行业/品类 (如: 纹身机、3D打印笔)" className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white placeholder-slate-500" />
+            <input id="research-keywords" placeholder="关键词 (逗号分隔)" className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white placeholder-slate-500" />
+            <input id="research-desc" placeholder="研究目的 (可选)" className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white placeholder-slate-500" />
+            <button id="research-submit" onClick={async () => {
+              const category = (document.querySelector('input[name="research-category"]:checked') as HTMLInputElement)?.value || 'hardware';
+              const industry = (document.getElementById('research-industry') as HTMLInputElement)?.value;
+              const keywords = (document.getElementById('research-keywords') as HTMLInputElement)?.value;
+              const desc = (document.getElementById('research-desc') as HTMLInputElement)?.value;
+              if (!industry && !keywords) { alert('请输入行业或关键词'); return; }
+              const statusEl = document.getElementById('research-status');
+              if (statusEl) { statusEl.classList.remove('hidden'); statusEl.textContent = '提交中...'; }
+              try {
+                const res = await fetch('/api/research', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ category, industry, keywords, description: desc }),
+                });
+                const data = await res.json();
+                if (data.ok && statusEl) {
+                  statusEl.textContent = `研究请求已提交 (ID: ${data.requestId})，等待 Agent 处理...`;
+                } else if (statusEl) {
+                  statusEl.textContent = '提交失败: ' + (data.error || 'unknown');
+                }
+              } catch (e: any) {
+                if (statusEl) statusEl.textContent = '提交出错: ' + e.message;
+              }
+            }} className="self-start px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-sm font-medium text-white transition-colors">{'\uD83D\uDCDD'} 提交研究请求</button>
+            <div id="research-status" className="text-xs text-slate-500 hidden"></div>
+          </div>
+        </div>
+        {/* Product Strategy sub-tabs */}
+        <div className="flex gap-1 bg-slate-800/30 rounded-lg p-0.5 border border-slate-700/30 w-fit flex-wrap">
+          <button onClick={() => setStrategyTool('opportunity-matrix')}
+            className={cn('px-3 py-1 text-[10px] font-semibold rounded-md transition-colors flex items-center gap-1',
+              strategyTool === 'opportunity-matrix' ? 'bg-teal-600/30 text-teal-400' : 'text-slate-500 hover:text-slate-300')}>
+            <GitMerge size={12} /> 机会矩阵
+          </button>
+          <button onClick={() => setStrategyTool('niche-radar')}
+            className={cn('px-3 py-1 text-[10px] font-semibold rounded-md transition-colors flex items-center gap-1',
+              strategyTool === 'niche-radar' ? 'bg-cyan-600/30 text-cyan-400' : 'text-slate-500 hover:text-slate-300')}>
+            <Radar size={12} /> 机会雷达
+          </button>
+          <button onClick={() => setStrategyTool('tech-borrowing')}
+            className={cn('px-3 py-1 text-[10px] font-semibold rounded-md transition-colors flex items-center gap-1',
+              strategyTool === 'tech-borrowing' ? 'bg-amber-600/30 text-amber-400' : 'text-slate-500 hover:text-slate-300')}>
+            <Lightbulb size={12} /> 技术借鉴
+          </button>
+        </div>
+        {strategyTool === 'opportunity-matrix' ? <OpportunityMatrix /> :
+         strategyTool === 'niche-radar' ? <NicheRadar /> :
+         <TechBorrowing />}
       </div>
     );
   }

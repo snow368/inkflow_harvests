@@ -75,7 +75,7 @@ export default function InventoryManager() {
       } else {
         await api.recordOutbound({ product_sku: sku, quantity: qty, channel: 'B2C', customer_name: '语音出库', shopify_order_id: '', outbound_date: new Date().toISOString().slice(0,10), note: '语音出库' });
       }
-      await fetch('https://harvests-cloud-api.inkflowapp.workers.dev/api/voice/log', {
+      await fetch('/api/voice/log', {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ transcript, parsed_sku: sku, parsed_qty: qty, matched_product: sku, success: 1 })
       }).catch(() => {});
@@ -912,7 +912,10 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh, setMe
   const [pickFilter, setPickFilter] = useState<'all'|'oos'|'unpicked'>('unpicked');
   const [editRowId, setEditRowId] = useState<number|null>(null);
   const [editRowData, setEditRowData] = useState<any>({});
-  const apiBase = 'https://harvests-cloud-api.inkflowapp.workers.dev';
+  const [addOrderSku, setAddOrderSku] = useState('');
+  const [addOrderQty, setAddOrderQty] = useState(0);
+  const [addingOrder, setAddingOrder] = useState<string|null>(null);
+  const apiBase = '';
 
   const record = async () => {
     if (!sku || !qty) return;
@@ -1536,7 +1539,7 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh, setMe
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #27272a' }}>
-                {['日期', '型号', '名称', '数量', '渠道', '客户', '备注'].map(h => (
+                {['日期', '型号', '名称', '数量', '渠道', '客户', '备注', '操作'].map(h => (
                   <th key={h} style={{ padding: '8px 10px', textAlign: 'left', color: '#71717a', fontWeight: 600 }}>{h}</th>
                 ))}
               </tr>
@@ -1544,7 +1547,9 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh, setMe
             <tbody>
               {(() => {
                 // Group outbounds by order number, B2C by order# desc
-                const recent = filtered.slice().reverse().slice(0, 200);
+                // NOTE: render ALL rows returned by the API (no hard 200 cap) so the newest
+                // orders are never truncated. The backend returns up to LIMIT 5000.
+                const recent = filtered.slice();
                 const groups = new Map<string, typeof recent>();
                 const standalone: typeof recent = [];
                 for (const r of recent) {
@@ -1578,26 +1583,62 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh, setMe
                   const firstDate = items[0].outbound_date;
                   rows.push(
                     <tr key={'g_' + orderNo} style={{ background: '#27272a40', borderBottom: '1px solid #27272a' }}>
-                      <td colSpan={7} style={{ padding: '6px 10px', fontWeight: 700, fontSize: 12, color: '#f59e0b' }}>
-                        {'📦'} 订单 {orderNo} — {items.length} 项 / {totalQty} 盒 / {firstDate}
+                      <td colSpan={8} style={{ padding: '6px 10px', fontWeight: 700, fontSize: 12, color: '#f59e0b', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                        <span>{'📦'} 订单 {orderNo} — {items.length} 项 / {totalQty} 盒 / {firstDate}</span>
+                        <span style={{ display:'flex', gap:4 }}>
+                          {addingOrder === orderNo ? (
+                            <>
+                              <input value={addOrderSku} onChange={e=>setAddOrderSku(e.target.value.toUpperCase())} placeholder="SKU" style={{ width:70, padding:'2px 5px', borderRadius:3, border:'1px solid #22c55e', background:'#0c0c0e', color:'#60a5fa', fontSize:9 }} />
+                              <input type="number" value={addOrderQty||''} onChange={e=>setAddOrderQty(Math.max(1,Number(e.target.value)))} placeholder="数" style={{ width:40, padding:'2px 5px', borderRadius:3, border:'1px solid #22c55e', background:'#0c0c0e', color:'#f59e0b', fontSize:9 }} />
+                              <button onClick={async()=>{if(!addOrderSku||!addOrderQty)return;try{await api.recordOutbound({product_sku:addOrderSku,quantity:addOrderQty,channel:'B2C',customer_name:'Shopify Customer',shopify_order_id:orderNo,outbound_date:new Date().toISOString().slice(0,10),note:'手动增补'});setAddOrderSku('');setAddOrderQty(0);setAddingOrder(null);onRefresh()}catch(ex:any){setMessage?.('Err:'+(ex.message||ex))}}} style={{ padding:'2px 5px', borderRadius:3, border:'none', background:'#22c55e', color:'white', fontSize:9, cursor:'pointer' }}>保存</button>
+                              <button onClick={()=>{setAddingOrder(null);setAddOrderSku('');setAddOrderQty(0)}} style={{ padding:'2px 5px', borderRadius:3, border:'1px solid #27272a', background:'transparent', color:'#a1a1aa', fontSize:9, cursor:'pointer' }}>取消</button>
+                            </>
+                          ) : (
+                            <button onClick={()=>{setAddingOrder(orderNo);setAddOrderSku('');setAddOrderQty(0)}} style={{ padding:'2px 6px', borderRadius:3, border:'1px solid #22c55e', background:'transparent', color:'#22c55e', fontSize:9, cursor:'pointer' }}>➕ 添加</button>
+                          )}
+                        </span>
                       </td>
                     </tr>
                   );
                   for (const r of items) {
+                    const isEditing = editRowId === r.id;
                     rows.push(
-                      <tr key={r.id} style={{ borderBottom: '1px solid #18181b' }}>
+                      <tr key={r.id} style={{ borderBottom: '1px solid #18181b', background: isEditing ? '#22c55e08' : undefined }}>
                         <td style={{ padding: '6px 10px', paddingLeft: 28, fontSize: 11 }}>{r.outbound_date}</td>
                         <td style={{ padding: '6px 10px' }}><code style={{ color: '#60a5fa', fontSize: 11 }}>{r.product_sku}</code></td>
                         <td style={{ padding: '6px 10px', color: '#e4e4e7', fontSize: 11 }}>{(r as any).product_name || '—'}</td>
-                        <td style={{ padding: '6px 10px', fontWeight: 700, color: '#f59e0b', fontSize: 11 }}>-{r.quantity}</td>
+                        <td style={{ padding: '6px 10px', fontWeight: 700, color: '#f59e0b', fontSize: 11 }}>
+                          {isEditing
+                            ? <input type="number" value={editRowData?.quantity ?? r.quantity} onChange={e=>setEditRowData({...editRowData,quantity:Number(e.target.value)})} style={{ width:50, padding:'2px 4px', borderRadius:3, border:'1px solid #6366f1', background:'#0c0c0e', color:'#f59e0b', fontSize:11 }} />
+                            : `-${r.quantity}`}
+                        </td>
                         <td style={{ padding: '6px 10px' }}>
                           <span style={{ background: `${channelColor[r.channel] || '#71717a'}20`, color: channelColor[r.channel] || '#71717a', padding: '2px 6px', borderRadius: 4, fontSize: 9, fontWeight: 600 }}>
                             {channelLabel[r.channel] || r.channel}
                           </span>
                         </td>
-                        <td style={{ padding: '6px 10px', color: '#60a5fa', fontSize: 11 }}>{r.customer_name || '—'}</td>
+                        <td style={{ padding: '6px 10px', color: '#60a5fa', fontSize: 11 }}>
+                          {isEditing
+                            ? <input value={editRowData?.customer_name ?? r.customer_name ?? ''} onChange={e=>setEditRowData({...editRowData,customer_name:e.target.value})} style={{ width:80, padding:'2px 4px', borderRadius:3, border:'1px solid #6366f1', background:'#0c0c0e', color:'#60a5fa', fontSize:11 }} />
+                            : (r.customer_name || '—')}
+                        </td>
                         <td style={{ padding: '6px 10px', color: '#71717a', fontSize: 11 }}>
-                          {r.note?.includes('赠送品') ? <><span style={{ background: '#ec489920', color: '#ec4899', padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700, marginRight: 4 }}>🎁赠送</span>{r.note}</> : r.note || ''}
+                          {isEditing
+                            ? <input value={editRowData?.note ?? r.note ?? ''} onChange={e=>setEditRowData({...editRowData,note:e.target.value})} style={{ width:100, padding:'2px 4px', borderRadius:3, border:'1px solid #6366f1', background:'#0c0c0e', color:'#71717a', fontSize:11 }} />
+                            : (r.note?.includes('赠送品') ? <><span style={{ background:'#ec489920', color:'#ec4899', padding:'1px 6px', borderRadius:4, fontSize:9, fontWeight:700, marginRight:4 }}>🎁赠送</span>{r.note}</> : r.note || '')}
+                        </td>
+                        <td style={{ padding: '6px 10px', whiteSpace:'nowrap' }}>
+                          {isEditing ? (
+                            <>
+                              <button onClick={async()=>{try{await api.updateOutbound(r.id,{quantity:editRowData?.quantity??r.quantity,customer_name:editRowData?.customer_name??r.customer_name,note:editRowData?.note??r.note});setEditRowId(null);setEditRowData({});onRefresh()}catch(ex:any){setMessage?.('Err:'+(ex.message||ex))}}} style={{ padding:'2px 5px', borderRadius:3, border:'none', background:'#22c55e', color:'white', fontSize:9, cursor:'pointer' }}>保存</button>
+                              <button onClick={()=>{setEditRowId(null);setEditRowData({})}} style={{ padding:'2px 5px', borderRadius:3, border:'1px solid #27272a', background:'transparent', color:'#a1a1aa', fontSize:9, cursor:'pointer', marginLeft:4 }}>取消</button>
+                            </>
+                          ) : (
+                            <>
+                              <button onClick={()=>{setEditRowId(r.id);setEditRowData({quantity:r.quantity,customer_name:r.customer_name,note:r.note})}} style={{ padding:'2px 4px', borderRadius:3, border:'1px solid #6366f1', background:'transparent', color:'#818cf8', fontSize:9, cursor:'pointer' }}>✏️</button>
+                              <button onClick={async()=>{if(!confirm('删除 '+r.product_sku+'?')) return;try{await api.deleteOutbound(r.id);onRefresh()}catch(ex:any){setMessage?.('Err:'+(ex.message||ex))}}} style={{ padding:'2px 4px', borderRadius:3, border:'1px solid #ef4444', background:'transparent', color:'#ef4444', fontSize:9, cursor:'pointer', marginLeft:4 }}>🗑</button>
+                            </>
+                          )}
                         </td>
                       </tr>
                     );

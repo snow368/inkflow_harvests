@@ -111,7 +111,7 @@ export default function SalesChat() {
     try {
       const r = await listChats(SALES_TENANT, filters);
       setData(r);
-      if (!selectedId && r.chats.length > 0) setSelectedId(r.chats[0].id);
+      if (!selectedId && r.chats?.length > 0) setSelectedId(r.chats[0].id);
     } catch (e) {
       toast.error("加载会话失败", { description: (e as Error).message });
     } finally {
@@ -588,11 +588,11 @@ function CountryStrategyPanel({ tenant, chat }: { tenant: string; chat: ChatDTO 
           </button>
         </div>
 
-        {terms && terms.live.length === 0 && terms.adopted.length === 0 && (
+        {terms?.live?.length === 0 && terms?.adopted?.length === 0 && (
           <div className="text-[11px] text-zinc-500">该国家暂无足够语料可挖。先多录入一些该国聊天 / 评论。</div>
         )}
 
-        {terms && terms.live.length > 0 && (
+        {terms?.live?.length > 0 && (
           <div className="space-y-1">
             <div className="text-[10px] text-zinc-500">实时挖掘 Top {terms.live.length}（频次 · 本土性 · 脱敏例句）</div>
             {terms.live.map((t) => (
@@ -618,7 +618,7 @@ function CountryStrategyPanel({ tenant, chat }: { tenant: string; chat: ChatDTO 
           </div>
         )}
 
-        {terms && terms.adopted.length > 0 && (
+        {terms?.adopted?.length > 0 && (
           <div className="space-y-1">
             <div className="text-[10px] text-zinc-500">已采纳（本行业持久化 · {terms.adopted.length}）</div>
             <div className="flex flex-wrap gap-1.5">

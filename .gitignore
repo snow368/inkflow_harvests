@@ -29,3 +29,6 @@ gen-lang-client-*.json
 SECRETS_BACKUP.local.md
 gemini-service-account.backup.json
 .DS_Store
+
+# bot worker browser profiles (cookies/localStorage/cache — never commit)
+profiles/
