@@ -4580,6 +4580,18 @@ app.get('/api/kb', async (c) => {
   return c.json({ ok: true, items: (rows as any).results || [], counts: (counts as any).results || [], buckets: (buckets as any).results || [] });
 });
 
+// 删除单条已采集知识（dev-only 双重门禁，与 intake/list 一致）。
+app.delete('/api/kb/:id', async (c) => {
+  if (!requireDev(c)) return c.json({ error: 'dev_only' }, 403);
+  const id = parseInt(c.req.param('id') || '', 10);
+  if (!Number.isFinite(id) || id <= 0) return c.json({ error: 'bad_id' }, 400);
+  await ensureKbTable(c.env.DB);
+  const existing = await c.env.DB.prepare('SELECT id FROM kb_entries WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not_found' }, 404);
+  await c.env.DB.prepare('DELETE FROM kb_entries WHERE id = ?').bind(id).run();
+  return c.json({ ok: true, id });
+});
+
 // ============ SEO 技能图谱（替代 AI Core /seo/playbooks）============
 // 前端「InkFlow 获客 → SEO 工具 → 📚 技能知识库 → 技能图谱」读取此端点。
 // 数据来自打包进 worker 的 seo-playbooks.json（与 AI Core seo_playbooks 同源）。

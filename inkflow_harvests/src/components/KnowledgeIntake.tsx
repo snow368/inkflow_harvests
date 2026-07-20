@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../lib/api-auth';
 import { cn } from '../lib/utils';
-import { BookOpen, Link2, FileText, Upload, Send, RefreshCw, CheckCircle2, AlertCircle, Eye } from 'lucide-react';
+import { BookOpen, Link2, FileText, Upload, Send, RefreshCw, CheckCircle2, AlertCircle, Eye, Trash2 } from 'lucide-react';
 
 // ============ 知识采集后台（DEV-ONLY）============
 // 入口：InkFlow 获客 → SEO 工具 → 📚 技能知识库 → 「📥 知识库(采集)」内嵌视图（仅 dev 可见）。
@@ -54,6 +54,7 @@ export default function KnowledgeIntake() {
   const [buckets, setBuckets] = useState<any[]>([]);
   const [filterKb, setFilterKb] = useState<string>('all');
   const [loadingList, setLoadingList] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const dims = kb === 'social' ? SOCIAL_DIMS : SEO_DIMS;
 
@@ -129,6 +130,21 @@ export default function KnowledgeIntake() {
   }, [filterKb]);
 
   useEffect(() => { loadList(); }, [loadList]);
+
+  // 删除单条已采集知识（乐观更新本地列表，失败回滚提示）
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('确定删除这条已采集知识？此操作不可恢复。')) return;
+    setDeletingId(id);
+    try {
+      const res = await apiFetch('/api/kb/' + id, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) { setMsg({ type: 'err', text: data?.error || '删除失败' }); return; }
+      setItems((prev) => prev.filter((it) => it.id !== id));
+      setMsg({ type: 'ok', text: `已删除 id=${id}` });
+    } catch (e: any) {
+      setMsg({ type: 'err', text: '删除出错：' + (e?.message || e) });
+    } finally { setDeletingId(null); }
+  };
 
   const totalCount = counts.reduce((a: number, c: any) => a + (c.n || 0), 0);
 
@@ -257,14 +273,24 @@ export default function KnowledgeIntake() {
         <div className="max-h-96 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700">
           {items.length === 0 && <div className="py-6 text-center text-sm text-slate-400">暂无数据</div>}
           {items.map((it) => (
-            <div key={it.id} className="py-2.5">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">{it.kb}</span>
-                {it.platform && <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[11px] text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">{it.platform}</span>}
-                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 dark:bg-slate-700 dark:text-slate-200">{it.dimension}</span>
-                {it.source_url && <a href={it.source_url} target="_blank" rel="noreferrer" className="text-[11px] text-sky-600 hover:underline truncate max-w-[200px]">{it.source_url}</a>}
+            <div key={it.id} className="py-2.5 flex items-start gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">{it.kb}</span>
+                  {it.platform && <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[11px] text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">{it.platform}</span>}
+                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 dark:bg-slate-700 dark:text-slate-200">{it.dimension}</span>
+                  {it.source_url && <a href={it.source_url} target="_blank" rel="noreferrer" className="text-[11px] text-sky-600 hover:underline truncate max-w-[200px]">{it.source_url}</a>}
+                </div>
+                <div className="text-sm text-slate-700 dark:text-slate-200 mt-1">{it.title || it.summary}</div>
               </div>
-              <div className="text-sm text-slate-700 dark:text-slate-200 mt-1">{it.title || it.summary}</div>
+              <button
+                onClick={() => handleDelete(it.id)}
+                disabled={deletingId === it.id}
+                title="删除这条"
+                className="shrink-0 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-400 hover:text-red-600 hover:border-red-300 disabled:opacity-50 dark:border-slate-600 dark:hover:border-red-500/50"
+              >
+                {deletingId === it.id ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
+              </button>
             </div>
           ))}
         </div>
