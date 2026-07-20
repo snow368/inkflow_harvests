@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "note": "SKILL 促成登记表，由 ingest.mjs 自动维护。buckets 记录每个桶累积条数；到 threshold 触发一个 SKILL 候选写入 promoted + skills-todo.md，并把该桶计数清零继续累积。",
+  "threshold": 5,
+  "buckets": {},
+  "promoted": []
+}

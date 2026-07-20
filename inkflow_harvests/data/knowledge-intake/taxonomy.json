@@ -1,0 +1,97 @@
+{
+  "version": "1.0.0",
+  "updated": "2026-07-19",
+  "note": "知识入库分类目标树（单一真相源）。classify.mjs 用它组 Gemini 提示词 + 规则兜底；ingest.mjs 用它决定落库路径。新增维度/平台只改这里。",
+  "kbs": {
+    "seo": {
+      "label": "SEO 技能知识库",
+      "root": "seo-knowledge",
+      "intake_dir": "seo-knowledge/sources/_intake",
+      "axis": "dimension",
+      "dimensions": {
+        "seo-strategy": {
+          "label": "SEO 战略与排名体系",
+          "hints": ["ranking factor", "排名因子", "E-E-A-T", "算法更新", "core update", "topical authority", "站点定性", "site type", "增长飞轮", "SERP", "谷歌算法", "domain authority", "竞品分析", "排名预测"]
+        },
+        "seo-keyword": {
+          "label": "关键词研究与主题集群",
+          "hints": ["keyword", "关键词", "KD", "搜索意图", "search intent", "long tail", "长尾", "topic cluster", "主题集群", "pillar", "keyword gap", "词库", "搜索量", "autocomplete", "挖词"]
+        },
+        "seo-content": {
+          "label": "内容创作与 GEO/AEO 写作",
+          "hints": ["content", "内容", "AEO", "GEO", "answer engine", "BLUF", "FAQ", "schema", "结构化数据", "字数", "H1", "meta title", "内容大纲", "content brief", "改写", "rewrite", "自包含", "段落"]
+        },
+        "seo-technical": {
+          "label": "技术 SEO 规范",
+          "hints": ["technical seo", "技术seo", "robots", "sitemap", "canonical", "hreflang", "crawl budget", "抓取预算", "core web vitals", "LCP", "页面速度", "index", "收录", "重定向", "301", "JS SEO", "indexnow"]
+        },
+        "seo-link": {
+          "label": "外链建设全攻略",
+          "hints": ["backlink", "外链", "link building", "guest post", "HARO", "broken link", "skyscraper", "anchor", "锚文本", "DR", "外链策略", "反向链接", "outreach 邮件", "pitch"]
+        },
+        "seo-workflow": {
+          "label": "SEO 工作流与增长执行",
+          "hints": ["workflow", "工作流", "上线清单", "launch checklist", "9步", "程序化SEO", "programmatic", "GSC", "search console", "监控", "静默期", "沙盒期", "定价", "增长执行", "复合增长"]
+        }
+      }
+    },
+    "social": {
+      "label": "社媒技能知识库",
+      "root": "social-knowledge",
+      "intake_dir": "social-knowledge/sources/_intake",
+      "axis": "platform+dimension",
+      "platforms": {
+        "instagram": { "label": "Instagram", "hints": ["instagram", "ig", "reels", "reel", "story", "stories", "近景", "carousel", "轮播图", "ig dm", "explore page", "推荐页"] },
+        "tiktok": { "label": "TikTok", "hints": ["tiktok", "抖音", "fyp", "for you", "完播率", "duet", "stitch", "trending sound", "热门音频", "短视频钩子"] },
+        "x": { "label": "X / Twitter", "hints": ["twitter", "x.com", "推特", "推文", "thread", "串推", "quote tweet", "转推", "engagement bait", "x algorithm"] },
+        "xiaohongshu": { "label": "小红书", "hints": ["小红书", "xiaohongshu", "xhs", "笔记", "种草", "封面", "薯条", "笔记标题", "关键词卡位", "收藏"] },
+        "cross": { "label": "跨平台矩阵", "hints": ["跨平台", "cross-platform", "内容矩阵", "一稿多发", "repurpose", "内容复用", "全平台", "分发"] }
+      },
+      "dimensions": {
+        "social-strategy": {
+          "label": "社媒内容战略",
+          "hints": ["内容战略", "content strategy", "定位", "人设", "内容支柱", "content pillar", "内容日历", "content calendar", "选题", "niche", "受众画像", "品牌调性"]
+        },
+        "social-hooks": {
+          "label": "钩子与文案",
+          "hints": ["钩子", "hook", "开头", "首帧", "标题公式", "caption", "文案", "copywriting", "CTA", "call to action", "情绪", "痛点", "好奇缺口", "curiosity gap"]
+        },
+        "social-platforms": {
+          "label": "平台战术",
+          "hints": ["平台战术", "发布时间", "posting time", "格式", "尺寸", "封面", "话题标签", "hashtag", "标签策略", "平台规则", "限流", "shadowban"]
+        },
+        "social-growth": {
+          "label": "涨粉与算法",
+          "hints": ["涨粉", "growth", "算法", "algorithm", "推荐机制", "完播", "互动率", "engagement rate", "涨粉技巧", "冷启动", "破圈", "viral", "爆款", "流量池"]
+        },
+        "social-conversion": {
+          "label": "转化与获客",
+          "hints": ["转化", "conversion", "获客", "私域", "引流", "dm 话术", "私信", "leads", "线索", "预约", "booking", "纹身工作室", "愈合对比", "作品集", "报价"]
+        },
+        "social-analytics": {
+          "label": "数据与分析",
+          "hints": ["数据", "analytics", "指标", "metrics", "复盘", "A/B", "ab test", "打点", "追踪", "insights", "reach", "曝光", "留存", "转化漏斗"]
+        }
+      }
+    }
+  },
+  "skill_promotion": {
+    "note": "慢慢建立 SKILL 的规则：每个桶（kb+平台+维度）累积到阈值即产出一个 SKILL 候选，写入 skills-registry.json + skills-todo.md",
+    "threshold": 5,
+    "cooldown_note": "同一桶每促成一个候选后计数清零，继续累积可再促成进阶技能"
+  },
+  "output_schema": {
+    "note": "classify.mjs 必须返回的 JSON 形状（Gemini 也按此约束输出）",
+    "fields": {
+      "kb": "seo | social",
+      "dimension": "上面对应 kb 的 dimension id",
+      "platform": "仅 social 需要：instagram|tiktok|x|xiaohongshu|cross；seo 恒为 null",
+      "title": "≤40字中文标题，概括这条知识",
+      "summary": "2-4句核心提炼（学到什么、怎么用）",
+      "category": "更细的自定义小类，自由文本",
+      "tags": "3-6个关键词数组",
+      "confidence": "0-1，<0.6 标 needs-review",
+      "reason": "一句话分类依据"
+    }
+  }
+}

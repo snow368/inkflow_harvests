@@ -852,6 +852,59 @@ function inferSeriesFromItems(items: any[]): string | null {
   return null; // 0 或 2+ 系列 → 无法确定
 }
 
+/**
+ * Shopify 订单备注 = order.note (单字符串) + order.note_attributes (键值对数组)。
+ * 很多店铺把「备注」做成结账页自定义字段，值落在 note_attributes，
+ * order.note 反而是空的。这里把两者合并，避免漏抓备注内容。
+ * 例：#4737 的备注（"备注" / IG链接 / "1013SEM*2"）就存在 note_attributes 里。
+ */
+function shopifyNoteText(order: any): string {
+  const parts: string[] = [];
+  if (order?.note) parts.push(String(order.note));
+  const attrs = order?.note_attributes;
+  if (Array.isArray(attrs)) {
+    for (const a of attrs) {
+      if (!a) continue;
+      const name = a.name ? String(a.name) : '';
+      const value = a.value != null ? String(a.value) : '';
+      if (value) parts.push(name ? `${name}: ${value}` : value);
+    }
+  }
+  return parts.join('\n').trim();
+}
+
+/**
+ * 解析赠品针的库存 SKU。
+ * 规则（用户定：客人订单是 CON、备注没写 CON/COG/AES 就直接按订单系列来）：
+ *   1. 系列优先级：备注显式系列 > 订单推断系列(defaultSeries via inferSeriesFromItems)
+ *   2. 库存 SKU 形态为 SERIES-LABEL（如 CON-1013SEM，Shopify 的 PEACH- 前缀已剥，见 1056+）
+ *   3. 精确匹配 SERIES-LABEL；失败则「仅在同系列内」做尾部模糊兜底
+ *   4. 绝不跨系列 LIKE 瞎猜（否则库存里同时有 CON-1013SEM / COG-1013SEM 时会扣错货）；
+ *      系列无法确定时只认恰好等于 label 的裸 SKU，仍匹配不到就返回 null（跳过，交人工）
+ * @returns 命中的库存 sku，或 null（无法安全确定时）
+ */
+async function resolveGiftSku(db: any, gift: any, defaultSeries: string | null): Promise<string | null> {
+  if (gift.type === 'poster') {
+    const p = await db.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind('POSTER').first();
+    return (p?.sku as string) || null;
+  }
+  if (gift.type !== 'needle') return null;
+  const series = gift.series || defaultSeries || null;
+  if (series) {
+    // 已知系列：精确 SERIES-LABEL
+    const exact = await db.prepare('SELECT sku FROM inventory_products WHERE sku = ?')
+      .bind(`${series}-${gift.label}`).first();
+    if (exact?.sku) return exact.sku as string;
+    // 同系列内尾部模糊兜底（如库存写法略有差异），限定 SERIES- 前缀，绝不跨系列
+    const scoped = await db.prepare('SELECT sku FROM inventory_products WHERE sku LIKE ? AND sku LIKE ?')
+      .bind(`${series}-%`, `%${gift.label}`).first();
+    return (scoped?.sku as string) || null;
+  }
+  // 系列无法确定（订单混合/无系列 + 备注也没写）→ 只认恰好等于 label 的裸 SKU，绝不跨系列瞎猜
+  const bare = await db.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(gift.label).first();
+  return (bare?.sku as string) || null;
+}
+
 app.get('/api/shopify/status', async (c) => {
   const config = await c.env.DB.prepare("SELECT * FROM carrier_configs WHERE carrier='shopify'").first() as any
   if (!config) return c.json({ connected: false, store: null })
@@ -921,7 +974,7 @@ app.get('/api/shopify/orders/deduct', async (c) => {
     for (const order of orders) {
       const orderId = String(order.id)
       const orderName = String(order.order_number || '')
-      const customerNote = String(order.note || '').trim()
+      const customerNote = shopifyNoteText(order)
       const customerName = order.customer ? `${order.customer.first_name||''} ${order.customer.last_name||''}`.trim() : ''
 
       const existing = await c.env.DB.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? LIMIT 1').bind(orderId).first()
@@ -947,15 +1000,12 @@ app.get('/api/shopify/orders/deduct', async (c) => {
         const defaultSeries = inferSeriesFromItems(order.line_items || []);
         const parsedGifts = parseOrderNote(customerNote, { defaultSeries: defaultSeries || undefined });
         for (const gift of parsedGifts) {
-          const sku = gift.type === 'needle' 
-            ? (gift.series ? `${gift.series}-${gift.label}` : gift.label)
-            : 'POSTER';
-          const gp = await c.env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first()
-          if (!gp) continue
+        const resolved = await resolveGiftSku(c.env.DB, gift, defaultSeries);
+        if (!resolved) continue
           const outboundDate = new Date().toISOString().split('T')[0]
           await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-            .bind(sku, gift.quantity, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | Gift: ${sku}`, now).run()
-          deductedItems.push({ sku, qty: gift.quantity, order: orderName, item: `Gift ${sku}` })
+            .bind(resolved, gift.quantity, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | Gift: ${resolved}`, now).run()
+          deductedItems.push({ sku: resolved, qty: gift.quantity, order: orderName, item: `Gift ${resolved}` })
         }
       }
       totalOrders++
@@ -1098,7 +1148,7 @@ app.post('/api/fulfillment/shopify/sync', async (c) => {
     for (const o of orders) {
       const addr = o.shipping_address || o.customer?.default_address || {}
       const now = Date.now()
-      const customerNote = String(o.note || '').trim()
+      const customerNote = shopifyNoteText(o)
 
       // UPSERT into orders table
       const r2 = await c.env.DB.prepare(`
@@ -1112,7 +1162,7 @@ app.post('/api/fulfillment/shopify/sync', async (c) => {
       `)
         .bind(String(o.order_number), o.shipping_address?.name||o.customer?.name||'', o.email||'',
           addr.country_code||addr.country||'', addr.province||'', addr.city||'', addr.zip||'',
-          addr.address1||'', addr.phone||'', o.currency||'USD', o.note||'',
+          addr.address1||'', addr.phone||'', o.currency||'USD', shopifyNoteText(o),
           new Date(o.created_at).getTime()||now, now).run()
 
       if (r2.meta.changes > 0) synced++
@@ -1135,11 +1185,10 @@ app.post('/api/fulfillment/shopify/sync', async (c) => {
           const defaultSeries = inferSeriesFromItems(o.line_items || []);
           const parsedGifts = parseOrderNote(customerNote, { defaultSeries: defaultSeries || undefined });
           for (const gift of parsedGifts) {
-            const sku = gift.type === 'needle'
-              ? (gift.series ? `${gift.series}-${gift.label}` : gift.label)
-              : gift.label;
-            await c.env.DB.prepare('INSERT INTO order_items (order_id,sku,product_name,quantity,unit_price) VALUES (?,?,?,?,?)')
-              .bind(orderId, sku, `Gift: ${sku}`, gift.quantity, 0).run()
+          const resolved = await resolveGiftSku(c.env.DB, gift, defaultSeries);
+          if (!resolved) continue;
+          await c.env.DB.prepare('INSERT INTO order_items (order_id,sku,product_name,quantity,unit_price) VALUES (?,?,?,?,?)')
+            .bind(orderId, resolved, `Gift: ${resolved}`, gift.quantity, 0).run()
           }
         }
       }
@@ -1286,7 +1335,7 @@ app.post('/api/shopify/webhook/orders-create', async (c) => {
   }
 
   const customerName = order.customer ? `${order.customer.first_name||''} ${order.customer.last_name||''}`.trim() : ''
-  const customerNote = String(order.note || '').trim()
+  const customerNote = shopifyNoteText(order)
   const now = Date.now()
   let deductedCount = 0
 
@@ -1310,14 +1359,11 @@ app.post('/api/shopify/webhook/orders-create', async (c) => {
     const defaultSeries = inferSeriesFromItems(order.line_items || []);
     const parsedGifts = parseOrderNote(customerNote, { defaultSeries: defaultSeries || undefined });
     for (const gift of parsedGifts) {
-      const sku = gift.type === 'needle'
-        ? (gift.series ? `${gift.series}-${gift.label}` : gift.label)
-        : 'POSTER';
-      const gp = await c.env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first()
-      if (!gp) continue
+      const resolved = await resolveGiftSku(c.env.DB, gift, defaultSeries);
+      if (!resolved) continue
       const outboundDate = new Date().toISOString().split('T')[0]
       await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-        .bind(sku, gift.quantity, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | Gift: ${sku}`, now).run()
+        .bind(resolved, gift.quantity, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | Gift: ${resolved}`, now).run()
       deductedCount++
     }
   }
@@ -1326,7 +1372,7 @@ app.post('/api/shopify/webhook/orders-create', async (c) => {
   try {
     const addr = order.shipping_address || order.customer?.default_address || {}
     await c.env.DB.prepare(`INSERT OR IGNORE INTO orders (order_number,source,status,customer_name,customer_email,country,state,city,zip_code,address,phone,currency,notes,created_at,updated_at) VALUES (?,'shopify','pending',?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .bind(orderName, customerName||'Shopify Customer', order.email||'', addr.country_code||addr.country||'', addr.province||'', addr.city||'', addr.zip||'', addr.address1||'', addr.phone||'', order.currency||'USD', order.note||'', new Date(order.created_at).getTime()||now, now).run()
+      .bind(orderName, customerName||'Shopify Customer', order.email||'', addr.country_code||addr.country||'', addr.province||'', addr.city||'', addr.zip||'', addr.address1||'', addr.phone||'', order.currency||'USD', shopifyNoteText(order), new Date(order.created_at).getTime()||now, now).run()
   } catch {}
 
   return c.json({ ok: true, orderId, orderName, itemsDeducted: deductedCount })
@@ -4362,6 +4408,170 @@ app.post('/api/sync/shopify-orders', async (c) => {
     console.log('[shopify-sync] endpoint error:', e?.message || e, e?.stack || '');
     return c.json({ ok: false, error: e?.message || String(e), stack: e?.stack || '' }, 200);
   }
+});
+
+// ============ KB INTAKE（SEO/社媒知识库摄入 + 浏览，DEV-ONLY）============
+// 入口：知识采集后台（harvests.pages.dev/#/kb），仅 dev（snow368@gmail.com）可见可操作，
+// 不进前台公共 tab。服务端抓 URL 内容 + 规则分类 + 去重 + 存 D1。
+
+let _kbTableReady: Promise<void> | null = null;
+const ensureKbTable = (db: any): Promise<void> => {
+  if (!_kbTableReady) {
+    _kbTableReady = db.prepare(`CREATE TABLE IF NOT EXISTS kb_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kb TEXT NOT NULL,
+      platform TEXT,
+      dimension TEXT NOT NULL,
+      bucket TEXT NOT NULL,
+      title TEXT,
+      content TEXT NOT NULL,
+      source_url TEXT,
+      tags TEXT,
+      summary TEXT,
+      fingerprint TEXT UNIQUE,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`).run().then(() => {}).catch(() => {});
+  }
+  return _kbTableReady;
+};
+
+async function sha256hex(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function stripHtml(html: string): string {
+  let t = html.replace(/<(script|style|noscript|svg|head)[^>]*>[\s\S]*?<\/\1>/gi, ' ');
+  t = t.replace(/<!--[\s\S]*?-->/g, ' ');
+  t = t.replace(/<[^>]+>/g, ' ');
+  t = t.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+  t = t.replace(/[ \t]+/g, ' ').replace(/\n{2,}/g, '\n');
+  return t.trim();
+}
+
+async function fetchExtract(url: string): Promise<string> {
+  const resp = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; InkFlowKB/1.0)', 'Accept': 'text/html,application/xhtml+xml,text/plain,*/*' },
+    redirect: 'follow',
+  });
+  if (!resp.ok) throw new Error('fetch_failed ' + resp.status);
+  const ct = resp.headers.get('content-type') || '';
+  const raw = await resp.text();
+  let text = raw;
+  if (ct.includes('html') || raw.trimStart().startsWith('<')) text = stripHtml(raw);
+  const lines = text.split(/\n+/).map((l: string) => l.trim()).filter(Boolean);
+  return lines.join('\n').slice(0, 40000);
+}
+
+// 规则分类：根据关键词把文本分到 {kb, platform, dimension}
+const KB_RULES: Record<string, { dim: string; kw: string[] }[]> = {
+  seo: [
+    { dim: 'strategy', kw: ['seo strategy', '排名因素', 'e-a-t', 'eeat', 'topical authority', ' topical ', '搜索策略', 'ranking factor'] },
+    { dim: 'keyword', kw: ['keyword', '关键词', '搜素词', '长尾', 'long-tail', 'search volume', '搜索量', '搜索意图'] },
+    { dim: 'content', kw: ['content', '内容营销', '博客', '文章', 'brief', '大纲', 'content gap', '内容差距'] },
+    { dim: 'technical', kw: ['technical seo', '技术seo', 'core web vitals', 'crawl', '抓取', 'sitemap', 'robots', 'schema', '结构化数据', 'canonical'] },
+    { dim: 'link', kw: ['backlink', '外链', 'link building', 'domain authority', ' guest post', '外链建设', '锚文本', 'link juice'] },
+    { dim: 'workflow', kw: ['workflow', '流程', 'sop', '自动化', '脚本', 'pipeline', '部署'] },
+  ],
+  social: [
+    { dim: 'strategy', kw: ['内容战略', 'content strategy', '社媒策略', '定位', 'persona', '品牌声量'] },
+    { dim: 'hooks', kw: ['hook', '钩子', '开头', '前3秒', '前 3 秒', 'curiosity gap', '好奇缺口', 'hook formula'] },
+    { dim: 'platforms', kw: ['算法', 'algorithm', '推荐', 'feed', '平台战术', 'reach', '曝光'] },
+    { dim: 'growth', kw: ['涨粉', 'follower', 'growth', '粉丝', '爆款', 'virality', '病毒', 'engagement'] },
+    { dim: 'conversion', kw: ['转化', 'conversion', '获客', 'lead', '私信', 'dm', '引流', 'cta', '落地'] },
+    { dim: 'analytics', kw: ['analytics', '数据', 'metrics', 'roi', '指标', 'dashboard', 'ab test', 'a/b'] },
+  ],
+};
+const SOCIAL_PLATFORMS: Record<string, string[]> = {
+  instagram: ['instagram', 'ig ', 'reels', 'story', 'insta', 'grid'],
+  tiktok: ['tiktok', '短视频', 'douyin'],
+  x: ['twitter', 'x.com', '推特', 'x 平台', 'tweet'],
+  xiaohongshu: ['xiaohongshu', '小红书', 'red note', 'xhs', '种草'],
+  cross: ['cross-platform', '矩阵', '多平台', '跨平台', 'omni'],
+};
+
+function classifyKb(text: string): { kb: string; platform: string | null; dimension: string } {
+  const t = ' ' + text.toLowerCase() + ' ';
+  // 先判库（seo vs social）
+  let seoScore = 0, socialScore = 0;
+  for (const r of KB_RULES.seo) for (const k of r.kw) if (t.includes(k.toLowerCase())) seoScore++;
+  for (const r of KB_RULES.social) for (const k of r.kw) if (t.includes(k.toLowerCase())) socialScore++;
+  const kb = socialScore > seoScore ? 'social' : 'seo';
+  // 维度
+  let bestDim = KB_RULES[kb][0].dim, bestDimScore = -1;
+  for (const r of KB_RULES[kb]) {
+    let s = 0; for (const k of r.kw) if (t.includes(k.toLowerCase())) s++;
+    if (s > bestDimScore) { bestDimScore = s; bestDim = r.dim; }
+  }
+  // 平台（仅 social）
+  let platform: string | null = null;
+  if (kb === 'social') {
+    let bestP = '', bestPScore = -1;
+    for (const [p, kws] of Object.entries(SOCIAL_PLATFORMS)) {
+      let s = 0; for (const k of kws) if (t.includes(k.toLowerCase())) s++;
+      if (s > bestPScore) { bestPScore = s; bestP = p; }
+    }
+    platform = bestP || 'cross';
+  }
+  return { kb, platform, dimension: bestDim };
+}
+
+function requireDev(c: any): any | null {
+  const u = c.get('user');
+  if (!u || u.email !== 'snow368@gmail.com') return null;
+  return u;
+}
+
+app.post('/api/kb-intake', async (c) => {
+  if (!requireDev(c)) return c.json({ error: 'dev_only' }, 403);
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'bad_json' }, 400); }
+  const { url, content, title, kb: kbOv, platform: pOv, dimension: dOv, tags } = body || {};
+  let text = (content || '').toString();
+  let sourceUrl: string | null = url || null;
+  if (!text.trim() && url) {
+    try { text = await fetchExtract(url); }
+    catch (e: any) { return c.json({ error: 'fetch_failed', detail: String(e?.message || e) }, 502); }
+  }
+  if (!text || !text.trim()) return c.json({ error: 'empty_content' }, 400);
+
+  const cls = classifyKb(text + ' ' + (title || ''));
+  const kb = kbOv || cls.kb;
+  const platform = kb === 'social' ? (pOv || cls.platform) : null;
+  const dimension = dOv || cls.dimension;
+  const bucket = platform ? `${kb}:${platform}:${dimension}` : `${kb}:${dimension}`;
+  const fingerprint = await sha256hex(text.trim());
+  const summary = (text.trim().split('\n')[0] || '').slice(0, 200);
+
+  await ensureKbTable(c.env.DB);
+  const existing = await c.env.DB.prepare('SELECT id FROM kb_entries WHERE fingerprint = ?').bind(fingerprint).first();
+  if (existing) return c.json({ ok: true, id: (existing as any).id, status: 'duplicate', classification: { kb, platform, dimension, bucket } });
+
+  const res = await c.env.DB.prepare(
+    `INSERT INTO kb_entries (kb, platform, dimension, bucket, title, content, source_url, tags, summary, fingerprint, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?, datetime('now'))`
+  ).bind(kb, platform, dimension, bucket, (title || summary.slice(0, 80)), text.trim(), sourceUrl, JSON.stringify(tags || []), summary, fingerprint).run();
+  return c.json({ ok: true, id: (res as any).meta?.lastRowId ?? null, status: 'created', classification: { kb, platform, dimension, bucket }, preview: text.trim().slice(0, 300) });
+});
+
+app.get('/api/kb', async (c) => {
+  if (!requireDev(c)) return c.json({ error: 'dev_only' }, 403);
+  const kb = c.req.query('kb') || null;
+  const bucket = c.req.query('bucket') || null;
+  const limit = Math.min(parseInt(c.req.query('limit') || '200', 10) || 200, 500);
+  await ensureKbTable(c.env.DB);
+  const where: string[] = []; const params: any[] = [];
+  if (kb) { where.push('kb = ?'); params.push(kb); }
+  if (bucket) { where.push('bucket = ?'); params.push(bucket); }
+  const sql = `SELECT id, kb, platform, dimension, bucket, title, summary, source_url, tags, created_at FROM kb_entries`
+    + (where.length ? ' WHERE ' + where.join(' AND ') : '')
+    + ' ORDER BY id DESC LIMIT ?';
+  params.push(limit);
+  const rows = await c.env.DB.prepare(sql).bind(...params).all();
+  const counts = await c.env.DB.prepare('SELECT kb, COUNT(*) as n FROM kb_entries GROUP BY kb').all();
+  const buckets = await c.env.DB.prepare('SELECT bucket, COUNT(*) as n FROM kb_entries GROUP BY bucket ORDER BY n DESC').all();
+  return c.json({ ok: true, items: (rows as any).results || [], counts: (counts as any).results || [], buckets: (buckets as any).results || [] });
 });
 
 // Scheduled cron: sweep ALL shipped Shopify orders in the last 7 days into inventory_outbounds.

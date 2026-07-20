@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>InkFlow 知识入库入口</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --line:#282c36; --txt:#e6e8ec; --dim:#9aa2af;
+          --seo:#22c55e; --social:#8b5cf6; --warn:#f59e0b; --accent:#22c55e; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:14px/1.6 -apple-system,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; padding:28px 20px 80px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--dim); font-size:13px; margin-bottom:22px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:16px; }
+  label { display:block; font-size:12px; color:var(--dim); margin:0 0 6px; }
+  textarea, input, select { width:100%; background:#11141a; color:var(--txt); border:1px solid var(--line);
+          border-radius:8px; padding:10px 12px; font-size:14px; font-family:inherit; }
+  textarea { min-height:140px; resize:vertical; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; margin-top:12px; }
+  .row > div { flex:1; min-width:150px; }
+  .btns { display:flex; gap:10px; margin-top:14px; }
+  button { border:0; border-radius:8px; padding:10px 18px; font-size:14px; font-weight:600; cursor:pointer; }
+  .primary { background:var(--accent); color:#06210f; }
+  .ghost { background:transparent; color:var(--txt); border:1px solid var(--line); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .result { display:none; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:600; }
+  .b-seo { background:rgba(34,197,94,.15); color:var(--seo); }
+  .b-social { background:rgba(139,92,246,.15); color:var(--social); }
+  .b-warn { background:rgba(245,158,11,.15); color:var(--warn); }
+  .kv { display:grid; grid-template-columns:96px 1fr; gap:6px 14px; margin:12px 0; }
+  .kv .k { color:var(--dim); }
+  .tag { display:inline-block; background:#20242e; border:1px solid var(--line); border-radius:6px; padding:1px 8px; margin:2px 4px 2px 0; font-size:12px; }
+  .path { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; color:var(--seo); word-break:break-all; }
+  .recent { font-size:13px; }
+  .recent .item { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); }
+  .recent .item:last-child { border-bottom:0; }
+  .muted { color:var(--dim); font-size:12px; }
+  .ok { color:var(--seo); } .err { color:#ef4444; }
+  .promo { background:rgba(245,158,11,.1); border:1px solid rgba(245,158,11,.3); border-radius:8px; padding:10px 12px; margin-top:12px; color:var(--warn); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📥 InkFlow 知识入库入口</h1>
+  <div class="sub">粘贴一条知识（X 推文 / 链接 / 笔记）→ LLM 自动判断归属 → 落到对应平台库 → 自动长索引与 SKILL 候选。</div>
+
+  <div class="card">
+    <label>知识内容（必填）</label>
+    <textarea id="text" placeholder="粘贴 X 推文正文、SEO/社媒技巧、链接摘要…"></textarea>
+    <div class="row">
+      <div>
+        <label>来源 URL（选填）</label>
+        <input id="sourceUrl" placeholder="https://x.com/..." />
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>库（默认自动）</label>
+        <select id="kbHint"><option value="">🤖 自动判断</option><option value="seo">SEO 库</option><option value="social">社媒库</option></select>
+      </div>
+      <div>
+        <label>平台（社媒，选填覆盖）</label>
+        <select id="platformHint"><option value="">自动</option></select>
+      </div>
+      <div>
+        <label>维度（选填覆盖）</label>
+        <select id="dimHint"><option value="">自动</option></select>
+      </div>
+    </div>
+    <div class="btns">
+      <button class="ghost" id="btnPreview">🔍 预览分类</button>
+      <button class="primary" id="btnIngest">✅ 确认落库</button>
+    </div>
+  </div>
+
+  <div class="card result" id="result"></div>
+
+  <div class="card">
+    <label>最近入库（routing-log）</label>
+    <div class="recent" id="recent"><div class="muted">加载中…</div></div>
+  </div>
+</div>
+
+<script>
+let TAX = null;
+const $ = (id) => document.getElementById(id);
+
+async function loadTaxonomy() {
+  TAX = await (await fetch("/api/taxonomy")).json();
+  const plat = $("platformHint");
+  for (const [id, v] of Object.entries(TAX.kbs.social.platforms))
+    plat.insertAdjacentHTML("beforeend", `<option value="${id}">${v.label}</option>`);
+  refreshDims();
+  $("kbHint").addEventListener("change", refreshDims);
+}
+function refreshDims() {
+  const kb = $("kbHint").value;
+  const dim = $("dimHint");
+  dim.innerHTML = '<option value="">自动</option>';
+  const kbs = kb ? [kb] : ["seo", "social"];
+  for (const k of kbs)
+    for (const [id, v] of Object.entries(TAX.kbs[k].dimensions))
+      dim.insertAdjacentHTML("beforeend", `<option value="${id}">[${k}] ${v.label}</option>`);
+}
+function body() {
+  return { text: $("text").value, sourceUrl: $("sourceUrl").value.trim(),
+           kbHint: $("kbHint").value, platformHint: $("platformHint").value, dimHint: $("dimHint").value };
+}
+function bucketOf(c) { return c.kb === "social" ? (c.platform + " / " + c.dimension) : c.dimension; }
+
+function renderClass(c, extra) {
+  const bcls = c.kb === "seo" ? "b-seo" : "b-social";
+  const kbLabel = TAX.kbs[c.kb].label;
+  let h = `<div><span class="badge ${bcls}">${kbLabel}</span> `;
+  if (c.needsReview) h += `<span class="badge b-warn">⚠️ 低置信度待复核</span>`;
+  h += ` <span class="muted">${c.engine === "gemini" ? "Gemini" : "规则兜底"} · 置信度 ${c.confidence}</span></div>`;
+  h += `<div class="kv">
+    <div class="k">标题</div><div>${c.title || "-"}</div>
+    <div class="k">分桶</div><div>${bucketOf(c)}</div>
+    <div class="k">小类</div><div>${c.category || "-"}</div>
+    <div class="k">提炼</div><div>${c.summary || "-"}</div>
+    <div class="k">标签</div><div>${(c.tags||[]).map(t=>`<span class="tag">${t}</span>`).join("") || "-"}</div>
+    <div class="k">依据</div><div class="muted">${c.reason || "-"}</div>
+  </div>`;
+  if (c.note) h += `<div class="muted">ℹ️ ${c.note}</div>`;
+  return h + (extra || "");
+}
+
+$("btnPreview").onclick = async () => {
+  if (!$("text").value.trim()) return alert("请先粘贴知识内容");
+  $("btnPreview").disabled = true; $("btnPreview").textContent = "分类中…";
+  try {
+    const r = await (await fetch("/api/preview", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body()) })).json();
+    const box = $("result"); box.style.display = "block";
+    if (r.error) { box.innerHTML = `<div class="err">❌ ${r.error}</div>`; return; }
+    if (r.status === "duplicate") { box.innerHTML = `<div class="b-warn">🔁 ${r.message}</div>`; return; }
+    box.innerHTML = `<div style="margin-bottom:8px;font-weight:600">🔍 分类预览（尚未落库）</div>` + renderClass(r.classification);
+  } finally { $("btnPreview").disabled = false; $("btnPreview").textContent = "🔍 预览分类"; }
+};
+
+$("btnIngest").onclick = async () => {
+  if (!$("text").value.trim()) return alert("请先粘贴知识内容");
+  $("btnIngest").disabled = true; $("btnIngest").textContent = "落库中…";
+  try {
+    const r = await (await fetch("/api/ingest", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body()) })).json();
+    const box = $("result"); box.style.display = "block";
+    if (r.error) { box.innerHTML = `<div class="err">❌ ${r.error}</div>`; return; }
+    if (r.status === "duplicate") { box.innerHTML = `<div class="b-warn">🔁 ${r.message}</div>`; return; }
+    let extra = `<div style="margin-top:12px"><span class="ok">✅ 已落库</span> → <span class="path">data/${r.file}</span></div>`;
+    extra += `<div class="muted">该库 _intake 累计 ${r.bucketTotalInKb} 条</div>`;
+    if (r.skillPromoted) extra += `<div class="promo">🎯 SKILL 候选已触发：<b>${r.skillPromoted.label}</b>（桶 ${r.skillPromoted.key}，累积 ${r.skillPromoted.count_at_promotion} 条）→ 见 skills-todo.md</div>`;
+    box.innerHTML = `<div style="margin-bottom:8px;font-weight:600">✅ 入库成功</div>` + renderClass(r.classification, extra);
+    $("text").value = ""; $("sourceUrl").value = "";
+    loadRecent();
+  } finally { $("btnIngest").disabled = false; $("btnIngest").textContent = "✅ 确认落库"; }
+};
+
+async function loadRecent() {
+  const { items } = await (await fetch("/api/recent")).json();
+  const el = $("recent");
+  if (!items.length) { el.innerHTML = `<div class="muted">暂无记录，投喂第一条吧。</div>`; return; }
+  el.innerHTML = items.map(it => {
+    const bcls = it.kb === "seo" ? "b-seo" : "b-social";
+    const bucket = it.kb === "social" ? `${it.platform}/${it.dimension}` : it.dimension;
+    return `<div class="item"><span class="badge ${bcls}">${it.kb}</span>
+      <span>${bucket}</span>
+      ${it.needsReview ? '<span class="badge b-warn">复核</span>' : ''}
+      <span class="muted" style="margin-left:auto">${(it.date||"").slice(0,10)} · ${it.confidence} · ${it.engine}</span></div>`;
+  }).join("");
+}
+
+loadTaxonomy();
+loadRecent();
+</script>
+</body>
+</html>
