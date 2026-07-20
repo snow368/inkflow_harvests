@@ -2,6 +2,11 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 import { parseOrderNote } from './lib/parse-order-notes'
+// SEO 技能图谱数据源（单一真相源 = inkflow_harvests/data/seo-knowledge/learn/seo-playbooks.json）。
+// 之前前端走 /harvests/seo/playbooks 代理到 AI Core worker，但该端点未正常返回 JSON
+// （回退逻辑把请求 URL 当字符串返回，导致 "Unexpected token 'h', harvests-a..."）。
+// 改为由本 worker 直接提供，避免依赖 AI Core 部署状态。
+import seoPlaybooks from './seo-playbooks.json'
 // Neon ��y?Y?a2��?�� ?a ��1��? HTTP D-�����ꡧ/sql endpoint��?��?����?a WebSocket ?�� Worker ?D2??��?��
 // @neondatabase/serverless ��? neon() o����y?������ WebSocket��??�� Cloudflare Worker ?D����o?����?��
 // ??��? HTTP neonQuery��?��??��?��?����?
@@ -183,7 +188,8 @@ const PUBLIC_PATHS = new Set([
   '/api/marketing/tasks/poll',
   '/api/marketing/tasks/report',
   '/api/marketing/tasks/mark-converted',
-  '/api/marketing/scripts/select'
+  '/api/marketing/scripts/select',
+  '/api/seo/playbooks'
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -4572,6 +4578,15 @@ app.get('/api/kb', async (c) => {
   const counts = await c.env.DB.prepare('SELECT kb, COUNT(*) as n FROM kb_entries GROUP BY kb').all();
   const buckets = await c.env.DB.prepare('SELECT bucket, COUNT(*) as n FROM kb_entries GROUP BY bucket ORDER BY n DESC').all();
   return c.json({ ok: true, items: (rows as any).results || [], counts: (counts as any).results || [], buckets: (buckets as any).results || [] });
+});
+
+// ============ SEO 技能图谱（替代 AI Core /seo/playbooks）============
+// 前端「InkFlow 获客 → SEO 工具 → 📚 技能知识库 → 技能图谱」读取此端点。
+// 数据来自打包进 worker 的 seo-playbooks.json（与 AI Core seo_playbooks 同源）。
+// 组件期望 { items: Section[] }，而 JSON 顶层为 { sections, skills, ... }，故映射为 items。
+app.get('/api/seo/playbooks', (c) => {
+  const sections = Array.isArray(seoPlaybooks?.sections) ? seoPlaybooks.sections : [];
+  return c.json({ items: sections });
 });
 
 // Scheduled cron: sweep ALL shipped Shopify orders in the last 7 days into inventory_outbounds.
