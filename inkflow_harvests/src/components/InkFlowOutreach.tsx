@@ -33,7 +33,7 @@ import SeoKeywordTool from './SeoKeywordTool';
 import OgChecker from './OgChecker';
 import ContentGapAnalyzer from './ContentGapAnalyzer';
 import SeoBoardView from './SeoBoardView';
-import SeoSkillLibrary from './SeoSkillLibrary';
+import SeoKnowledgeFused from './SeoKnowledgeFused';
 import TechBorrowing from './TechBorrowing';
 import NicheRadar from './NicheRadar';
 import OpportunityMatrix from './OpportunityMatrix';
@@ -123,7 +123,7 @@ function DMTemplateSection({ target }: { target: any }) {
   );
 }
 
-export default function InkFlowOutreach() {
+export default function InkFlowOutreach({ isDev = false }: { isDev?: boolean }) {
   const [section, setSection] = useState<'outreach' | 'seo' | 'product-strategy'>('outreach');
   const [seoTool, setSeoTool] = useState<'keyword-cluster' | 'og-checker' | 'content-gap' | 'skill-library' | 'seo-board'>('keyword-cluster');
   const [strategyTool, setStrategyTool] = useState<'tech-borrowing' | 'niche-radar' | 'opportunity-matrix'>('opportunity-matrix');
@@ -321,7 +321,7 @@ export default function InkFlowOutreach() {
          seoTool === 'og-checker' ? <OgChecker /> :
          seoTool === 'content-gap' ? <ContentGapAnalyzer /> :
          seoTool === 'seo-board' ? <SeoBoardView /> :
-         <SeoSkillLibrary />}
+         <SeoKnowledgeFused isDev={isDev} />}
       </div>
     );
   }

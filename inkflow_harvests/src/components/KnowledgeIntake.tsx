@@ -4,7 +4,8 @@ import { cn } from '../lib/utils';
 import { BookOpen, Link2, FileText, Upload, Send, RefreshCw, CheckCircle2, AlertCircle, Eye } from 'lucide-react';
 
 // ============ 知识采集后台（DEV-ONLY）============
-// 入口：harvests.pages.dev/#/kb —— 仅 snow368(dev) 可见（App.tsx 用 isSnow368 门禁 + 后端 requireDev 双重门禁）。
+// 入口：InkFlow 获客 → SEO 工具 → 📚 技能知识库 → 「📥 知识库(采集)」内嵌视图（仅 dev 可见）。
+// 门禁：① 前端 isDev（snow368）才显示该内嵌视图；② 后端 /api/kb* 全部 requireDev 双重门禁。
 // 功能：① 粘贴链接 → 服务端抓取页面正文 → 自动分类预览；② 直接粘贴/上传具体内容 → 提交入库；
 //       ③ 浏览已采集的 SEO/社媒知识（含 316 SEO + 226 社媒种子）。
 

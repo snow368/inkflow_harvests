@@ -24,7 +24,6 @@ import {
   Calendar,
   Database,
   Sparkles,
-  BookOpen,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
@@ -60,10 +59,9 @@ import InkFlowOutreach from './components/InkFlowOutreach';
 import EmailAuthForm from './components/EmailAuthForm';
 import ScrapeConfig from './components/ScrapeConfig';
 import AdminUsers from './components/AdminUsers';
-import KnowledgeIntake from './components/KnowledgeIntake';
 
 
-type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'market-intelligence' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'settings' | 'publish' | 'scrape' | 'product-catalog' | 'new-arrivals' | 'sales-chat' | 'admin' | 'inkflow-outreach' | 'kb';
+type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'market-intelligence' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'settings' | 'publish' | 'scrape' | 'product-catalog' | 'new-arrivals' | 'sales-chat' | 'admin' | 'inkflow-outreach';
 
 const DynamicLoad = ({ component: load, fallback }: { component: () => Promise<any>, fallback?: any }) => {
   const [Comp, setComp] = useState<any>(null);
@@ -102,16 +100,12 @@ const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab
   const isSnow368 = user?.email === 'snow368@gmail.com';
   const inkflowTab = { id: 'inkflow-outreach', label: 'InkFlow 获客', icon: Target };
   const adminTab = { id: 'admin', label: 'Admin', icon: Users };
-  const kbTab = { id: 'kb', label: 'SEO/社媒知识库', icon: BookOpen };
   const allowedTabs = userTabs === null ? tabs : tabs.filter(t => userTabs.includes(t.id));
   const showAdmin = isSnow368 || (userTabs !== null && userTabs.includes('admin'));
   const showInkflow = isSnow368 || (userTabs !== null && userTabs.includes('inkflow-outreach'));
-  // kb 知识采集后台：仅 dev（snow368）可见，绝不进公共 tab / 前台
-  const showKb = isSnow368;
   let allTabs = [...allowedTabs];
   if (showInkflow) allTabs.push(inkflowTab);
   if (showAdmin) allTabs.push(adminTab);
-  if (showKb) allTabs.push(kbTab);
 
   
   const renderTab = (tab: typeof tabs[0]) => {
@@ -222,6 +216,7 @@ const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab
 
 const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (tab: Tab) => void }) => {
   const { user, login, isAuthReady, registerStatus, registerUser } = useCRM();
+  const isSnow368 = user?.email === 'snow368@gmail.com';
   const [showEmailAuth, setShowEmailAuth] = useState(false);
   const [emailAuthMode, setEmailAuthMode] = useState<'login'|'register'>('login');
   const [regForm, setRegForm] = useState({ name: '', reason: '' });
@@ -435,8 +430,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
           {activeTab === 'admin' && <><AdminUsers />
           <DynamicLoad component={() => import('./components/UserPermissions')} fallback={null} />
         </>}
-          {activeTab === 'inkflow-outreach' && <InkFlowOutreach />}
-          {activeTab === 'kb' && <KnowledgeIntake />}
+          {activeTab === 'inkflow-outreach' && <InkFlowOutreach isDev={isSnow368} />}
         </motion.div>
       </AnimatePresence>
     </main>
