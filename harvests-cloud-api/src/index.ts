@@ -14,27 +14,27 @@ import seoPlaybooks from './seo-playbooks.json'
 type UserInfo = { uid: string; email?: string }
 
 // Neon HTTP query helper ?a uses Neon SQL-over-HTTP API (new /sql endpoint)
-async function neonQuery(connStr: string, query: string, params?: any[]): Promise<any[]> {
-  if (!connStr) throw new Error('NEON_DATABASE_URL not configured');
-  const m = connStr.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^/]+)\/([^?]+)/);
-  if (!m) throw new Error('Invalid Neon URL format');
-  const [, , , host] = m;
-  const baseConnStr = connStr.replace(/\?.*$/, '');
-  const body: any = { query };
-  if (params && params.length > 0) body.params = params;
-  const resp = await fetch(`https://${host}/sql`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'neon-connection-string': baseConnStr },
-    body: JSON.stringify(body),
-  });
-  if (!resp.ok) { const t = await resp.text(); throw new Error(`Neon ${resp.status}: ${t.slice(0,200)}`); }
-  const data: any = await resp.json();
-  return data.rows || data;
+// ===== D1 (SQLite) query helpers =====
+// 兼容原 neonQuery(参数化)/neonSql(模板拼串) 调用签名，但内部走 Cloudflare D1。
+// 自动转换 Postgres 语法： $N→? ， json_extract(payload, '$.x')→json_extract(payload,'$.x') ， 去掉 ::type
+// （Neon 已于 2026-07-21 因 Free tier compute quota 耗尽 402，全面迁 D1）
+
+function pgToSqlite(sql: string): string {
+  return sql
+    .replace(/payload->>'(\w+)'/g, "json_extract(payload, '$.$1')")
+    .replace(/::\w+/g, '')
+    .replace(/\$\d+/g, '?');
 }
 
-// ??��Y neon() ?���?��?������? SQL ����??o����y ?a �̡�2?��? HTTP
-function neonSql(connStr: string) {
-  return async (strings: TemplateStringsArray, ...values: any[]): Promise<{rows: any[]}> => {
+async function d1All(db: D1Database, query: string, params?: any[]): Promise<any[]> {
+  const q = pgToSqlite(query);
+  const stmt = params && params.length ? db.prepare(q).bind(...params) : db.prepare(q);
+  const res: any = await stmt.all();
+  return res.results || [];
+}
+
+function d1Sql(db: D1Database) {
+  return async (strings: TemplateStringsArray, ...values: any[]): Promise<{ rows: any[] }> => {
     let query = strings[0];
     for (let i = 0; i < values.length; i++) {
       const v = values[i];
@@ -44,9 +44,53 @@ function neonSql(connStr: string) {
       else query += `'${String(v).replace(/'/g, "''")}'`;
       query += strings[i + 1];
     }
-    const rows = await neonQuery(connStr, query);
-    return { rows };
+    query = pgToSqlite(query);
+    const res: any = await db.prepare(query).all();
+    return { rows: res.results || [] };
   };
+}
+
+// Lazy-create the three tables migrated from Neon (first request only).
+let _d1TablesReady: Promise<void> | null = null;
+async function ensureD1Tables(db: D1Database): Promise<void> {
+  if (!_d1TablesReady) {
+    _d1TablesReady = (async () => {
+      await db.prepare(`CREATE TABLE IF NOT EXISTS artists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        shop_name TEXT, ig_handle TEXT, city TEXT, state TEXT, import_region TEXT,
+        phone TEXT, website TEXT, email TEXT, rating REAL, followers INTEGER,
+        reviews INTEGER, following INTEGER, post_count INTEGER, bio TEXT, category TEXT,
+        full_name TEXT, address TEXT, profile_pic TEXT, conversion_score REAL, country TEXT
+      )`).run().catch(() => {});
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_artists_ig_handle ON artists(ig_handle)`).run().catch(() => {});
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_artists_shop_name ON artists(shop_name)`).run().catch(() => {});
+
+      await db.prepare(`CREATE TABLE IF NOT EXISTS automation_tasks (
+        id TEXT PRIMARY KEY, status TEXT NOT NULL, payload TEXT,
+        run_at INTEGER, lease_until INTEGER, leased_by TEXT,
+        attempts INTEGER DEFAULT 0, max_attempts INTEGER DEFAULT 3, error_reason TEXT,
+        created_at INTEGER, updated_at INTEGER
+      )`).run().catch(() => {});
+      for (const col of ['run_at INTEGER', 'lease_until INTEGER', 'leased_by TEXT', 'attempts INTEGER DEFAULT 0', 'max_attempts INTEGER DEFAULT 3', 'error_reason TEXT']) {
+        await db.prepare(`ALTER TABLE automation_tasks ADD COLUMN ${col}`).run().catch(() => {});
+      }
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON automation_tasks(status)`).run().catch(() => {});
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON automation_tasks(created_at)`).run().catch(() => {});
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_payload ON automation_tasks(payload)`).run().catch(() => {});
+
+      await db.prepare(`CREATE TABLE IF NOT EXISTS bot_observations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, bot_id TEXT NOT NULL, artist_handle TEXT,
+        mode TEXT NOT NULL, created_at INTEGER NOT NULL, summary_json TEXT, profile_facts_json TEXT
+      )`).run().catch(() => {});
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_bot_obs_created_at ON bot_observations(created_at)`).run().catch(() => {});
+    })();
+  }
+  return _d1TablesReady;
+}
+
+// ??��Y neon() ?���?��?������? SQL ����??o����y ?a �̡�2?��? HTTP
+function neonSql(db: D1Database) {
+  return d1Sql(db);
 }
 
 // Bot token verification ?a shared between bot endpoints
@@ -90,6 +134,8 @@ type Variables = {
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 app.use('/*', cors())
+// 首次请求时惰性建好三张从 Neon 迁移来的 D1 表（artists / automation_tasks / bot_observations）
+app.use('/*', async (c, next) => { await ensureD1Tables(c.env.DB); await next(); });
 
 // Health check ?a no DB dependency
 app.get('/_health', (c) => c.json({ ok: true, time: Date.now() }))
@@ -309,17 +355,19 @@ app.post('/api/inventory/product', async (c) => {
   const body = await c.req.json()
   const { sku, name, category, vendor, unit, unit_price, reorder_point, reorder_qty, lead_time_days, moq, carton_qty, source, shopify_variant_id, id } = body
   const now = Date.now()
+  // SKU 目录封死：手动录入是唯一的产品创建入口。PEACH- 前缀一并归一，目录永不残留 PEACH-。
+  const baseSku = (sku || '').startsWith('PEACH-') ? String(sku).slice(6) : sku
   if (id) {
     await c.env.DB.prepare(`UPDATE inventory_products SET name=?, category=?, vendor=?, unit=?, unit_price=?, reorder_point=?, reorder_qty=?, lead_time_days=?, moq=?, carton_qty=?, source=?, shopify_variant_id=?, updated_at=? WHERE id=?`)
       .bind(name, category||'General', vendor||'', unit||'Box', unit_price||0, reorder_point||50, reorder_qty||1000, lead_time_days||45, moq||500, carton_qty||100, source||'manual', shopify_variant_id||null, now, id).run()
-    return c.json({ ok: true, action: 'updated', sku })
+    return c.json({ ok: true, action: 'updated', sku: baseSku })
   }
   try {
     await c.env.DB.prepare(`INSERT INTO inventory_products (sku,name,category,vendor,unit,unit_price,reorder_point,reorder_qty,lead_time_days,moq,carton_qty,source,shopify_variant_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .bind(sku, name, category||'General', vendor||'', unit||'Box', unit_price||0, reorder_point||50, reorder_qty||1000, lead_time_days||45, moq||500, carton_qty||100, source||'manual', shopify_variant_id||null, now, now).run()
-    return c.json({ ok: true, action: 'created', sku })
+      .bind(baseSku, name, category||'General', vendor||'', unit||'Box', unit_price||0, reorder_point||50, reorder_qty||1000, lead_time_days||45, moq||500, carton_qty||100, source||'manual', shopify_variant_id||null, now, now).run()
+    return c.json({ ok: true, action: 'created', sku: baseSku })
   } catch (e: any) {
-    if (e.message?.includes('UNIQUE')) return c.json({ error: `SKU ${sku} already exists` }, 409)
+    if (e.message?.includes('UNIQUE')) return c.json({ error: `SKU ${baseSku} already exists` }, 409)
     throw e
   }
 })
@@ -883,7 +931,8 @@ function shopifyNoteText(order: any): string {
  * 解析赠品针的库存 SKU。
  * 规则（用户定：客人订单是 CON、备注没写 CON/COG/AES 就直接按订单系列来）：
  *   1. 系列优先级：备注显式系列 > 订单推断系列(defaultSeries via inferSeriesFromItems)
- *   2. 库存 SKU 形态为 SERIES-LABEL（如 CON-1013SEM，Shopify 的 PEACH- 前缀已剥，见 1056+）
+ *   2. 库存 SKU 形态为 SERIES-LABEL（如 CON-1013SEM）。注意：本函数只处理「订单备注里的赠品针」匹配；
+ *      Shopify 订单 line_item 的 PEACH- 前缀由同步入口统一归一（剥 PEACH- 前缀映射到基 SKU，见 4412/4679/1037），不在此处处理。
  *   3. 精确匹配 SERIES-LABEL；失败则「仅在同系列内」做尾部模糊兜底
  *   4. 绝不跨系列 LIKE 瞎猜（否则库存里同时有 CON-1013SEM / COG-1013SEM 时会扣错货）；
  *      系列无法确定时只认恰好等于 label 的裸 SKU，仍匹配不到就返回 null（跳过，交人工）
@@ -987,7 +1036,8 @@ app.get('/api/shopify/orders/deduct', async (c) => {
       if (existing) continue
 
       for (const item of (order.line_items || [])) {
-        const sku = String(item.sku || '').trim()
+        let sku = String(item.sku || '').trim()
+        sku = sku.startsWith('PEACH-') ? sku.slice(6) : sku; // 归一：PEACH- 前缀变体与基 SKU 合并
         const qty = Number(item.quantity) || 0
         if (!sku || qty <= 0) continue
         const product = await c.env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first()
@@ -1087,8 +1137,8 @@ app.get('/api/shopify/order/:orderNumber/import', async (c) => {
     const rawSku = (item.sku || item.variant_sku || '').toUpperCase();
     // Strip PEACH- prefix if the SKU doesn't exist
     let sku = rawSku;
-    const exists = await c.env.DB.prepare('SELECT id FROM inventory_products WHERE sku = ? LIMIT 1').bind(sku).first();
-    if (!exists && sku.startsWith('PEACH-')) {
+    // 归一：PEACH- 前缀变体一律映射到基 SKU（与订单同步入口一致），避免 PEACH- 孤儿出库
+    if (sku.startsWith('PEACH-')) {
       sku = sku.replace('PEACH-', '');
       // Try CON- or COG- prefix for numeric SKUs
       if (/^PEACH-CON-/i.test(rawSku)) sku = rawSku.replace(/^PEACH-CON-/i, 'CON-');
@@ -1100,6 +1150,9 @@ app.get('/api/shopify/order/:orderNumber/import', async (c) => {
     if (skuMap[sku]) sku = skuMap[sku];
     if (skuMap[rawSku]) sku = skuMap[rawSku];
     if (!sku || item.quantity <= 0) { failed++; continue; }
+    // SKU 目录封死：只记录已存在于目录的 SKU，未知 SKU 跳过（不建产品、不产生孤儿出库）
+    const prod = await c.env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first();
+    if (!prod) { failed++; continue; }
     try {
       await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
         .bind(sku, item.quantity, 'B2C', customerName, orderId, outboundDate, 'Shopify Order #' + orderNumber, Date.now()).run();
@@ -1943,7 +1996,7 @@ app.get('/api/automation/task-counts', async (c) => {
   try {
     const connStr = c.env.NEON_DATABASE_URL;
     if (connStr) {
-      const sql = neonSql(connStr);
+      const sql = d1Sql(c.env.DB);
       const rows = await sql`SELECT status, COUNT(*)::int as cnt FROM automation_tasks GROUP BY status`;
       const results = rows?.rows || (Array.isArray(rows) ? rows : []);
       for (const r of results) {
@@ -1964,7 +2017,7 @@ app.get('/api/automation/task-counts-debug', async (c) => {
   result.vps = 'VPS :3000 已于 2026-06 迁云废弃，历史数据取自 D1/Neon';
   try {
     const connStr = c.env.NEON_DATABASE_URL;
-    if (connStr) result.neon = await neonQuery(connStr,
+    if (connStr) result.neon = await d1All(c.env.DB,
       `SELECT status, COUNT(*) as cnt FROM automation_tasks GROUP BY status`
     );
     else result.neon = 'NEON not configured';
@@ -2484,31 +2537,81 @@ app.get('/api/automation/state-progress', async (c) => {
     return c.json({ ok: false, error: String(e?.message || e).slice(0, 300) }, 500);
   }
 });
+// ===== 前端「启动序列」→ 写任务（多用户：payload 带 owner_uid + targetBotId + humanization）=====
+// 兼容前端 CRMContext.startAutomationSequence 的调用；userId 来自前端 user.uid（Phase 1 暂未强制 token 校验）
+app.post('/api/automation/start', async (c) => {
+  try {
+    const body = await c.req.json();
+    const userId = String(body.userId || body.user_uid || '').trim();
+    const artistHandle = String(body.artistHandle || '').replace(/^@/, '').trim().toLowerCase();
+    const accountHandle = String(body.accountHandle || body.account_handle || '').replace(/^@/, '').trim();
+    const artistId = String(body.artistId || '');
+    const accountId = String(body.accountId || '');
+    if (!artistHandle) return c.json({ error: 'artistHandle required' }, 400);
+
+    const humanization = body.humanization && typeof body.humanization === 'object' ? body.humanization : {};
+    const targetBotId = String(body.targetBotId || body.target_bot_id || 'bot_ig_01').trim();
+    const ts = Date.now();
+    const dedupWindow = ts - 7 * 24 * 60 * 60 * 1000;
+    const sql = d1Sql(c.env.DB);
+
+    // 7 天去重：同 artistHandle 已有 pending/leased 则跳过（避免重复派发）
+    const existing = await sql`
+      SELECT id FROM automation_tasks
+      WHERE json_extract(payload, '$.artistHandle') = ${artistHandle}
+        AND status IN ('pending','leased')
+        AND updated_at > ${dedupWindow}
+      LIMIT 1
+    `;
+    const existingId = existing?.rows?.[0]?.id || (Array.isArray(existing) && existing[0]?.id) || null;
+    if (existingId) {
+      return c.json({ ok: true, skipped: true, reason: 'duplicate in window', taskId: existingId });
+    }
+
+    const payload = {
+      artistId,
+      accountId,
+      artistHandle,
+      accountHandle,
+      owner_uid: userId,
+      targetBotId,
+      humanization,
+      suggestedExecMode: 'browse_like',
+      source: 'frontend-start'
+    };
+    const taskId = `start_${ts}_${artistHandle}`;
+    await sql`INSERT INTO automation_tasks (id, status, payload, run_at, created_at, updated_at)
+      VALUES (${taskId}, 'pending', ${JSON.stringify(payload)}, ${ts}, ${ts}, ${ts})`;
+    return c.json({ ok: true, taskId, artistHandle, targetBotId, owner_uid: userId });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 300) }, 500);
+  }
+});
+
 app.get('/api/automation/poll', async (c) => {
   if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
   const botId = c.req.query('botId') || '';
   const limit = Math.min(10, Math.max(1, Number(c.req.query('limit')) || 1));
   if (!botId) return c.json({ error: 'botId required' }, 400);
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
   const now = Date.now();
   const dedupWindow = now - 7 * 24 * 60 * 60 * 1000;
   try {
-    const sql = neonSql(connStr);
+    const sql = d1Sql(c.env.DB);
     // Recycle expired leases
     await sql`UPDATE automation_tasks SET status = 'pending', leased_by = NULL, lease_until = NULL, updated_at = ${now}
               WHERE status = 'leased' AND lease_until IS NOT NULL AND lease_until < ${now}`.catch(() => {});
 
-    // SELECT pending tasks with dedup
+    // SELECT pending tasks with dedup（多账号：只拿本 bot 账号的任务；NULL 兼容 ig-scheduler 旧任务）
     const candidates = await sql`
       SELECT id, payload FROM automation_tasks
       WHERE status = 'pending' AND run_at <= ${now}
-        AND (payload->>'artistHandle' IS NULL
+        AND (json_extract(payload, '$.targetBotId') IS NULL OR json_extract(payload, '$.targetBotId') = ${botId})
+        AND (json_extract(payload, '$.artistHandle') IS NULL
           OR NOT EXISTS (
             SELECT 1 FROM automation_tasks d
             WHERE d.id != automation_tasks.id
               AND d.status IN ('pending','leased') AND d.updated_at > ${dedupWindow}
-              AND d.payload->>'artistHandle' = automation_tasks.payload->>'artistHandle'
+              AND d.json_extract(payload, '$.artistHandle') = automation_tasks.json_extract(payload, '$.artistHandle')
           ))
       ORDER BY run_at ASC LIMIT ${limit}
     `;
@@ -2538,11 +2641,9 @@ app.post('/api/automation/report', async (c) => {
     const { botId, commandId, status, reason } = await c.req.json();
     if (!botId || !commandId) return c.json({ error: 'botId and commandId required' }, 400);
     if (status !== 'done' && status !== 'failed') return c.json({ error: 'status must be done or failed' }, 400);
-    const connStr = c.env.NEON_DATABASE_URL;
-    if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
     const now = Date.now();
     try {
-      const sql = neonSql(connStr);
+      const sql = d1Sql(c.env.DB);
       await sql`UPDATE automation_tasks SET status = ${status}, lease_until = NULL, leased_by = NULL, error_reason = ${status === 'failed' ? (reason || 'unknown') : null}, updated_at = ${now}
                 WHERE id = ${commandId} AND leased_by = ${botId} AND status IN ('leased','running')`;
     } catch (e: any) {
@@ -2568,8 +2669,6 @@ app.post('/api/automation/report', async (c) => {
 // ===== Bot 1?2����y?Y��?���� (called by bot-worker after each profile) =====
 app.post('/api/bot/observe', async (c) => {
   if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
   try {
     const body = await c.req.json();
     const botId = String(body.botId || '').trim();
@@ -2578,9 +2677,8 @@ app.post('/api/bot/observe', async (c) => {
     const commandId = String(body.commandId || body.command_id || '');
     if (!botId || !mode) return c.json({ error: 'botId and mode required' }, 400);
     const ts = Date.now();
-    const sql = neonSql(connStr);
+    const sql = d1Sql(c.env.DB);
     // Ensure table exists
-    await sql`CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)`.catch(() => {});
     // Write observation
     await sql`INSERT INTO bot_observations (bot_id, artist_handle, mode, created_at) VALUES (${botId}, ${artistHandle || null}, ${mode}, ${ts})`;
     // If commandId provided, also mark task done
@@ -2593,18 +2691,14 @@ app.post('/api/bot/observe', async (c) => {
       const pf = body.profileFacts;
       try {
         // Add columns if not exist (safe, no-op if already there)
-        await sql`ALTER TABLE artists ADD COLUMN IF NOT EXISTS "following" BIGINT DEFAULT 0`.catch(() => {});
-        await sql`ALTER TABLE artists ADD COLUMN IF NOT EXISTS post_count BIGINT DEFAULT 0`.catch(() => {});
-        await sql`ALTER TABLE artists ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT ''`.catch(() => {});
-        await sql`ALTER TABLE artists ADD COLUMN IF NOT EXISTS category TEXT DEFAULT ''`.catch(() => {});
         // Update fields
-        if (pf.followers != null) await neonQuery(connStr, `UPDATE artists SET followers = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.followers), artistHandle]).catch(() => {});
-        if (pf.following != null) await neonQuery(connStr, `UPDATE artists SET "following" = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.following), artistHandle]).catch(() => {});
-        if (pf.postCount != null) await neonQuery(connStr, `UPDATE artists SET post_count = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.postCount), artistHandle]).catch(() => {});
-        if (pf.bio) await neonQuery(connStr, `UPDATE artists SET bio = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.bio).slice(0, 500), artistHandle]).catch(() => {});
-        if (pf.email) await neonQuery(connStr, `UPDATE artists SET email = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.email), artistHandle]).catch(() => {});
-        if (pf.externalUrl) await neonQuery(connStr, `UPDATE artists SET website = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.externalUrl), artistHandle]).catch(() => {});
-        if (pf.category) await neonQuery(connStr, `UPDATE artists SET category = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.category), artistHandle]).catch(() => {});
+        if (pf.followers != null) await d1All(c.env.DB, `UPDATE artists SET followers = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.followers), artistHandle]).catch(() => {});
+        if (pf.following != null) await d1All(c.env.DB, `UPDATE artists SET "following" = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.following), artistHandle]).catch(() => {});
+        if (pf.postCount != null) await d1All(c.env.DB, `UPDATE artists SET post_count = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.postCount), artistHandle]).catch(() => {});
+        if (pf.bio) await d1All(c.env.DB, `UPDATE artists SET bio = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.bio).slice(0, 500), artistHandle]).catch(() => {});
+        if (pf.email) await d1All(c.env.DB, `UPDATE artists SET email = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.email), artistHandle]).catch(() => {});
+        if (pf.externalUrl) await d1All(c.env.DB, `UPDATE artists SET website = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.externalUrl), artistHandle]).catch(() => {});
+        if (pf.category) await d1All(c.env.DB, `UPDATE artists SET category = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.category), artistHandle]).catch(() => {});
       } catch {}
     }
     return c.json({ ok: true });
@@ -2717,54 +2811,27 @@ app.patch('/api/automation/bot-config/:botId/toggle', async (c) => {
 
 // ===== ?��?��?��2�� Neon ��??�� =====
 app.get('/api/automation/neon-test', async (c) => {
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ ok: false, error: 'NEON_DATABASE_URL not set', hint: 'use wrangler secret put NEON_DATABASE_URL' });
-  // 2a��??y?��?a??
-  const m = connStr.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^/]+)\/([^?]+)/);
-  if (!m) return c.json({ ok: false, error: 'URL regex no match', url: connStr.slice(0, 50) + '...' });
   try {
-    const basic = btoa(`${m[1]}:${m[2]}`);
-    const resp = await fetch(`https://${m[3]}/v2/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${basic}` },
-      body: JSON.stringify({ query: "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name" }),
-    });
-    const text = await resp.text();
-    if (!resp.ok) return c.json({ ok: false, error: `Neon ${resp.status}`, detail: text.slice(0, 300) });
-    const data = JSON.parse(text);
-    const tables = (data.rows || data || []).map((t: any) => t.table_name);
-    const countResp = await fetch(`https://${m[3]}/v2/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${basic}` },
-      body: JSON.stringify({ query: "SELECT COUNT(*) as cnt FROM artists" }),
-    });
-    const countData = await countResp.json();
-    const cnt = (countData.rows || [])[0]?.cnt || 0;
-    return c.json({ ok: true, tables, artistCount: cnt, user: m[1], host: m[3] });
+    const tables = await c.env.DB.prepare(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`).all();
+    const cntRes = await c.env.DB.prepare(`SELECT COUNT(*) as cnt FROM artists`).first() as any;
+    return c.json({ ok: true, engine: 'D1', tables: (tables.results || []).map((t: any) => t.name), artistCount: cntRes?.cnt || 0 });
   } catch (e: any) {
-    return c.json({ ok: false, error: e.message, stack: e.stack?.slice(0, 500) });
+    return c.json({ ok: false, error: e.message });
   }
 });
 
 // ===== ?��?��?��2�� Neon ��??�� =====
 app.get('/api/automation/neon-check', async (c) => {
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ ok: false, error: 'NEON_DATABASE_URL not set' });
   try {
-    const tables = await neonQuery(connStr, "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name");
-    const artistCount = await neonQuery(connStr, "SELECT COUNT(*) as cnt FROM artists");
-    return c.json({ ok: true, tables: tables.map((t: any) => t.table_name), artistCount: artistCount[0]?.cnt || 0 });
+    const tables = await c.env.DB.prepare(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`).all();
+    const artistCount = await c.env.DB.prepare(`SELECT COUNT(*) as cnt FROM artists`).first() as any;
+    return c.json({ ok: true, engine: 'D1', tables: (tables.results || []).map((t: any) => t.name), artistCount: artistCount?.cnt || 0 });
   } catch (e: any) {
     return c.json({ ok: false, error: e.message });
   }
 });
 
 // ===== 2��?����y?Y��o?��D�� Neon =====
-async function ensureObservationsTable(connStr: string) {
-  try { await neonQuery(connStr, `CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)`); } catch {}
-  try { await neonQuery(connStr, `CREATE INDEX IF NOT EXISTS idx_bot_obs_created_at ON bot_observations(created_at DESC)`); } catch {}
-}
-
 
 // Bot worker ��?����1?2a��y?Y��? Neon�ꡧ��2?��3??����? {items:[...]}��?
 app.all('/api/automation/observations', async (c) => {
@@ -2774,10 +2841,8 @@ app.all('/api/automation/observations', async (c) => {
     // VPS :3000 已于 2026-06 迁云废弃，数据直接取自 Neon
     // Fallback: Neon
     try {
-      const connStr = c.env.NEON_DATABASE_URL;
-      if (!connStr) return c.json({ ok: false, error: 'NEON not configured', items: [] }, 500);
-      const sql = neonSql(connStr);
-      await sql`CREATE TABLE IF NOT EXISTS bot_observations (id SERIAL PRIMARY KEY, bot_id TEXT NOT NULL, artist_handle TEXT, mode TEXT NOT NULL, created_at BIGINT NOT NULL)`;
+      const sql = d1Sql(c.env.DB);
+      // bot_observations 已由全局 ensureD1Tables 建表（含 summary_json / profile_facts_json）
       const obsRes = await sql`SELECT id, bot_id, COALESCE(artist_handle, '') as artist_handle, mode, COALESCE(summary_json, '{}') as summary_json, COALESCE(profile_facts_json, '{}') as profile_facts_json, created_at FROM bot_observations ORDER BY created_at DESC LIMIT ${limit}`;
       const rows = obsRes?.rows || (Array.isArray(obsRes) ? obsRes : []);
       return c.json({ ok: true, items: rows });
@@ -2785,9 +2850,6 @@ app.all('/api/automation/observations', async (c) => {
   }
   try {
     const body = await c.req.json();
-    const connStr = c.env.NEON_DATABASE_URL;
-    if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
-    await ensureObservationsTable(connStr);
     // ?����?��?2?
     if (body.items && Array.isArray(body.items)) {
       let synced = 0;
@@ -2797,7 +2859,7 @@ app.all('/api/automation/observations', async (c) => {
         const mode = String(o.mode || '').trim();
         const ts = Number(o.createdAt || o.created_at || Date.now());
         if (!botId || !mode) continue;
-        await neonQuery(connStr, `INSERT INTO bot_observations (bot_id, artist_handle, mode, created_at) VALUES ($1, $2, $3, $4)`, [botId, ah || null, mode, ts]);
+        await d1All(c.env.DB, `INSERT INTO bot_observations (bot_id, artist_handle, mode, created_at) VALUES ($1, $2, $3, $4)`, [botId, ah || null, mode, ts]);
         synced++;
       }
       return c.json({ ok: true, synced });
@@ -2807,7 +2869,7 @@ app.all('/api/automation/observations', async (c) => {
     const artistHandle = String(body.artistHandle || body.artist_handle || '').replace(/^@/, '').trim();
     const mode = String(body.mode || '').trim();
     if (!botId || !mode) return c.json({ error: 'botId and mode required' }, 400);
-    await neonQuery(connStr, `INSERT INTO bot_observations (bot_id, artist_handle, mode, created_at) VALUES ($1, $2, $3, $4)`, [botId, artistHandle || null, mode, Date.now()]);
+    await d1All(c.env.DB, `INSERT INTO bot_observations (bot_id, artist_handle, mode, created_at) VALUES ($1, $2, $3, $4)`, [botId, artistHandle || null, mode, Date.now()]);
     return c.json({ ok: true });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -2818,8 +2880,6 @@ app.all('/api/automation/observations', async (c) => {
 
 // ===== ��y?Y?���?��o2��?�� Neon artists �����ꡧSQL 2?����??��?��3��? =====
 app.get('/api/automation/artists', async (c) => {
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
   try {
     const state = (c.req.query('state') || '').toUpperCase();
     const search = c.req.query('search') || '';
@@ -2837,12 +2897,12 @@ app.get('/api/automation/artists', async (c) => {
     const whereClause = wheres.join(' AND ');
 
     // Count: unique ig_handle only
-    const countRows = await neonQuery(connStr, `SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ${whereClause}) sub`);
+    const countRows = await d1All(c.env.DB, `SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ${whereClause}) sub`);
     const total = Number(countRows?.[0]?.cnt || 0);
 
     // Data: dedup via GROUP BY, then paginate on deduped rows
-    const cols = `id, shop_name, ig_handle, city, import_region, phone, website, rating, followers, reviews, "following", post_count, category`;
-    const dataRows = await neonQuery(connStr,
+    const cols = `id, shop_name, ig_handle, city, state, import_region, phone, website, rating, followers, reviews, "following", post_count, category`;
+    const dataRows = await d1All(c.env.DB,
       `SELECT ${cols} FROM artists WHERE id IN (
         SELECT MIN(id) FROM artists WHERE ${whereClause} GROUP BY ig_handle
         ORDER BY MIN(shop_name) ASC LIMIT ${limit} OFFSET ${offset}
@@ -2857,8 +2917,8 @@ app.get('/api/automation/artists', async (c) => {
       if (handles.length > 0) {
         // D1 (?����y?Y)
         const tasks = await c.env.DB.prepare(
-          `SELECT DISTINCT payload->>'artistHandle' as handle, status FROM automation_tasks
-           WHERE payload->>'artistHandle' IN (${handles.map(() => '?').join(',')})
+          `SELECT DISTINCT json_extract(payload, '$.artistHandle') as handle, status FROM automation_tasks
+           WHERE json_extract(payload, '$.artistHandle') IN (${handles.map(() => '?').join(',')})
            AND status IN ('pending','leased','done','failed')`
         ).bind(...handles).all();
         for (const t of (tasks.results || []) as any) {
@@ -2868,11 +2928,11 @@ app.get('/api/automation/artists', async (c) => {
         try {
           const connStr = c.env.NEON_DATABASE_URL;
           if (connStr) {
-            const sql = neonSql(connStr);
+            const sql = d1Sql(c.env.DB);
             const handleList = handles.map(h => `'${h.replace(/'/g, "''")}'`).join(',');
-            const neoRows = await neonQuery(connStr,
-              `SELECT DISTINCT payload->>'artistHandle' as handle, status FROM automation_tasks
-               WHERE payload->>'artistHandle' IN (${handleList})
+            const neoRows = await d1All(c.env.DB,
+              `SELECT DISTINCT json_extract(payload, '$.artistHandle') as handle, status FROM automation_tasks
+               WHERE json_extract(payload, '$.artistHandle') IN (${handleList})
                AND status IN ('pending','leased','done','failed')`
             );
             for (const r of (neoRows || [])) {
@@ -2897,15 +2957,13 @@ app.get('/api/automation/artists', async (c) => {
 
 // ===== �䨮 artists ���?����???�ꡧ?����?2��?������?a subrequest ��??T��? =====
 app.post('/api/automation/tasks/create-from-artists', async (c) => {
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
   try {
     const { artistIds, taskType = 'ig_browse' } = await c.req.json();
     if (!artistIds?.length) return c.json({ error: 'artistIds required' }, 400);
     const ts = Date.now();
     const dedupWindow = ts - 7 * 24 * 60 * 60 * 1000;
 
-    const sql = neonSql(connStr);
+    const sql = d1Sql(c.env.DB);
     // �������������??��
     await sql`CREATE TABLE IF NOT EXISTS automation_tasks (id TEXT PRIMARY KEY, payload TEXT, status TEXT, run_at BIGINT, lease_until BIGINT, leased_by TEXT, attempts INT DEFAULT 0, max_attempts INT DEFAULT 3, error_reason TEXT, created_at BIGINT, updated_at BIGINT)`.catch(() => {});
 
@@ -2913,7 +2971,7 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
     const ids = artistIds.filter((i: any) => String(i).trim().length > 0);
     if (!ids.length) return c.json({ ok: false, error: 'no valid ids' }, 400);
     const idList = ids.map((i: any) => `'${String(i).replace(/'/g, "''")}'`).join(',');
-    const artistRows = await neonQuery(connStr, `SELECT id, shop_name, ig_handle, city, state FROM artists WHERE id IN (${idList})`);
+    const artistRows = await d1All(c.env.DB, `SELECT id, shop_name, ig_handle, city, state FROM artists WHERE id IN (${idList})`);
     const artists = artistRows || [];
     if (!artists.length) return c.json({ ok: false, error: 'no artists found' }, 404);
 
@@ -2922,7 +2980,7 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
     let existingRows: any[] = [];
     if (handles.length) {
       const handleList = handles.map((h: string) => `'${h.replace(/'/g, "''")}'`).join(',');
-      existingRows = await neonQuery(connStr, `SELECT payload->>'artistHandle' as h FROM automation_tasks WHERE payload->>'artistHandle' IN (${handleList}) AND updated_at > ${dedupWindow}`);
+      existingRows = await d1All(c.env.DB, `SELECT json_extract(payload, '$.artistHandle') as h FROM automation_tasks WHERE json_extract(payload, '$.artistHandle') IN (${handleList}) AND updated_at > ${dedupWindow}`);
     }
     const existingSet = new Set((existingRows || []).map((r: any) => r.h || '').filter(Boolean));
 
@@ -2996,14 +3054,12 @@ app.post('/api/automation/task-list/sync', async (c) => {
 
 // ===== �䨮 artist handle ���騨?��???��? bot =====
 app.post('/api/automation/tasks/inject', async (c) => {
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
   try {
     const { artistHandles, taskType = 'ig_browse', botId = '' } = await c.req.json();
     if (!artistHandles?.length) return c.json({ error: 'artistHandles required' }, 400);
     const ts = Date.now();
     const dedupWindow = ts - 7 * 24 * 60 * 60 * 1000;
-    const sql = neonSql(connStr);
+    const sql = d1Sql(c.env.DB);
     let created = 0, skipped = 0;
 
     for (const handle of artistHandles) {
@@ -3011,7 +3067,7 @@ app.post('/api/automation/tasks/inject', async (c) => {
       if (!h) continue;
 
       // 2��??��o7����?����?��?��D��? handle ��?��???
-      const existing = await sql`SELECT id FROM automation_tasks WHERE payload->>'artistHandle' = ${h} AND updated_at > ${dedupWindow} LIMIT 1`;
+      const existing = await sql`SELECT id FROM automation_tasks WHERE json_extract(payload, '$.artistHandle') = ${h} AND updated_at > ${dedupWindow} LIMIT 1`;
       if (existing?.rows?.length || existing?.length) { skipped++; continue; }
 
       const leasedBy = botId || null;
@@ -3030,10 +3086,8 @@ app.get('/api/tasks/count', async (c) => {
   const tokenParam = c.req.query('token');
   if (tokenParam !== 'vps-bot-secret-2024') return c.json({ error: 'unauthorized' }, 401);
   const botId = c.req.query('botId') || '';
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
   try {
-    const sql = neonSql(connStr);
+    const sql = d1Sql(c.env.DB);
     const today = new Date();
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
     const rows = await sql`SELECT COUNT(*) as cnt FROM automation_tasks WHERE created_at >= ${startOfDay}`;
@@ -3049,12 +3103,10 @@ app.post('/api/tasks/create', async (c) => {
   // ?��3? ?token= ��??��ꡧscheduler ��? query param��?
   const tokenParam = c.req.query('token');
   if (tokenParam !== 'vps-bot-secret-2024') return c.json({ error: 'unauthorized' }, 401);
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
   try {
     const { tasks } = await c.req.json();
     if (!Array.isArray(tasks) || !tasks.length) return c.json({ error: 'tasks array required' }, 400);
-    const sql = neonSql(connStr);
+    const sql = d1Sql(c.env.DB);
     const ts = Date.now();
     const dedupWindow = ts - 7 * 24 * 60 * 60 * 1000; // 7-day dedup (match poll)
     let created = 0, skipped = 0;
@@ -3070,7 +3122,7 @@ app.post('/api/tasks/create', async (c) => {
       try {
         const existing = await sql`
           SELECT id FROM automation_tasks
-          WHERE payload->>'artistHandle' = ${handle}
+          WHERE json_extract(payload, '$.artistHandle') = ${handle}
             AND status IN ('pending','leased','done')
             AND updated_at > ${dedupWindow}
           LIMIT 1
@@ -3102,19 +3154,22 @@ app.get('/api/automation/task-list', async (c) => {
   try {
     const limit = Math.min(200, Math.max(1, Number(c.req.query('limit')) || 50));
     const status = String(c.req.query('status') || '').trim();
-    const connStr = c.env.NEON_DATABASE_URL;
-    if (!connStr) return c.json({ ok: false, error: 'NEON not configured', tasks: [] }, 500);
-    const sql = neonSql(connStr);
+    const ownerUid = String(c.req.query('ownerUid') || c.req.query('owner_uid') || '').trim();
+    const sql = d1Sql(c.env.DB);
     let rows;
-    if (status) {
+    if (status && ownerUid) {
+      rows = await sql`SELECT id, status, leased_by, payload, error_reason, created_at, updated_at FROM automation_tasks WHERE status = ${status} AND json_extract(payload, '$.owner_uid') = ${ownerUid} ORDER BY created_at DESC LIMIT ${limit}`;
+    } else if (status) {
       rows = await sql`SELECT id, status, leased_by, payload, error_reason, created_at, updated_at FROM automation_tasks WHERE status = ${status} ORDER BY created_at DESC LIMIT ${limit}`;
+    } else if (ownerUid) {
+      rows = await sql`SELECT id, status, leased_by, payload, error_reason, created_at, updated_at FROM automation_tasks WHERE json_extract(payload, '$.owner_uid') = ${ownerUid} ORDER BY created_at DESC LIMIT ${limit}`;
     } else {
       rows = await sql`SELECT id, status, leased_by, payload, error_reason, created_at, updated_at FROM automation_tasks ORDER BY created_at DESC LIMIT ${limit}`;
     }
     const tasks = (rows?.rows || rows || []).map((t: any) => {
       let payload: any = {};
       try { payload = typeof t.payload === 'string' ? JSON.parse(t.payload) : (t.payload || {}); } catch {}
-      return { id: t.id, status: t.status, artistHandle: payload.artistHandle || '', leasedBy: t.leased_by, errorReason: t.error_reason, createdAt: t.created_at, updatedAt: t.updated_at };
+      return { id: t.id, status: t.status, artistHandle: payload.artistHandle || '', ownerUid: payload.owner_uid || '', targetBotId: payload.targetBotId || '', leasedBy: t.leased_by, errorReason: t.error_reason, createdAt: t.created_at, updatedAt: t.updated_at };
     });
     return c.json({ ok: true, tasks });
   } catch (e: any) { return c.json({ ok: false, error: e.message, tasks: [] }, 500); }
@@ -3126,10 +3181,8 @@ app.post('/api/automation/tasks/clear-duplicate-pending', async (c) => {
   if (!auth?.startsWith('Bearer ') || auth.slice(7) !== 'vps-bot-secret-2024') {
     return c.json({ error: 'unauthorized' }, 401);
   }
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
   try {
-    const sql = neonSql(connStr);
+    const sql = d1Sql(c.env.DB);
     const dedupWindow = Date.now() - 7 * 24 * 60 * 60 * 1000;
     // ��?3y pending ��???��??? handle ��?��D done/leased ��????�� dedup ���?��?��
     const result = await sql`
@@ -3139,7 +3192,7 @@ app.post('/api/automation/tasks/clear-duplicate-pending', async (c) => {
           SELECT 1 FROM automation_tasks d
           WHERE d.status IN ('done','leased')
             AND d.updated_at > ${dedupWindow}
-            AND d.payload->>'artistHandle' = automation_tasks.payload->>'artistHandle'
+            AND d.json_extract(payload, '$.artistHandle') = automation_tasks.json_extract(payload, '$.artistHandle')
         )
     `;
     return c.json({ ok: true, deleted: result?.count || 0 });
@@ -3154,12 +3207,10 @@ app.post('/api/automation/tasks/clear-all-pending', async (c) => {
   const auth = c.req.header('Authorization');
   const authed = tokenParam === 'vps-bot-secret-2024' || auth === 'Bearer vps-bot-secret-2024';
   if (!authed) return c.json({ error: 'unauthorized' }, 401);
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
   try {
-    const sql = neonSql(connStr);
-    const delPending = (await sql`DELETE FROM automation_tasks WHERE status = 'pending' RETURNING id`).length || 0;
-    const delLeased = (await sql`DELETE FROM automation_tasks WHERE status = 'leased' RETURNING id`).length || 0;
+    const sql = d1Sql(c.env.DB);
+    const delPending = (await c.env.DB.prepare(`DELETE FROM automation_tasks WHERE status = 'pending'`).run()).changes || 0;
+    const delLeased = (await c.env.DB.prepare(`DELETE FROM automation_tasks WHERE status = 'leased'`).run()).changes || 0;
     return c.json({ ok: true, deleted: delPending + delLeased, pending: delPending, leased: delLeased });
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e) }, 500);
@@ -3176,10 +3227,8 @@ app.post('/api/voice/log', async (c) => {
 });
 
 app.get('/api/automation/poll-debug', async (c) => {
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ error: 'NEON not configured' }, 500);
   try {
-    const sql = neonSql(connStr);
+    const sql = d1Sql(c.env.DB);
     const now = Date.now();
     const dedupWindow = now - 7 * 24 * 60 * 60 * 1000;
 
@@ -3192,7 +3241,7 @@ app.get('/api/automation/poll-debug', async (c) => {
     const readyCount = Number(readyPending?.[0]?.cnt || 0);
 
     // 3. Pending where handle already done in dedup window
-    const dedupBlocked = await sql`SELECT COUNT(*) as cnt FROM automation_tasks t WHERE status = 'pending' AND EXISTS (SELECT 1 FROM automation_tasks d WHERE d.status = 'done' AND d.updated_at > ${dedupWindow} AND d.payload->>'artistHandle' = t.payload->>'artistHandle')`;
+    const dedupBlocked = await sql`SELECT COUNT(*) as cnt FROM automation_tasks t WHERE status = 'pending' AND EXISTS (SELECT 1 FROM automation_tasks d WHERE d.status = 'done' AND d.updated_at > ${dedupWindow} AND d.json_extract(payload, '$.artistHandle') = t.json_extract(payload, '$.artistHandle'))`;
     const dedupBlockedCount = Number(dedupBlocked?.[0]?.cnt || 0);
 
     // 4. Sample tasks with run_at
@@ -3205,12 +3254,12 @@ app.get('/api/automation/poll-debug', async (c) => {
       const pc = await sql`
         SELECT id, payload FROM automation_tasks
         WHERE status = 'pending' AND run_at <= ${now}
-          AND (payload->>'artistHandle' IS NULL
+          AND (json_extract(payload, '$.artistHandle') IS NULL
             OR NOT EXISTS (
               SELECT 1 FROM automation_tasks d
               WHERE d.id != automation_tasks.id
                 AND d.status IN ('pending','leased') AND d.updated_at > ${dedupWindow}
-                AND d.payload->>'artistHandle' = automation_tasks.payload->>'artistHandle'
+                AND d.json_extract(payload, '$.artistHandle') = automation_tasks.json_extract(payload, '$.artistHandle')
             ))
         ORDER BY run_at ASC LIMIT ${limit}
       `;
@@ -3874,11 +3923,9 @@ app.post('/api/content/scan-opportunities', async (c) => {
 
 // GET /api/artists — full list from Neon, used to populate the CRM dashboard
 app.get('/api/artists', async (c) => {
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ error: 'NEON_DATABASE_URL not configured' }, 500);
   try {
     const limit = Math.min(5000, Math.max(1, parseInt(c.req.query('limit') || '5000')));
-    const rows = await neonQuery(connStr, `SELECT * FROM artists ORDER BY shop_name ASC LIMIT ${limit}`);
+    const rows = await d1All(c.env.DB, `SELECT * FROM artists ORDER BY shop_name ASC LIMIT ${limit}`);
     return c.json(rows || []);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -3888,8 +3935,6 @@ app.get('/api/artists', async (c) => {
 // POST /api/artists/bulk-import — upsert artists from a CSV import (best-effort, per-row safe)
 const ARTIST_WHITELIST = ['shop_name','ig_handle','city','state','import_region','phone','website','email','rating','followers','reviews','category','full_name','address','profile_pic','conversion_score','country'];
 app.post('/api/artists/bulk-import', async (c) => {
-  const connStr = c.env.NEON_DATABASE_URL;
-  if (!connStr) return c.json({ ok: false, error: 'NEON_DATABASE_URL not configured' }, 500);
   try {
     const { rows, importRegion, defaultCountry = 'USA' } = await c.req.json();
     if (!Array.isArray(rows) || rows.length === 0) return c.json({ ok: true, inserted: 0, updated: 0 });
@@ -3901,8 +3946,8 @@ app.post('/api/artists/bulk-import', async (c) => {
         const shop = String(r.shop_name || '').trim();
         if (!ig && !shop) continue;
         let existing: any[] = [];
-        if (ig) existing = await neonQuery(connStr, `SELECT id FROM artists WHERE LOWER(ig_handle) = $1`, [ig]);
-        if ((!existing || existing.length === 0) && shop) existing = await neonQuery(connStr, `SELECT id FROM artists WHERE LOWER(shop_name) = $1`, [shop.toLowerCase()]);
+        if (ig) existing = await d1All(c.env.DB, `SELECT id FROM artists WHERE LOWER(ig_handle) = $1`, [ig]);
+        if ((!existing || existing.length === 0) && shop) existing = await d1All(c.env.DB, `SELECT id FROM artists WHERE LOWER(shop_name) = $1`, [shop.toLowerCase()]);
 
         const cols: string[] = [];
         const vals: any[] = [];
@@ -3919,11 +3964,11 @@ app.post('/api/artists/bulk-import', async (c) => {
 
         if (existing && existing.length) {
           const setClause = cols.map((c2, i) => `${c2} = $${i + 1}`).join(', ');
-          await neonQuery(connStr, `UPDATE artists SET ${setClause} WHERE id = $${cols.length + 1}`, [...vals, existing[0].id]);
+          await d1All(c.env.DB, `UPDATE artists SET ${setClause} WHERE id = $${cols.length + 1}`, [...vals, existing[0].id]);
           updated++;
         } else {
           const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
-          await neonQuery(connStr, `INSERT INTO artists (${cols.join(', ')}) VALUES (${placeholders})`, vals);
+          await d1All(c.env.DB, `INSERT INTO artists (${cols.join(', ')}) VALUES (${placeholders})`, vals);
           inserted++;
         }
       } catch (rowErr: any) {
@@ -4370,20 +4415,21 @@ async function runShopifySync(env: any, opts: { full?: boolean; sinceId?: number
       lastProcessedId = Number(order.id);
       let hadSku = false;
       for (const item of (order.line_items || [])) {
-        const sku = (item.sku || item.variant_sku || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+        let sku = (item.sku || item.variant_sku || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+        sku = sku.startsWith('PEACH-') ? sku.slice(6) : sku; // 归一：PEACH- 前缀变体与基 SKU 合并，避免 SKU 翻倍
         if (!sku || item.quantity <= 0) continue;
-        hadSku = true;
-        // Ensure the parent product exists (inventory_outbounds.product_sku → inventory_products.sku FK).
-        // Shopify SKUs may not yet live in the warehouse products table, so create a minimal stub if missing.
-        try {
-          const prod = await env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first();
-          if (!prod) {
-            await env.DB.prepare(`INSERT INTO inventory_products (sku,name,category,vendor,unit,unit_price,reorder_point,reorder_qty,lead_time_days,moq,carton_qty,source,shopify_variant_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-              .bind(sku, (item.title || sku), 'General', '', 'Box', 0, 50, 1000, 45, 500, 100, 'shopify', item.variant_id || null, Date.now(), Date.now()).run();
-          }
-        } catch (e: any) { console.log('[shopify-sync] stub product ensure failed for', sku, ':', e?.message || e); }
-        // Dedup per (order, sku) so a prior partial/mismatched row never blocks a correct re-sync.
-        const existing = await env.DB.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? AND product_sku = ? LIMIT 1').bind(orderId, sku).first();
+          hadSku = true;
+          // Ensure the parent product exists (inventory_outbounds.product_sku → inventory_products.sku FK).
+          // Shopify SKUs may not yet live in the warehouse products table, so create a minimal stub if missing.
+          try {
+            const prod = await env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first();
+            if (!prod) {
+              await env.DB.prepare(`INSERT INTO inventory_products (sku,name,category,vendor,unit,unit_price,reorder_point,reorder_qty,lead_time_days,moq,carton_qty,source,shopify_variant_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+                .bind(sku, (item.title || sku), 'General', '', 'Box', 0, 50, 1000, 45, 500, 100, 'shopify', item.variant_id || null, Date.now(), Date.now()).run();
+            }
+          } catch (e: any) { console.log('[shopify-sync] stub product ensure failed for', sku, ':', e?.message || e); }
+          // Dedup per (order, sku) so a prior partial/mismatched row never blocks a correct re-sync.
+          const existing = await env.DB.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? AND product_sku = ? LIMIT 1').bind(orderId, sku).first();
         if (existing) continue;
         const note = `Shopify Order #${orderNumber}`;
         await env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
@@ -4634,10 +4680,26 @@ export default {
           // frontend can display/search it directly. Matches the manual import interface.
           const orderId = orderNumber ? '#' + orderNumber : String(order.id);
           totalOrders++;
-          const existing = await env.DB.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? LIMIT 1').bind(orderId).first();
-          if (existing) continue;
+          const existing = await env.DB.prepare('SELECT id, note FROM inventory_outbounds WHERE shopify_order_id = ? LIMIT 1').bind(orderId).first();
+          if (existing) {
+            // 备注回填：订单首次抓取时可能无备注，后续 Shopify 补了备注后，下次 cron 自动同步。
+            const customerNote = shopifyNoteText(order);
+            const newNote = customerNote
+              ? `Shopify Order #${orderNumber} | 备注: ${customerNote}`
+              : `Shopify Order #${orderNumber}`;
+            const oldNote = (existing as any).note || '';
+            if (newNote !== oldNote) {
+              try {
+                await env.DB.prepare('UPDATE inventory_outbounds SET note = ? WHERE shopify_order_id = ?')
+                  .bind(newNote, orderId).run();
+                console.log('[scheduled] note backfilled for', orderId);
+              } catch (e: any) { console.log('[scheduled] note update failed for', orderId, ':', e?.message || e); }
+            }
+            continue;
+          }
           for (const item of (order.line_items || [])) {
-            const sku = (item.sku || item.variant_sku || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+            let sku = (item.sku || item.variant_sku || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+            sku = sku.startsWith('PEACH-') ? sku.slice(6) : sku; // 归一：PEACH- 前缀变体与基 SKU 合并，避免 SKU 翻倍
             if (!sku || item.quantity <= 0) continue;
             // Ensure parent product exists (inventory_outbounds.product_sku → inventory_products.sku FK).
             try {
