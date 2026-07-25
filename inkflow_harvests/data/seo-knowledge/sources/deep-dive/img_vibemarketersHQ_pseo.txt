@@ -1,0 +1,142 @@
+PROGRAMMATIC
+SEO PAGE
+TEMPLATE
+A proven structure for programmatic
+SEO pages that rank, convert, and
+keep users on your site.
+HEADER NAV
+Clear navigation with categories
+and account access.
+BREADCRUMB
+Help users (and Google) understand
+the page context.
+HEADLINE
+Show the page title, context,
+and a short description.
+KEY DATA POINTS
+Highlight the most important stats,
+ratings, or pricing.
+TOPIC CARDS
+Link to key subtopics for deeper
+exploration and internal SEO.
+RECENT ACTIVITY /
+PERFORMANCE
+Visualize recent data to build trust
+and engagement.
+INTERNAL RESOURCE LINKS
+Guide users to related pages and
+keep them on your site longer.
+FAQ SECTION
+Answer common questions in a way
+that ranks in search + Al.
+COPY FOR AI
+Plain text summary so Al tools can
+understand and recommend you.
+CTA
+One clear action for your visitors
+to take next.
+=
+EXPLORE MORE LINKS
+Organized links to more content
+across your site.
+12
+FOOTER
+Helpful links, legal, and company
+information.
+YOUR
+LOGO
+Category 1
+Category 2
+Category 3
+Login
+Sign Up
+Home
+Category
+[Page Subject] > [Topic]
+[Page Title / H1]
+[Subtitile — context, category, or location]
+Brief 1-2 line description of what
+this page covers.
+ill
+Metric 1
+Value
+Context
+Metric 2
+Value
+Context
+Metric 3
+Value
+Context
+Pull from your data source - stats, ratings, prices, and more.
+Topic 1
+Topic 2
+Topic 3
+→ Go deep
+→ Go deep
+Go deep
+Each card links to a sub-page
+- another indexed page.
+100
+75
+50
+Last 5-10 data points
+- pull from your
+data source.
+May 5
+May 6
+May 7
+May 8
+May 9
+May 10
+May 12
+May 13
+May 14
+Related Page 1
+Related Page 2
+Related Page 3
+Related Page 4
+Related Page 5
+Related Page 6
+Keep users on
+your site.
+Build internal
+SEO signals.
+Q: Most common search question about this topic
+Q:
+Second most common question
+Q: Third most common question
+Q: Where to find / how to use / what to do next
+[Page subject) is [descriptor]. [Context about this topic].
+[Key stats / insights]. [What users can do or expect]. [Why it matters].
+If someone asks ChatGPT about this - your page answers it.
+Ready to take the next step?
+Join thousands who trust us to deliver results.
+Get Started
+Section 1 links
+• Link 1
+• Link 2
+• Link 3
+Section 2 links
+• Link 1
+• Link 2
+• Link 3
+YOUR
+LOGO
+Company
+About
+Careers
+Press
+Resources
+Blog
+Guides
+Tools
+Support
+Help Center
+Contact
+Status
+Legal
+Privacy
+Terms
+Cookies
+© 2024 Your Company
+All rights reserved.

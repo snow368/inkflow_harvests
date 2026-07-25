@@ -101,7 +101,7 @@ export async function listCompetitorPosts(
 export async function normalizeMemory(opts: {
   tenant: string;
   id: string;
-}): Promise<{ ok: boolean; specs: Record<string, string>; item?: MemoryItemDTO; error?: string }> {
+}): Promise<{ ok?: boolean; specs: Record<string, string>; item?: MemoryItemDTO; error?: string }> {
   const res = await aicoreFetch(`/${opts.tenant}/memory/${opts.id}/normalize`, {
     method: "POST",
     body: "{}",
@@ -138,7 +138,7 @@ export async function pullHarvests(opts: {
 }
 
 export interface ShopifyImportResult {
-  ok: boolean;
+  ok?: boolean;
   mode: "verify" | "enrich";
   tenant_id: string;
   brand: string;
@@ -198,7 +198,7 @@ export async function createMemory(
     content?: string;
     metadata?: Record<string, unknown>;
   }
-): Promise<{ ok: boolean; id?: string; item?: MemoryItemDTO; created?: number; error?: string }> {
+): Promise<{ ok?: boolean; id?: string; item?: MemoryItemDTO; created?: number; error?: string }> {
   const res = await aicoreFetch(`/${tenant}/memory`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -219,7 +219,7 @@ export async function createMemory(
 // product memory. Returns the created memory id(s) so the UI can immediately
 // run on-demand normalization for AI-quality specs.
 export interface UrlImportResult {
-  ok: boolean;
+  ok?: boolean;
   tenant_id: string;
   url: string;
   imported: number;
@@ -283,7 +283,7 @@ export interface IntelEventsResponse {
 // Capture a competitive snapshot for a tenant and diff it against the last one.
 // First call establishes a baseline (no events); later calls emit change events.
 export async function captureSnapshot(tenant: string): Promise<{
-  ok: boolean;
+  ok?: boolean;
   baseline?: boolean;
   captured?: number;
   events?: number;
@@ -389,7 +389,7 @@ export interface ReviewsResponse {
 export async function ingestReviews(
   tenant: string,
   reviews: ReviewRecordDTO[]
-): Promise<{ ok: boolean; ingested?: number; skipped?: number; error?: string }> {
+): Promise<{ ok?: boolean; ingested?: number; skipped?: number; error?: string }> {
   const res = await aicoreFetch(`/${tenant}/reviews/ingest`, {
     method: "POST",
     body: JSON.stringify({ reviews }),
@@ -437,7 +437,7 @@ export async function harvestReviews(tenant: string, opts: {
   limit?: number;
   includeComments?: boolean;
   maxResults?: number;
-}): Promise<{ ok: boolean; harvested?: number; ingested?: number; skipped?: number; error?: string }> {
+}): Promise<{ ok?: boolean; harvested?: number; ingested?: number; skipped?: number; error?: string }> {
   const res = await aicoreFetch(`/${tenant}/reviews/harvest`, {
     method: "POST",
     body: JSON.stringify(opts),
@@ -515,7 +515,7 @@ export async function deleteWatch(tenant: string, id: string): Promise<void> {
 }
 
 // Run this tenant's subscriptions now (manual trigger).
-export async function runWatch(tenant: string): Promise<{ ok: boolean; results?: WatchRunResultDTO[]; totalIngested?: number; error?: string }> {
+export async function runWatch(tenant: string): Promise<{ ok?: boolean; results?: WatchRunResultDTO[]; totalIngested?: number; error?: string }> {
   const res = await aicoreFetch(`/${tenant}/reddit-watch/run`, { method: "POST" });
   const data = (await res.json().catch(() => ({}))) as { ok?: boolean; results?: WatchRunResultDTO[]; totalIngested?: number; error?: string };
   if (!res.ok || !data.ok) throw new Error(data.error || `AI Core ${res.status}`);
@@ -553,7 +553,7 @@ export interface AudienceResponse {
 export async function upsertAudience(
   tenant: string,
   audience: AudienceRecordDTO[]
-): Promise<{ ok: boolean; upserted?: number; skipped?: number; error?: string }> {
+): Promise<{ ok?: boolean; upserted?: number; skipped?: number; error?: string }> {
   const res = await aicoreFetch(`/${tenant}/audience`, {
     method: "POST",
     body: JSON.stringify({ audience }),
@@ -623,7 +623,7 @@ export interface DispatchResult {
 export async function createCampaign(
   tenant: string,
   rec: CampaignRecordDTO
-): Promise<{ ok: boolean; campaign?: CampaignDTO; error?: string }> {
+): Promise<{ ok?: boolean; campaign?: CampaignDTO; error?: string }> {
   const res = await aicoreFetch(`/${tenant}/campaigns`, {
     method: "POST",
     body: JSON.stringify(rec),
@@ -650,7 +650,7 @@ export async function dispatchCampaign(
   tenant: string,
   campaignId: string
 ): Promise<{
-  ok: boolean;
+  ok?: boolean;
   recipients?: { handle: string; platform: string; script: string }[];
   scripts_by_channel?: Record<string, string>;
   total?: number;
@@ -776,12 +776,12 @@ export interface ChatListResponse {
   stats: ChatStats;
 }
 export interface ChatThreadResponse {
-  ok: boolean;
+  ok?: boolean;
   chat: ChatDTO;
   messages: ChatMessageDTO[];
 }
 
-export async function upsertChat(tenant: string, input: ChatInputDTO): Promise<{ ok: boolean; chat?: ChatDTO; error?: string }> {
+export async function upsertChat(tenant: string, input: ChatInputDTO): Promise<{ ok?: boolean; chat?: ChatDTO; error?: string }> {
   const res = await aicoreFetch(`/${tenant}/chats`, {
     method: "POST",
     body: JSON.stringify(input),
@@ -793,7 +793,7 @@ export async function upsertChat(tenant: string, input: ChatInputDTO): Promise<{
 
 // Live country detection from a WhatsApp number / website / IG / FB handle.
 export async function detectCountry(tenant: string, input: ContactInput): Promise<{
-  ok: boolean;
+  ok?: boolean;
   detection: CountryDetectionDTO;
   country: CountryStrategyDTO | null;
 }> {
@@ -845,7 +845,7 @@ export async function updateChat(
   tenant: string,
   chatId: string,
   patch: { deal_stage?: DealStage; customer_type?: CustomerType; summary?: string; locale?: string; platform?: string; country?: string | null }
-): Promise<{ ok: boolean; chat?: ChatDTO; error?: string }> {
+): Promise<{ ok?: boolean; chat?: ChatDTO; error?: string }> {
   const res = await aicoreFetch(`/${tenant}/chats/${encodeURIComponent(chatId)}`, {
     method: "PATCH",
     body: JSON.stringify(patch),
@@ -859,7 +859,7 @@ export async function addChatMessages(
   tenant: string,
   chatId: string,
   messages: { role: ChatRole; body: string; created_at?: string }[]
-): Promise<{ ok: boolean; inserted?: number; chat?: ChatDTO; error?: string }> {
+): Promise<{ ok?: boolean; inserted?: number; chat?: ChatDTO; error?: string }> {
   const res = await aicoreFetch(`/${tenant}/chats/${encodeURIComponent(chatId)}/messages`, {
     method: "POST",
     body: JSON.stringify({ messages }),
@@ -1066,7 +1066,7 @@ export async function updateTechnology(id: string, payload: Partial<Technology>)
 
 // AI suggests technologies from product pages. Returns suggested tech names.
 export async function extractTech(payload: { urls: string[]; category?: string; industry?: string }): Promise<{
-  ok: boolean;
+  ok?: boolean;
   suggested: string[];
   count: number;
   errors: string[];
@@ -1157,7 +1157,7 @@ export async function deleteNiche(id: string): Promise<void> {
 
 // AI brainstorms ultra-narrow niches from a seed direction (+ optional URLs).
 export async function scanNiches(payload: { seed?: string; count?: number; urls?: string[] }): Promise<{
-  ok: boolean;
+  ok?: boolean;
   seed: string;
   suggested: string[];
   count: number;

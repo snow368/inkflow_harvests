@@ -1,0 +1,23 @@
+uninstall.sh
+README Code of conduct &2 Contributing sto MIT license
+fix(uninstall): use glob enumeration so future skills are cleane...
+a Security
+2 weeks ago
+CLAUDE
+SED
+Al-Powered SEO Analysis
+/audit <url>
+/schema <url>
+/ geo < url>
+/ sitemap <url>
+/plan <type>
+/hreflang <url>
+/competitor-pages
+Claude SEO - SEO Audit Skill for Claude Code
+SEO analysis plugin for Claude Code. 25 sub-skills (21 core + 1 orchestrator + 1 framework integration + 2 extension
+mirrors) and 18 sub-agents (15 core + 1 framework integration + 2 extension mirrors) covering technical SEO, on-page
+analysis, content quality (E-E-A-T), content briefs, schema markup, image optimization, sitemap architecture, Al search
+optimization (GEO), local SEO, maps intelligence, semantic topic clustering, search experience optimization (SXO), SEO
+drift monitoring, e-commerce SEO, international SEO with cultural profiles, FLOW framework integration, Google SEO
+APls (Search Console, PageSpeed, CrUX, GA4), PDF report generation, and strategic planning.
+Q claude-seo-main

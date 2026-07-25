@@ -1,0 +1,115 @@
+keyword,symbol_slug,category_id,category_name,status,note
+Wolf tattoo meaning,wolf,animals,Animals,existing,
+Lion tattoo meaning,lion,animals,Animals,existing,
+Snake tattoo meaning,snake,animals,Animals,existing,
+Eagle tattoo meaning,eagle,animals,Animals,existing,
+Butterfly tattoo meaning,butterfly,animals,Animals,existing,
+Owl tattoo meaning,owl,animals,Animals,existing,
+Rose tattoo meaning,rose,flowers,Flowers,existing,
+Lotus tattoo meaning,lotus,flowers,Flowers,existing,
+Cherry Blossom tattoo meaning,cherry-blossom,flowers,Flowers,existing,
+Sunflower tattoo meaning,sunflower,flowers,Flowers,existing,
+Peony tattoo meaning,peony,flowers,Flowers,existing,
+Phoenix tattoo meaning,phoenix,mythological,Mythological,existing,
+Dragon tattoo meaning,dragon,mythological,Mythological,existing,
+Koi Fish tattoo meaning,koi-fish,mythological,Mythological,existing,
+Griffin tattoo meaning,griffin,mythological,Mythological,existing,
+Mermaid tattoo meaning,mermaid,mythological,Mythological,existing,
+Mandala tattoo meaning,mandala,geometric,Geometric & Celestial,existing,
+Compass tattoo meaning,compass,geometric,Geometric & Celestial,existing,
+Moon tattoo meaning,moon,geometric,Geometric & Celestial,existing,
+Arrow tattoo meaning,arrow,geometric,Geometric & Celestial,existing,
+Star tattoo meaning,star,geometric,Geometric & Celestial,existing,
+Infinity tattoo meaning,infinity,geometric,Geometric & Celestial,extended,
+Sun tattoo meaning,sun,geometric,Geometric & Celestial,extended,
+Galaxy tattoo meaning,galaxy,geometric,Geometric & Celestial,extended,
+Comet tattoo meaning,comet,geometric,Geometric & Celestial,extended,
+Planet tattoo meaning,planet,geometric,Geometric & Celestial,extended,
+Aurora tattoo meaning,aurora,geometric,Geometric & Celestial,extended,
+Cross tattoo meaning,cross,religious,Religious & Spiritual,existing,
+Eye of Horus tattoo meaning,eye-of-horus,religious,Religious & Spiritual,existing,
+Hamsa tattoo meaning,hamsa,religious,Religious & Spiritual,existing,
+Om / Aum tattoo meaning,om,religious,Religious & Spiritual,existing,
+Tribal tattoo meaning,tribal,cultural,Cultural & Tribal,existing,
+Celtic Knot tattoo meaning,celtic-knot,cultural,Cultural & Tribal,existing,
+Dreamcatcher tattoo meaning,dreamcatcher,cultural,Cultural & Tribal,existing,
+Egyptian Symbols tattoo meaning,egyptian,cultural,Cultural & Tribal,existing,
+Tree of Life tattoo meaning,tree-of-life,nature,Nature,existing,
+Wave tattoo meaning,wave,nature,Nature,existing,
+Mountain tattoo meaning,mountain,nature,Nature,existing,
+Feather tattoo meaning,feather,nature,Nature,existing,
+Anchor tattoo meaning,anchor,objects,Objects & Symbols,existing,
+Skull tattoo meaning,skull,objects,Objects & Symbols,existing,
+Heart tattoo meaning,heart,objects,Objects & Symbols,existing,
+Key tattoo meaning,key,objects,Objects & Symbols,existing,
+Geometric tattoo meaning,geometric,modern,Modern Styles,existing,
+Watercolor tattoo meaning,watercolor,modern,Modern Styles,existing,
+Minimalist tattoo meaning,minimalist,modern,Modern Styles,existing,
+Abstract tattoo meaning,abstract,modern,Modern Styles,existing,
+Swallow tattoo meaning,swallow,birds,Birds,new_category,
+Hummingbird tattoo meaning,hummingbird,birds,Birds,new_category,
+Dove tattoo meaning,dove,birds,Birds,new_category,
+Raven tattoo meaning,raven,birds,Birds,new_category,
+Constellation tattoo meaning,constellation,zodiac,Zodiac & Astrology,new_category,
+Pisces tattoo meaning,pisces,zodiac,Zodiac & Astrology,new_category,
+Scorpio tattoo meaning,scorpio,zodiac,Zodiac & Astrology,new_category,
+Gemini tattoo meaning,gemini,zodiac,Zodiac & Astrology,new_category,
+Bee tattoo meaning,bee,insects,Insects,new_category,
+Spider tattoo meaning,spider,insects,Insects,new_category,
+Dragonfly tattoo meaning,dragonfly,insects,Insects,new_category,
+Ladybug tattoo meaning,ladybug,insects,Insects,new_category,
+Whale tattoo meaning,whale,sea-life,Sea Life,new_category,
+Dolphin tattoo meaning,dolphin,sea-life,Sea Life,new_category,
+Octopus tattoo meaning,octopus,sea-life,Sea Life,new_category,
+Shark tattoo meaning,shark,sea-life,Sea Life,new_category,
+Clock tattoo meaning,clock,time,Time & Mortality,new_category,
+Hourglass tattoo meaning,hourglass,time,Time & Mortality,new_category,
+Pocket Watch tattoo meaning,pocket-watch,time,Time & Mortality,new_category,
+Name / Initial tattoo meaning,name-initial,words,Words & Lettering,new_category,
+Quote / Word tattoo meaning,quote,words,Words & Lettering,new_category,
+Coordinate tattoo meaning,coordinate,words,Words & Lettering,new_category,
+Roman Numeral tattoo meaning,roman-numeral,words,Words & Lettering,new_category,
+koi tattoo meaning,koi-fish,mythological,Mythological,variant,alias of koi fish
+crescent moon tattoo meaning,moon,geometric,Geometric & Celestial,variant,variant of moon
+nautical star tattoo meaning,star,geometric,Geometric & Celestial,variant,variant of star
+saturn tattoo meaning,planet,geometric,Geometric & Celestial,variant,variant of planet
+aurora borealis tattoo meaning,aurora,geometric,Geometric & Celestial,variant,variant of aurora
+sugar skull tattoo meaning,skull,objects,Objects & Symbols,variant,variant of skull
+sacred heart tattoo meaning,heart,objects,Objects & Symbols,variant,variant of heart
+ouroboros tattoo meaning,snake,animals,Animals,variant,variant of snake
+sun and moon tattoo meaning,sun,geometric,Geometric & Celestial,variant,sun (moon also in geometric)
+celtic tree of life tattoo meaning,tree-of-life,nature,Nature,variant,variant of tree of life
+cat tattoo meaning,,animals,Animals,gap,missing symbol
+bear tattoo meaning,,animals,Animals,gap,missing symbol
+deer tattoo meaning,,animals,Animals,gap,missing symbol
+fox tattoo meaning,,animals,Animals,gap,missing symbol
+elephant tattoo meaning,,animals,Animals,gap,missing symbol
+tiger tattoo meaning,,animals,Animals,gap,missing symbol
+wolf pack tattoo meaning,,animals,Animals,gap,covered by wolf customSections
+lily tattoo meaning,,flowers,Flowers,gap,missing symbol
+daisy tattoo meaning,,flowers,Flowers,gap,missing symbol
+lavender tattoo meaning,,flowers,Flowers,gap,missing symbol
+tulip tattoo meaning,,flowers,Flowers,gap,missing symbol
+hibiscus tattoo meaning,,flowers,Flowers,gap,missing symbol
+unicorn tattoo meaning,,mythological,Mythological,gap,missing symbol
+fairy tattoo meaning,,mythological,Mythological,gap,missing symbol
+kraken tattoo meaning,,sea-life,Sea Life,gap,missing symbol
+seahorse tattoo meaning,,sea-life,Sea Life,gap,missing symbol
+turtle tattoo meaning,,sea-life,Sea Life,gap,missing symbol
+fish tattoo meaning,,sea-life,Sea Life,gap,missing symbol (generic)
+crow tattoo meaning,,birds,Birds,gap,missing symbol (raven exists)
+sparrow tattoo meaning,,birds,Birds,gap,missing symbol (swallow exists)
+peacock tattoo meaning,,birds,Birds,gap,missing symbol
+leo tattoo meaning,,zodiac,Zodiac & Astrology,gap,missing symbol (sign, category exists)
+virgo tattoo meaning,,zodiac,Zodiac & Astrology,gap,missing symbol (sign, category exists)
+aries tattoo meaning,,zodiac,Zodiac & Astrology,gap,missing symbol (sign, category exists)
+angel tattoo meaning,,religious,Religious & Spiritual,gap,missing symbol
+buddha tattoo meaning,,religious,Religious & Spiritual,gap,missing symbol
+ganesha tattoo meaning,,religious,Religious & Spiritual,gap,missing symbol
+yin yang tattoo meaning,,cultural,Cultural & Tribal,gap,missing symbol
+chakra tattoo meaning,,religious,Religious & Spiritual,gap,missing symbol
+ship tattoo meaning,,objects,Objects & Symbols,gap,missing symbol
+music note tattoo meaning,,objects,Objects & Symbols,gap,missing symbol
+lightning tattoo meaning,,geometric,Geometric & Celestial,gap,missing symbol
+cloud tattoo meaning,,nature,Nature,gap,missing symbol
+leaf tattoo meaning,,nature,Nature,gap,missing symbol

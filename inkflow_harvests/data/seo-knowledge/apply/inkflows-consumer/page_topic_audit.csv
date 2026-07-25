@@ -1,0 +1,155 @@
+route,dir,cluster,file,title,h1,words,has_faq,has_schema
+/404,/,(未归类),src/pages/404.astro,,This page wandered off,35,,Y
+/AccountSettings,/,(未归类),src/pages/AccountSettings.tsx,,,630,,
+/AnalyticsPage,/,(未归类),src/pages/AnalyticsPage.tsx,,,441,,
+/AppointmentForm,/,(未归类),src/pages/AppointmentForm.tsx,,,406,,
+/AppointmentRespondPage,/,(未归类),src/pages/AppointmentRespondPage.tsx,,,312,,
+/ArtistLandingPage,/,(未归类),src/pages/ArtistLandingPage.tsx,,,450,,Y
+/ArtistProfilePage,/,(未归类),src/pages/ArtistProfilePage.tsx,,Profile Page,385,,
+/AuditLogPage,/,(未归类),src/pages/AuditLogPage.tsx,,,47,,
+/AvailabilitySettingsPage,/,(未归类),src/pages/AvailabilitySettingsPage.tsx,,,177,,
+/BusinessSettings,/,(未归类),src/pages/BusinessSettings.tsx,,,240,,
+/CaseStudiesPage,/,color,src/pages/CaseStudiesPage.tsx,,Tattoo Studios That Grew with InkFlow,267,,
+/CheckinPage,/,(未归类),src/pages/CheckinPage.tsx,,,173,,
+/ClientBookingPage,/,(未归类),src/pages/ClientBookingPage.tsx,,,791,,
+/ClientDetail,/,(未归类),src/pages/ClientDetail.tsx,,,921,,
+/ClientPaymentPage,/,(未归类),src/pages/ClientPaymentPage.tsx,,,228,,
+/ClientPaymentStatusPage,/,(未归类),src/pages/ClientPaymentStatusPage.tsx,,,46,,
+/ClientPortalPage,/,(未归类),src/pages/ClientPortalPage.tsx,,,150,,
+/Clients,/,(未归类),src/pages/Clients.tsx,,,225,,
+/CommunicationLogPage,/,(未归类),src/pages/CommunicationLogPage.tsx,,,143,,
+/CompetitorsAdmin,/,(未归类),src/pages/CompetitorsAdmin.tsx,,,321,,
+/CompetitorsPage,/,(未归类),src/pages/CompetitorsPage.tsx,,,171,,
+/ConfirmBookingPage,/,(未归类),src/pages/ConfirmBookingPage.tsx,,,167,,
+/ContentStrategyPage,/,(未归类),src/pages/ContentStrategyPage.tsx,,,223,,
+/DailyCloseOutPage,/,(未归类),src/pages/DailyCloseOutPage.tsx,,,74,,
+/DepositPolicyPage,/,(未归类),src/pages/DepositPolicyPage.tsx,,,174,,
+/DesignReviewPage,/,ideas,src/pages/DesignReviewPage.tsx,,,239,,
+/EmbedBookingPage,/,(未归类),src/pages/EmbedBookingPage.tsx,,,263,,
+/EmbedPortfolioPage,/,(未归类),src/pages/EmbedPortfolioPage.tsx,,,57,,
+/EventsPage,/,placement,src/pages/EventsPage.tsx,,Events & Guest Spots,356,,
+/HealthChecklistPage,/,aftercare,src/pages/HealthChecklistPage.tsx,,,151,,
+/IntakePage,/,(未归类),src/pages/IntakePage.tsx,,,522,,
+/InventoryPage,/,(未归类),src/pages/InventoryPage.tsx,,,311,,
+/InvoiceDetail,/,(未归类),src/pages/InvoiceDetail.tsx,,,472,,
+/InvoiceSettingsPage,/,(未归类),src/pages/InvoiceSettingsPage.tsx,,,331,,
+/Invoices,/,(未归类),src/pages/Invoices.tsx,,,601,,
+/LeadConfirmationPage,/,(未归类),src/pages/LeadConfirmationPage.tsx,,,246,,
+/LeadInbox,/,(未归类),src/pages/LeadInbox.tsx,,Lead Pipeline,1007,,
+/LeadRevisePage,/,(未归类),src/pages/LeadRevisePage.tsx,,,166,,
+/LeadsPage,/,(未归类),src/pages/LeadsPage.tsx,,,1712,,
+/LocationsPage,/,placement,src/pages/LocationsPage.tsx,,,158,,
+/Me,/,(未归类),src/pages/Me.tsx,,,113,,
+/NewClientForm,/,(未归类),src/pages/NewClientForm.tsx,,,107,,
+/NotificationSettings,/,(未归类),src/pages/NotificationSettings.tsx,,,456,,
+/Outreach,/,(未归类),src/pages/Outreach.tsx,,,334,,
+/OwnerDashboard,/,(未归类),src/pages/OwnerDashboard.tsx,,,104,,
+/PaymentHistoryPage,/,(未归类),src/pages/PaymentHistoryPage.tsx,,,198,,
+/PaymentSettingsPage,/,(未归类),src/pages/PaymentSettingsPage.tsx,,,372,,
+/Portfolio,/,(未归类),src/pages/Portfolio.tsx,,,753,,
+/PosPage,/,(未归类),src/pages/PosPage.tsx,,,873,,
+/PosSettingsPage,/,(未归类),src/pages/PosSettingsPage.tsx,,,105,,
+/PricingPage,/,cost,src/pages/PricingPage.tsx,,Pricing & Plans,226,,
+/ProPlusSetup,/,(未归类),src/pages/ProPlusSetup.tsx,,,208,,
+/ProjectApprovePage,/,(未归类),src/pages/ProjectApprovePage.tsx,,,163,,
+/ProjectReferences,/,(未归类),src/pages/ProjectReferences.tsx,,Reference Board,318,,
+/PublicPortfolioPage,/,(未归类),src/pages/PublicPortfolioPage.tsx,,,159,,
+/PublicWaiverSign,/,(未归类),src/pages/PublicWaiverSign.tsx,,,577,,
+/Referral,/,(未归类),src/pages/Referral.tsx,,,141,,
+/ReferralShortPage,/,(未归类),src/pages/ReferralShortPage.tsx,,,158,,
+/Register,/,(未归类),src/pages/Register.tsx,,,495,,
+/ReviewInvitesPage,/,(未归类),src/pages/ReviewInvitesPage.tsx,,,256,,
+/SessionPage,/,(未归类),src/pages/SessionPage.tsx,,,944,,
+/ShiftSchedulingPage,/,(未归类),src/pages/ShiftSchedulingPage.tsx,,,191,,
+/SocialGallery,/,(未归类),src/pages/SocialGallery.tsx,,,1154,,
+/StaffManagementPage,/,(未归类),src/pages/StaffManagementPage.tsx,,,159,,
+/StudioSettings,/,(未归类),src/pages/StudioSettings.tsx,,,201,,
+/SupplyBrandsAdmin,/,(未归类),src/pages/SupplyBrandsAdmin.tsx,,,715,,
+/SupplyBrandsPage,/,(未归类),src/pages/SupplyBrandsPage.tsx,,,889,,
+/SupplyReviewsPage,/,(未归类),src/pages/SupplyReviewsPage.tsx,,,313,,
+/TaskManagementPage,/,(未归类),src/pages/TaskManagementPage.tsx,,,216,,
+/Today,/,(未归类),src/pages/Today.tsx,,,2451,,
+/Verification,/,(未归类),src/pages/Verification.tsx,,,317,,
+/WaiverManager,/,(未归类),src/pages/WaiverManager.tsx,,,134,,
+/WaiverSign,/,(未归类),src/pages/WaiverSign.tsx,,,580,,
+/WalkinPage,/,(未归类),src/pages/WalkinPage.tsx,,,680,,
+/WebsiteWizard,/,(未归类),src/pages/WebsiteWizard.tsx,,,413,,
+/_deploy,/,(未归类),src/pages/_deploy.astro,,,2,,
+/_full,/,(未归类),src/pages/_full.astro,,Full Test Works,3,,
+/_minimal,/,small,src/pages/_minimal.astro,Minimal Test,Working!,3,,
+/_test,/,(未归类),src/pages/_test.astro,,TEST PAGE WORKS,10,,
+/_withlayout,/,(未归类),src/pages/_withlayout.astro,,Layout Test Works,3,,
+/about,/,color,src/pages/about.astro,CEO & Co-Founder,We Built InkFlow for Tattoo Studios,308,Y,Y
+/contact,/,(未归类),src/pages/contact.astro,,Contact Us,134,Y,
+/digital-tattoo-waiver,/,(未归类),src/pages/digital-tattoo-waiver.astro,Tattoo Industry Compliance Specialist,"Replace Paper Waivers with Digital Consent. Safer, Faster, Court-Admis",1309,Y,Y
+/download,/,color,src/pages/download.astro,,Use InkFlow on Any Device,107,,
+/find-artist,/,(未归类),src/pages/find-artist.astro,,Book a Tattoo Appointment,118,,
+/index,/,(未归类),src/pages/index.astro,,"Tattoo Studio Management
+
+            Software for Your Shop",579,Y,Y
+/online-tattoo-booking,/,(未归类),src/pages/online-tattoo-booking.astro,,Online Tattoo Booking Software for Studios,77,,
+/pricing,/,cost,src/pages/pricing.astro,,Free for Solo Artists. Upgrade When You Grow.,688,Y,Y
+/privacy,/,(未归类),src/pages/privacy.astro,,Privacy Policy,129,,
+/tattoo-appointment-booking,/,(未归类),src/pages/tattoo-appointment-booking.astro,,,0,,
+/tattoo-appointment-scheduler,/,(未归类),src/pages/tattoo-appointment-scheduler.astro,,,0,,
+/tattoo-booking-app,/,(未归类),src/pages/tattoo-booking-app.astro,,,0,,
+/tattoo-business-management,/,(未归类),src/pages/tattoo-business-management.astro,,,0,,
+/tattoo-client-management,/,(未归类),src/pages/tattoo-client-management.astro,,,0,,
+/tattoo-commission-software,/,(未归类),src/pages/tattoo-commission-software.astro,,,0,,
+/tattoo-consent-form-app,/,(未归类),src/pages/tattoo-consent-form-app.astro,,,0,,
+/tattoo-crm-software,/,(未归类),src/pages/tattoo-crm-software.astro,,,0,,
+/tattoo-deposit-software,/,(未归类),src/pages/tattoo-deposit-software.astro,,,0,,
+/tattoo-payment-processing,/,(未归类),src/pages/tattoo-payment-processing.astro,,,0,,
+/tattoo-pos-system,/,(未归类),src/pages/tattoo-pos-system.astro,,,0,,
+/tattoo-scheduling-software,/,(未归类),src/pages/tattoo-scheduling-software.astro,,,0,,
+/tattoo-waiver-app,/,(未归类),src/pages/tattoo-waiver-app.astro,,,0,,
+/terms,/,(未归类),src/pages/terms.astro,,Terms of Service,90,,
+/alternatives/best-free-tattoo-booking-software,/alternatives,(未归类),src/pages/alternatives/best-free-tattoo-booking-software.astro,,Best Free Tattoo Booking Software,315,,
+/alternatives/tattoo-studio-pro-alternatives,/alternatives,(未归类),src/pages/alternatives/tattoo-studio-pro-alternatives.astro,,Tattoo Studio Pro Alternatives,328,,
+/blog,/blog,color,src/pages/blog/index.astro,,InkFlow Blog,132,,Y
+/blog/how-to-digitize-tattoo-waivers,/blog,(未归类),src/pages/blog/how-to-digitize-tattoo-waivers.astro,,How to Digitize Tattoo Waivers in 2026,1198,Y,Y
+/blog/multi-artist-commission-tracking,/blog,(未归类),src/pages/blog/multi-artist-commission-tracking.astro,,Multi-Artist Commission Tracking Explained,1069,Y,Y
+/blog/reduce-no-shows-deposit-booking,/blog,(未归类),src/pages/blog/reduce-no-shows-deposit-booking.astro,,How to Reduce No-Shows in Your Tattoo Studio,1113,Y,Y
+/blog/tattoo-aftercare-automation,/blog,aftercare,src/pages/blog/tattoo-aftercare-automation.astro,,Tattoo Aftercare Automation: The Complete Guide for Studios,1538,Y,Y
+/blog/tattoo-aftercare-email-automation,/blog,aftercare,src/pages/blog/tattoo-aftercare-email-automation.astro,,Tattoo Aftercare Email Automation for Busy Studios,1183,Y,Y
+/blog/tattoo-aftercare-guide,/blog,aftercare,src/pages/blog/tattoo-aftercare-guide.astro,,"Complete Tattoo Aftercare Guide — Healing, Products &amp; Tips",1204,Y,Y
+/blog/tattoo-inventory-guide,/blog,(未归类),src/pages/blog/tattoo-inventory-guide.astro,,Tattoo Shop Inventory Management Guide,1091,Y,Y
+/blog/topic/aftercare,/blog/topic,aftercare,src/pages/blog/topic/aftercare.astro,,Tattoo Aftercare — Complete Resource Collection,228,,
+/book/[city],/book,(未归类),src/pages/book/[city].astro,,,280,Y,Y
+/business/tattoo-studio-software,/business,(未归类),src/pages/business/tattoo-studio-software.astro,,Tattoo Studio Software — All-in-One Management for Tattoo Shops,1841,Y,Y
+/compare/best-tattoo-studio-software,/compare,(未归类),src/pages/compare/best-tattoo-studio-software.astro,,Best Tattoo Studio Software 2026,273,Y,Y
+/compare/best-tattoo-waiver-app,/compare,(未归类),src/pages/compare/best-tattoo-waiver-app.astro,,Best Tattoo Waiver App for iPad,634,Y,Y
+/compare/booksy,/compare,color,src/pages/compare/booksy.astro,,InkFlow vs Booksy for Tattoo Studios,626,Y,Y
+/compare/mindbody,/compare,color,src/pages/compare/mindbody.astro,,InkFlow vs Mindbody for Tattoo Studios (2026),666,Y,Y
+/compare/square-appointments,/compare,color,src/pages/compare/square-appointments.astro,,InkFlow vs Square Appointments for Tattoo Studios (2026),720,Y,Y
+/compare/tattoo-studio-pro,/compare,color,src/pages/compare/tattoo-studio-pro.astro,,InkFlow vs Tattoo Studio Pro (2026),725,Y,Y
+/compare/tattoogenda,/compare,color,src/pages/compare/tattoogenda.astro,,InkFlow vs Tattoogenda (2026),707,Y,Y
+/compare/vagaro,/compare,color,src/pages/compare/vagaro.astro,,InkFlow vs Vagaro for Tattoo Studios (2026),820,Y,Y
+/features,/features,(未归类),src/pages/features/index.astro,Smart Booking,Everything You Need to Run Your Studio,73,,
+/features/free-tattoo-website,/features,(未归类),src/pages/features/free-tattoo-website.astro,,Free Tattoo Shop Website + Short Link for Your Bio,1103,Y,Y
+/features/tattoo-aftercare-software-automation,/features,aftercare,src/pages/features/tattoo-aftercare-software-automation.astro,,Tattoo Aftercare Automation: 40% More Healed Photos on Autopilot,1058,Y,Y
+/features/tattoo-booking-page,/features,(未归类),src/pages/features/tattoo-booking-page.astro,,Tattoo Artist Booking Page: Free Booking Link for Your Studio,785,Y,Y
+/features/tattoo-booking-software,/features,(未归类),src/pages/features/tattoo-booking-software.astro,,Tattoo Booking Software: Cut No-Shows by 80% with Deposits,1239,Y,Y
+/features/tattoo-client-portal,/features,(未归类),src/pages/features/tattoo-client-portal.astro,,"Tattoo Client Portal: Appointments, Waivers &amp; History in One Place",500,Y,Y
+/features/tattoo-competitor-intelligence,/features,cost,src/pages/features/tattoo-competitor-intelligence.astro,,"Competitor Intelligence: Track Local Studios, Pricing &amp; Trends",730,Y,Y
+/features/tattoo-compliance-software,/features,aftercare,src/pages/features/tattoo-compliance-software.astro,,Tattoo Health Compliance: Stay Inspection-Ready with Digital Checklist,485,Y,Y
+/features/tattoo-crm-software,/features,(未归类),src/pages/features/tattoo-crm-software.astro,,Tattoo CRM Software: Full Client History Without Spreadsheets,1079,Y,Y
+/features/tattoo-ink-passport,/features,color,src/pages/features/tattoo-ink-passport.astro,,Ink Passport: Digital Ink Records for EU REACH Compliance,1423,Y,Y
+/features/tattoo-inventory-management,/features,cost,src/pages/features/tattoo-inventory-management.astro,,Tattoo Shop Inventory Management: Track Supplies &amp; Cost Per Sessio,568,Y,Y
+/features/tattoo-marketing-automation,/features,(未归类),src/pages/features/tattoo-marketing-automation.astro,,"Tattoo Marketing Automation: Auto Reviews, Referrals & Lead Capture",1025,Y,Y
+/features/tattoo-payment-processing,/features,(未归类),src/pages/features/tattoo-payment-processing.astro,,"Tattoo Payment Processing: Deposits, Payments, Commissions in One Plac",1057,Y,Y
+/features/tattoo-referral-program,/features,(未归类),src/pages/features/tattoo-referral-program.astro,,Referral Program for Tattoo Studios: Automated Tracking &amp; Rewards,465,Y,Y
+/features/tattoo-studio-analytics,/features,(未归类),src/pages/features/tattoo-studio-analytics.astro,,"Tattoo Studio Analytics: Revenue, Bookings &amp; Performance Dashboard",458,Y,Y
+/features/tattoo-supply-brands,/features,(未归类),src/pages/features/tattoo-supply-brands.astro,,Tattoo Supply Brands Directory: Find &amp; Compare Suppliers,449,Y,Y
+/features/tattoo-waiver-software,/features,(未归类),src/pages/features/tattoo-waiver-software.astro,,Digital Tattoo Waiver Software: Paperless Consent in One Day,1263,Y,Y
+/free-tools/aftercare-email-generator,/free-tools,aftercare,src/pages/free-tools/aftercare-email-generator.astro,,Tattoo Aftercare Email Template Generator,616,Y,Y
+/free-tools/free-waiver-generator,/free-tools,(未归类),src/pages/free-tools/free-waiver-generator.astro,,Free Tattoo Consent Form Generator,376,Y,Y
+/free-tools/no-show-calculator,/free-tools,cost,src/pages/free-tools/no-show-calculator.astro,,Tattoo No-Show Cost Calculator,180,Y,Y
+/free-tools/tattoo-meaning-finder,/free-tools,ideas,src/pages/free-tools/tattoo-meaning-finder.astro,,Tattoo Meaning Finder,259,Y,Y
+/free-tools/tattoo-price-calculator,/free-tools,cost,src/pages/free-tools/tattoo-price-calculator.astro,,Tattoo Price Calculator,352,Y,Y
+/free-tools/commission-calculator,/free-tools/commission-calculator,(未归类),src/pages/free-tools/commission-calculator/index.astro,,Tattoo Artist Commission Calculator,628,Y,Y
+/meaning,/meaning,ideas,src/pages/meaning/index.astro,,Tattoo Meanings Directory,56,Y,Y
+/meaning/[symbol],/meaning,ideas,src/pages/meaning/[symbol].astro,,Tattoo Meaning,164,Y,Y
+/meaning/style-guide,/meaning,ideas,src/pages/meaning/style-guide.astro,,Tattoo Color &amp; Style Meaning Guide,152,,Y
+/meaning/category/[category],/meaning/category,ideas,src/pages/meaning/category/[category].astro,,,120,Y,Y
+/templates,/templates,(未归类),src/pages/templates/index.astro,,41 Stunning Templates for Your Studio,94,,

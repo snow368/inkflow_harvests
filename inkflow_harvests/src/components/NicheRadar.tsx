@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Save,
   Trophy,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -23,6 +24,8 @@ import {
   updateNiche,
   deleteNiche,
   scanNiches,
+  extractTech,
+  listTechnologies,
   type NicheOpportunity,
 } from "@/lib/aicore";
 
@@ -305,6 +308,59 @@ function NicheDetail({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // ── Direction 2 + 3.1: tech library ↔ opportunity radar ──────────────────
+  // coverage = how many technologies are tagged with this niche's name (the
+  // "技术覆盖率"). extractTech pushes player tech into the library tagged with
+  // this niche as its category.
+  const playerUrlsInit =
+    Array.isArray(niche.metrics?.player_urls)
+      ? (niche.metrics!.player_urls as unknown as string[]).join("\n")
+      : typeof niche.metrics?.player_urls === "string"
+      ? (niche.metrics!.player_urls as string)
+      : "";
+  const [coverage, setCoverage] = useState<number | null>(null);
+  const [showExtract, setShowExtract] = useState(false);
+  const [techUrls, setTechUrls] = useState(playerUrlsInit);
+  const [extracting, setExtracting] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    listTechnologies({ category: niche.name })
+      .then((r) => alive && setCoverage(r.total))
+      .catch(() => alive && setCoverage(0));
+    return () => {
+      alive = false;
+    };
+  }, [niche.name]);
+
+  const extractPlayerTech = async () => {
+    const urls = techUrls.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+    if (urls.length === 0) {
+      toast.error("请填写玩家产品页 URL");
+      return;
+    }
+    setExtracting(true);
+    try {
+      const r = await extractTech({ urls, category: niche.name });
+      toast.success(`抽取到 ${r.count} 条技术${r.errors.length ? `（${r.errors.length} 个抓取失败）` : ""}`);
+      // Persist URLs into niche metrics + keep local state in sync so a later
+      // save() won't clobber them.
+      const m: Record<string, number | string> = {};
+      metrics.forEach((row) => {
+        const k = row.key.trim();
+        if (k) m[k] = parseMetricValue(row.value);
+      });
+      m.player_urls = techUrls.trim();
+      setMetrics((p) => [...p.filter((x) => x.key !== "player_urls"), { key: "player_urls", value: techUrls.trim() }]);
+      await updateNiche(niche.id, { metrics: m });
+      setCoverage((c) => (typeof c === "number" ? c + r.count : r.count));
+    } catch (e) {
+      toast.error("抽取失败", { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setExtracting(false);
+    }
+  };
+
   // Live preview of the weighted opportunity score (matches server weights).
   const preview = useMemo(() => {
     const s =
@@ -476,6 +532,55 @@ function NicheDetail({
               <Plus className="w-4 h-4" /> 加
             </button>
           </div>
+        </div>
+
+        {/* Direction 2 + 3.1: tech library ↔ opportunity radar */}
+        <div className="rounded-2xl border border-cyan-500/15 bg-cyan-500/[0.03] p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] font-semibold text-cyan-300 flex items-center gap-1.5">
+              <Zap className="w-4 h-4" /> 技术洞察（技术库 ↔ 机会雷达）
+            </span>
+            {coverage !== null && (
+              <span className="text-[11px] text-zinc-500">
+                技术覆盖率：
+                <span className={coverage > 0 ? "text-cyan-400" : "text-amber-400"}>{coverage}</span> 条
+              </span>
+            )}
+          </div>
+          {niche.opportunity_score >= 70 && coverage === 0 && (
+            <p className="text-[11px] text-amber-400/90">
+              ⚠️ 机会分高但技术覆盖率为 0 —— 建议抽取玩家技术，了解竞品护城河后再决策。
+            </p>
+          )}
+          <div>
+            <button
+              onClick={() => setShowExtract((v) => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-700/60 hover:bg-cyan-600 text-white text-sm font-semibold"
+            >
+              <Zap className="w-4 h-4" /> 抽取玩家技术
+            </button>
+          </div>
+          {showExtract && (
+            <div className="space-y-2">
+              <p className="text-[11px] text-zinc-500">
+                粘贴该赛道玩家的产品页 URL（逗号 / 换行分隔）。提交后技术库会以「品类 = {niche.name}」标记这些技术，供跨品类借鉴视图筛选。
+              </p>
+              <textarea
+                value={techUrls}
+                onChange={(e) => setTechUrls(e.target.value)}
+                rows={3}
+                placeholder="https://player-product-page.com/..."
+                className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-100 outline-none"
+              />
+              <button
+                onClick={extractPlayerTech}
+                disabled={extracting}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold disabled:opacity-50"
+              >
+                {extracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />} 开始抽取并入库
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2 pt-2">

@@ -1,0 +1,38 @@
+Projects
+Content Too.
+Hi Assertive.
+Manoge your wats keyword ond rophis
++ Al Experiment
+* Overview
+le Analysis
+Name: Improve SEO Agency Rankings
+Status Running
+Description: Improved the homepage content further - adjusted the hora, added in SEO services section added a b.
+Alert on changes: Yes
+GA4 Metrics: -
+Expected Change Direction: Positive
+Target Queries: seo agency in london seo ogency london, seo agency uk. seo ogency
+Target Countries: United Kingdom
+Email To Notify: tools@rassertive-mediaco.uk
+Change Date: 2026-04-30
+Clicks
+0%
+1.81K
+N +4,019.44%
+0%
+CTR
+before: 0%
+52.1
+~ before: 61.29
+Impressions
+• 4
+• Delero
+Website: https://www.assortivo-modia.co.uk/
+Hypothesis: ivo enhanced the homepage to be more SEO agency-centric I have acided now sections to the homopage.
+Al Exporiment Types: -
+Is GA4 Includod: Yos
+is Al Report Enobled: Yes
+Target Pages: /
+Target Devices: -
+Created By: Assertivo Media
+Pivot Date: 2026-04-30

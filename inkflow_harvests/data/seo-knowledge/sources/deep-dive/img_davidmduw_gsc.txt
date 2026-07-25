@@ -1,0 +1,71 @@
+show me my seo quick wins
+I'll pull your SEO quick wins from Search Console. Let me load that tool first.
+Used 2 tools -
+Used ToolSearch >
+Used contextbolt-seo: search console quick wins ›
+Here are your striking-distance queries for contextbolt.com (last 28 days, positions ~5-20 with real impressions). I've grouped them by intent, because that's where the story is:
+• Informational: "where are my X bookmarks" (high volume, weak conversion)
+Query
+x app bookmarks location 2026
+how to access bookmarks on x app and web
+where are bookmarks on x
+how to see bookmarks on x mobile
+where are my bookmarks on x
+access bookmarks on x app and web
+Commercial: "export X bookmarks extension" (low volume, your actual buyer)
+Query
+best way to export x twitter bookmarks 2026
+best chrome extension export x bookmarks 2026
+best chrome extension export x twitter bookmarks 2026
+best chrome extension to export x twitter bookmarks 2026
+Brand/competitor
+Query
+Pos
+Pos
+5.0
+6.5
+9.2
+8.7
+8.2
+7.5
+Impr
+Impr
+1,086
+440
+77
+58
+39
+24
+Pos
+6.7
+7.6
+7.8
+9.2
+Clicks
+bookmarkeddit
+Impr
+21
+26
+29
+26
+Clicks
+1
+2
+1
+2
+0
+Clicks
+CTR
+CTR
+0.3%
+0.2%
+2.6%
+1.7%
+5.1%
+0.0%
+CTR
+0.0%
+0.0%
+0.0%
+0.0%
+0.0%

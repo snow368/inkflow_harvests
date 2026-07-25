@@ -27,6 +27,7 @@ import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { useCRM } from '../contexts/CRMContext';
 import { InstagramAccount, TaskAssignment } from '../types/crm';
+import BotActionPrefs from './BotActionPrefs';
 import { toast } from 'sonner';
 import DataDashboard from './DataDashboard';
 
@@ -72,7 +73,7 @@ const StatusBadge = ({ status }: { status: InstagramAccount['status'] }) => {
 };
 
 export default function AutomationCommandCenter() {
-  const { accounts, assignments, artists, assignTaskToAccount, startAutomationSequence } = useCRM();
+  const { accounts, assignments, artists, assignTaskToAccount, startAutomationSequence, user } = useCRM();
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [taskModes, setTaskModes] = useState<Record<string, BotTaskType>>({});
   const [expandedAccount, setExpandedAccount] = useState<string | null>(null);
@@ -625,6 +626,9 @@ export default function AutomationCommandCenter() {
               <p className="text-xs text-zinc-500 font-medium">Real-time Orchestration</p>
             </div>
           </div>
+
+          {/* 每用户动作偏好（多用户：每个登录用户可设自己的点赞/评论/关注次数） */}
+          <BotActionPrefs uid={user?.uid} username={(user as any)?.displayName || (user as any)?.email || undefined} />
 
           <div className="space-y-3">
             {activeAssignments.length > 0 ? (

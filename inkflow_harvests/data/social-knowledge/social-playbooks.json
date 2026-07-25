@@ -1,0 +1,905 @@
+{
+  "sections": [
+    {
+      "id": "social-strategy",
+      "title": "社媒内容战略",
+      "icon": "Target",
+      "color": "rose",
+      "summary": "选题体系 · 内容日历 · 形式矩阵 · 品牌人设 · 内容支柱",
+      "sort_order": 1,
+      "chapters": [
+        {
+          "label": "选题体系",
+          "items": [
+            "选题四维：流量型(热点/争议)、信任型(专业科普)、转化型(案例/优惠)、人设型(幕后/观点)，按账号阶段配比",
+            "选题来源：评论区高频问题、竞品高赞、搜索下拉词、小红书/知乎热帖、客服记录——建立常青选题池",
+            "80/20 选题法则：80% 常青(evergreen)内容打底 + 20% 追热点借势，避免账号随风飘",
+            "内容支柱(Content Pillars)：每账号定 3-5 个支柱覆盖不同用户需求，防止内容散乱",
+            "爆款选题库：建表记录已验证高互动选题，定期复用变体(换角度/换平台)",
+            "反对自嗨选题：用数据(收藏/分享)而非直觉判断选题价值",
+            "选题日历锚点：节日/行业节点/平台活动提前 2 周排进日历",
+            "用户旅程选题：认知→兴趣→考虑→决策 各阶段对应不同内容类型",
+            "选题减法：每月淘汰数据最差 20% 选题方向",
+            "爆款结构复用：提炼高赞内容的'结构'而非'话题'复用"
+          ]
+        },
+        {
+          "label": "内容日历与排期",
+          "items": [
+            "周更频率基线：新号 4-5 条/周冲量，成熟号 3-4 条/周保活跃",
+            "内容混排比例：教学 40% / 案例 30% / 种草 20% / 互动 10%",
+            "系列化连载：固定栏目(如#周二干货)培养用户回访习惯",
+            "排期工具：Notion/飞书多维表/Buffer/Later，统一看板管理",
+            "提前批产：每月底集中拍 2-3 周素材，降低日常产出压力",
+            "留出弹性位：每周留 1 个 slot 追突发热点",
+            "跨平台错峰：同素材不同平台间隔 1-2 天发，规避同质化判罚",
+            "复盘节点：每月末复盘数据+定下月主题",
+            "批量拍摄日：每月 1 天集中拍，省时保质量"
+          ]
+        },
+        {
+          "label": "内容形式矩阵",
+          "items": [
+            "IG：Reels(主推涨粉) > Carousel(收藏) > Feed(品牌) > Story(互动)",
+            "TikTok：15-30s 快节奏原声 > 60s 深度 > 图文转视频",
+            "X：线程(thread)长文 > 单条观点 > 图文 > 投票",
+            "小红书：图文笔记(封面决定点击) > 短视频(完播)",
+            "一材多用：1 次拍摄 → Reels + TikTok + 小红书视频 + X 图文四形态",
+            "直播：高信任高转化，适合答疑/限时优惠/幕后",
+            "投票/问答：低成本高互动，养算法权重",
+            "图文复活：旧爆款改新形式(视频化)二次发",
+            "合集/系列：降低单条压力，培养追更"
+          ]
+        },
+        {
+          "label": "品牌人设与调性",
+          "items": [
+            "人设三要素：专业度(作品/资质)、性格(幽默/严谨)、价值观(立场)",
+            "统一视觉：固定滤镜/字体/配色，降低用户识别成本",
+            "语气指南：口语化 vs 专业化的边界，emoji 使用规范写进 SOP",
+            "创始人 IP：真人出镜提升信任与记忆点，比纯品牌号涨粉快",
+            "人设雷区：贬低同行、过度营销、人设前后矛盾",
+            "故事资产：创业起源/客户蜕变/失败复盘，建立情感连接"
+          ]
+        },
+        {
+          "label": "内容支柱模型",
+          "items": [
+            "教育支柱：科普/教程，建立专业权威",
+            "娱乐支柱：轻松内容，扩大触达面",
+            "转化支柱：案例/优惠，直接促单",
+            "社区支柱：UGC/互动，提升粘性",
+            "每支柱占比按阶段调整：新号重教育+娱乐，成熟号加转化"
+          ]
+        }
+      ],
+      "subskills": [
+        {
+          "id": "social-topic-bank",
+          "name": "建选题库",
+          "desc": "按四维+支柱建常青选题表",
+          "trigger": "\"建选题库\""
+        },
+        {
+          "id": "social-content-calendar",
+          "name": "排内容日历",
+          "desc": "排一周内容并标注形式/平台",
+          "trigger": "\"排内容日历\""
+        }
+      ]
+    },
+    {
+      "id": "social-hooks",
+      "title": "钩子与文案",
+      "icon": "PenTool",
+      "color": "amber",
+      "summary": "开头3秒 · 标题公式 · Caption · CTA · 情绪故事",
+      "sort_order": 2,
+      "chapters": [
+        {
+          "label": "开头3秒钩子",
+          "items": [
+            "反常识：'你一直做错的 3 件事'",
+            "悬念未完：'最后一个大多数人不知道'",
+            "身份代入：'如果你也__，一定要看完'",
+            "利益前置：'30 秒学会__'",
+            "冲突争议：'为什么我不建议__'",
+            "数据冲击：'90% 的人__'",
+            "指令式：'停！先别划走'",
+            "视觉钩子：首帧大字/夸张表情/非常规画面同帧",
+            "权威背书钩子：'业内 10 年总结的__'",
+            "反期待钩子：'别再__了，试试这个'"
+          ]
+        },
+        {
+          "label": "标题公式(分平台)",
+          "items": [
+            "小红书：数字+痛点+解决方案+'！' 例：'30 天涨粉 1w 的 5 个方法！'",
+            "TikTok：口语化+情绪 例：'nobody talks about this but...'",
+            "IG Reels：短疑问/挑战 例：'Think you know tattoos? Try this'",
+            "X 线程：编号清单/反直觉 例：'7 tattoo aftercare myths (thread)'",
+            "通用 AIDA：注意-兴趣-欲望-行动 四段式",
+            "疑问式标题：'__真的有用吗？' 引发好奇",
+            "清单式标题：'3 个被低估的__'"
+          ]
+        },
+        {
+          "label": "Caption 写作",
+          "items": [
+            "首句即钩子，前 2 行决定折叠后是否展开",
+            "用空行分段，手机阅读友好",
+            "emoji 做视觉分隔，不堆砌",
+            "埋关键词利于小红书/IG 站内搜索",
+            "结尾抛问题引导评论，提升互动率",
+            "长度：IG 138-150 字互动最佳；小红书可长文",
+            "第一人称代入：'我试了__，结果…' 提真实感",
+            "埋钩于中：中段再抛一个利益点防划走"
+          ]
+        },
+        {
+          "label": "CTA 设计",
+          "items": [
+            "软CTA(提问/投票养互动) vs 硬CTA(链接/私信促转化)分层使用",
+            "单一CTA原则：一条内容只推一个动作，避免用户选择瘫痪",
+            "限时紧迫感：'本周预约享__'",
+            "bio link 文案：'👇 预约你的专属设计'",
+            "DM 引导：'想定制？私信 设计 二字'",
+            "评论区 CTA：'你遇到过__吗？评论区告诉我' 拉互动",
+            "二步 CTA：先互动(点赞)再转化(私信)"
+          ]
+        },
+        {
+          "label": "情绪与故事",
+          "items": [
+            "情绪曲线：先共情痛点→给希望→展示方案",
+            "故事框架：背景-冲突-转折-结果",
+            "具体>抽象：用真实客户故事替代功能罗列",
+            "用户证言：截图/出镜授权，强信任信号"
+          ]
+        }
+      ],
+      "subskills": [
+        {
+          "id": "social-reels-script",
+          "name": "写 Reels 脚本",
+          "desc": "钩子+结构+CTA 三段式",
+          "trigger": "\"写一条 Reels 脚本\""
+        },
+        {
+          "id": "social-ig-caption",
+          "name": "写 IG caption",
+          "desc": "首句钩子+埋词+CTA",
+          "trigger": "\"写 IG caption\""
+        },
+        {
+          "id": "social-tiktok-hook",
+          "name": "设计 TikTok 钩子",
+          "desc": "前3秒钩子+视觉",
+          "trigger": "\"设计 TikTok 前3秒钩子\""
+        },
+        {
+          "id": "social-thread-write",
+          "name": "写 X 线程",
+          "desc": "钩子+编号展开+末条总结",
+          "trigger": "\"写一条 X 线程\""
+        }
+      ]
+    },
+    {
+      "id": "social-platforms",
+      "title": "平台战术（每平台成章）",
+      "icon": "Layout",
+      "color": "indigo",
+      "summary": "Instagram · TikTok · X/Twitter · 小红书 · 跨平台矩阵",
+      "sort_order": 3,
+      "chapters": [
+        {
+          "label": "Instagram 战术",
+          "items": [
+            "Reels 算法偏好：完播率>互动率>涨粉，前 3 秒定生死",
+            "Grid 美学：统一色调/留白，首屏 9 宫格即门面",
+            "Hashtag 策略：30 个 = 10 大词 + 10 中词 + 10 长尾 niche",
+            "Story 活用：投票/问答/倒计时贴纸养日活",
+            "Carousel 收藏：教程/对比类用多图提升保存率",
+            "Collab 帖子：联合创作触达对方粉丝池",
+            "标签组轮换：建 5 套标签组避免 spam 判罚",
+            "IG SEO：用户名/简介/alt text 埋词提升发现",
+            "Reels 封面自定义：选高暂停帧做封面提点击",
+            "Guide 功能：把系列 Reels 收进 Guide 提完播"
+          ]
+        },
+        {
+          "label": "TikTok 战术",
+          "items": [
+            "算法核心：完播率+复播，前 1 秒必须抓人",
+            "热门声音：优先用上升期 trending sound 借势",
+            "原声优势：真人原声信任度高于配乐",
+            "Duet/Stitch：借热门视频二次创作蹭流量",
+            "黄金 3 秒：钩子+视觉冲击同帧",
+            "系列标签：#LearnOnTikTok 等官方话题",
+            "评论区运营：作者置顶神评论引导讨论",
+            "时长策略：新手 15-21s，深度 45-60s",
+            "钩子复用：把高赞文案结构套新选题",
+            "评论区置顶：作者置顶神评引导讨论"
+          ]
+        },
+        {
+          "label": "X/Twitter 战术",
+          "items": [
+            "线程(thread)结构：首条钩子+编号展开+末条总结 CTA",
+            "互动杠杆：@大V / 转发优质推文+观点",
+            "高频发布：每天 5-10 条建立存在感",
+            "热点借力：Trending + 行业视角组合",
+            "投票互动：低成本涨关注",
+            "长文配图：每帖 1 图提升停留",
+            "个人观点卡：清晰立场内容更易传播",
+            "链接策略：首条不挂链接(降权)，末条放",
+            "引用自己旧帖：老内容再传播",
+            "媒体嵌入：GIF/图提升停留"
+          ]
+        },
+        {
+          "label": "小红书 战术",
+          "items": [
+            "封面决定 80% 点击：大字标题+对比图+真人",
+            "标题公式：数字+情绪词+场景 例：'油皮亲测！5 步告别脱妆'",
+            "关键词布局：标题/正文/标签三段埋词",
+            "笔记结构：痛点引入-方法-效果对比-总结",
+            "合集/清单体：收藏率高，利于长尾",
+            "评论区种草：作者小号/粉丝互动引导",
+            "话题标签：1-2 个大类 + 3-5 个精准长尾",
+            "矩阵号：主号+垂类小号互相导流",
+            "置顶笔记：把转化率最高笔记置顶",
+            "评论区小号：自问自答引导种草"
+          ]
+        },
+        {
+          "label": "跨平台矩阵",
+          "items": [
+            "一源多发：拍摄一次，按平台裁剪",
+            "平台分工：小红书种草、IG 展示、TikTok 破圈、X 建专业声量",
+            "主页互链：各平台 bio 互相导流",
+            "内容差异化：同主题不同角度，避免被判搬运",
+            "数据归因：用 UTM/专属暗号追踪各平台转化",
+            "平台专属梗：不同平台用不同 meme 语言",
+            "主平台深耕：选 1 个主平台打透再扩"
+          ]
+        }
+      ],
+      "subskills": [
+        {
+          "id": "social-hashtag-set",
+          "name": "组 IG 标签",
+          "desc": "30 个分级标签组",
+          "trigger": "\"组一套 IG 标签\""
+        },
+        {
+          "id": "social-xiaohongshu-cover",
+          "name": "做小红书封面",
+          "desc": "大字+对比图爆款封面",
+          "trigger": "\"做一张小红书封面\""
+        },
+        {
+          "id": "social-cross-post",
+          "name": "一源多发裁剪",
+          "desc": "按平台裁剪同一素材",
+          "trigger": "\"一源多发\""
+        },
+        {
+          "id": "social-story-poll",
+          "name": "设计 Story 互动",
+          "desc": "投票/问答贴纸",
+          "trigger": "\"设计 Story 互动贴纸\""
+        }
+      ]
+    },
+    {
+      "id": "social-growth",
+      "title": "涨粉与算法",
+      "icon": "TrendingUp",
+      "color": "emerald",
+      "summary": "推荐算法 · 发布时机 · 互动增长 · 合作互推 · 热点借力",
+      "sort_order": 4,
+      "chapters": [
+        {
+          "label": "推荐算法逻辑",
+          "items": [
+            "共性信号：完播/停留 > 互动 > 涨粉 > 分享",
+            "IG：兴趣图谱+关系权重，Reels 跨关注圈分发",
+            "TikTok：流量池逐级放大 300→3000→3w 阶梯",
+            "小红书：CES 评分(点赞1 收藏2 评论4 转发4 关注1)",
+            "X：互动率+转发网络效应",
+            "负信号：秒划走、举报、低质重复",
+            "社交信号衰减：互动集中在发布后 24h",
+            "完播权重：前3秒决定 70% 完播率"
+          ]
+        },
+        {
+          "label": "发布时机与频率",
+          "items": [
+            "IG：本地时间 11-13 / 19-21 双高峰",
+            "TikTok：工作日晚 19-22，周末上午",
+            "小红书：通勤 8-9 / 午休 12-13 / 睡前 21-23",
+            "频率稳定>爆发：算法偏爱规律更新",
+            "用原生洞察(audience active)定具体时间",
+            "AB 测试时段：同内容隔日发测最优窗口",
+            "假期错峰：大节期间竞争低可抢量"
+          ]
+        },
+        {
+          "label": "互动增长策略",
+          "items": [
+            "前 1 小时互动率定初始推送，发动种子粉丝",
+            "评论区主动回复+提问，拉停留时长",
+            "神评置顶/自造梗，激发模仿",
+            "蹭热门评论区：在相关大帖下有价值留言",
+            "互动钓鱼：投票/二选一易引发站队",
+            "评论引导：结尾抛二选一问题",
+            "神评运营：自己写神评引发模仿"
+          ]
+        },
+        {
+          "label": "合作与互推",
+          "items": [
+            "同类非竞品互推：粉丝重叠度 30-50% 最佳",
+            "达人合作：纳米达人(1-10w)性价比最高",
+            "合拍/Collab：IG/TikTok 联合内容",
+            "挑战赛：发起带话题的挑战撬动 UGC",
+            "评论区互推：在彼此帖子互动导流",
+            "社群互换：互推进对方私域"
+          ]
+        },
+        {
+          "label": "热点借力",
+          "items": [
+            "热点分级：全民热点(泛流量)/行业热点(精准)",
+            "借势速度：黄金 2 小时窗口",
+            "角度稀缺：不追同质化，找独特切入点",
+            "风险规避：不碰敏感/争议时政",
+            "节日日历：提前备好节点内容模板",
+            "品牌热点：结合品牌调性的轻量借势"
+          ]
+        }
+      ],
+      "subskills": [
+        {
+          "id": "social-posting-time",
+          "name": "定发布时间",
+          "desc": "按平台洞察定最佳时段",
+          "trigger": "\"定最佳发布时间\""
+        },
+        {
+          "id": "social-competitor-audit",
+          "name": "拆解竞品账号",
+          "desc": "高赞内容归因复用",
+          "trigger": "\"拆解竞品高赞账号\""
+        },
+        {
+          "id": "social-ugc-campaign",
+          "name": "发起 UGC 征集",
+          "desc": "带话题挑战赛",
+          "trigger": "\"发起 UGC 征集\""
+        }
+      ]
+    },
+    {
+      "id": "social-conversion",
+      "title": "转化与获客",
+      "icon": "Zap",
+      "color": "violet",
+      "summary": "私域引流 · 纹身工作室场景 · DM 话术 · 落地页 · 社群",
+      "sort_order": 5,
+      "chapters": [
+        {
+          "label": "社媒→私域引流",
+          "items": [
+            "软引流：有价值内容自然带出联系方式",
+            "钩子设计：免费资料/测评引导私信",
+            "bio 漏斗：主页一句话+链接清晰路径",
+            "评论区引流：作者回复'戳主页链接'",
+            "合规边界：平台禁外链，用暗号/私信中转",
+            "钩子物料：免费对照表/清单引导留资",
+            "分层引流：不同内容引不同垂类私域"
+          ]
+        },
+        {
+          "label": "纹身工作室获客场景",
+          "items": [
+            "作品即广告：高清愈合前后对比最强转化",
+            "风格垂类：黑工/写实/水彩各建内容线",
+            "客资收集：私信模板+预约表单",
+            "信任构建：师承/资质/卫生标准展示",
+            "限时预约：节日限定款制造紧迫",
+            "老客转介：晒图返现/推荐有礼",
+            "风格对比：同一题材不同风格展示专业广度",
+            "预约日历：公开可约档期制造真实感"
+          ]
+        },
+        {
+          "label": "DM 获客话术",
+          "items": [
+            "破冰：夸具体作品而非泛泛'你好'",
+            "需求挖掘：问风格/部位/预算/时间",
+            "价值前置：先给建议再报价",
+            "软转化：发作品集链接+预约入口",
+            "跟进节奏：3 天/7 天/15 天三段式",
+            "抗拒绝：价格异议用价值拆分应对",
+            "异议处理：'太贵了'→拆成单次成本",
+            "沉默唤醒：发限量名额提醒"
+          ]
+        },
+        {
+          "label": "落地页与 bio link",
+          "items": [
+            "单页单目标：预约/加微二选一",
+            "首屏即价值：3 秒看懂你能提供什么",
+            "信任模块：作品+评价+资质",
+            "移动优先：按钮大、加载快",
+            "Linktree 类工具：多入口聚合",
+            "紧迫感模块：剩余名额/限时",
+            "FAQ 模块：前置打消顾虑"
+          ]
+        },
+        {
+          "label": "社群运营",
+          "items": [
+            "私域社群：答疑+专属福利养粘性",
+            "内容社群：UGC 征集(晒图大赛)",
+            "分层运营：潜客/新客/老客不同触达",
+            "唤醒机制：inactivity 用户定向福利",
+            "打卡机制：连续互动给专属身份",
+            "裂变：老客带新客有礼"
+          ]
+        }
+      ],
+      "subskills": [
+        {
+          "id": "social-dm-outreach",
+          "name": "写 DM 话术",
+          "desc": "三段式获客话术",
+          "trigger": "\"写 DM 获客话术\""
+        },
+        {
+          "id": "social-bio-link",
+          "name": "优化 bio link",
+          "desc": "单目标漏斗",
+          "trigger": "\"优化 bio link 漏斗\""
+        },
+        {
+          "id": "social-conversion-funnel",
+          "name": "设计转化路径",
+          "desc": "社媒→私域路径",
+          "trigger": "\"设计社媒到私域路径\""
+        },
+        {
+          "id": "social-tattoo-case",
+          "name": "做纹身对比内容",
+          "desc": "愈合前后对比素材",
+          "trigger": "\"做纹身愈合对比内容\""
+        }
+      ]
+    },
+    {
+      "id": "social-analytics",
+      "title": "数据与分析",
+      "icon": "BarChart3",
+      "color": "sky",
+      "summary": "核心指标 · A/B 测试 · 内容复盘 · 工具自动化 · 数据选题",
+      "sort_order": 6,
+      "chapters": [
+        {
+          "label": "核心指标",
+          "items": [
+            "曝光/播放：触达天花板",
+            "互动率：(点赞+评论+收藏+分享)/播放",
+            "涨粉率：新增粉/播放",
+            "完播率：短视频核心(>40% 优)",
+            "转化率：私信/点击/预约 / 曝光",
+            "粉丝净增 vs 取关",
+            "声量指标：被提及/被转发次数",
+            "转化成本：单客获客成本(CAC)"
+          ]
+        },
+        {
+          "label": "A/B 测试",
+          "items": [
+            "变量单一：一次只测封面/标题/时长之一",
+            "样本量：同条件发 3-5 条取均值",
+            "封面测试：小红书封面图 A/B",
+            "标题测试：情绪词 vs 数字词",
+            "发布时间 A/B",
+            "样本周期：至少跑满 1 周避波动",
+            "显著性：差异>15% 才采信"
+          ]
+        },
+        {
+          "label": "内容复盘",
+          "items": [
+            "周报：TOP3/BOTTOM3 内容归因",
+            "内容审计：90 天低效内容清理/翻新",
+            "标杆对照：竞品高赞拆解复用",
+            "数据驱动选题：高互动选题扩写系列",
+            "归因模型：哪类内容带来咨询",
+            "季度大复盘：方向级调整"
+          ]
+        },
+        {
+          "label": "工具与自动化",
+          "items": [
+            "平台原生洞察：IG/TikTok/小红书后台",
+            "第三方：飞瓜/新红/Analisa 等",
+            "排期：Later/Buffer/飞书",
+            "监控：Brandwatch/知微 舆情",
+            "自动化：Zapier/留资表单",
+            "自有看板：飞书/Notion 搭数据看板",
+            "截图归档：高赞内容存素材库"
+          ]
+        },
+        {
+          "label": "数据驱动选题",
+          "items": [
+            "搜索词洞察：小红书/IG 搜索框下拉",
+            "高收藏低粉内容=机会选题",
+            "评论高频词=内容方向",
+            "竞品缺口=蓝海选题",
+            "长尾词机会：低竞争高意图词",
+            "季节词：提前 1 月布局季节性选题"
+          ]
+        }
+      ],
+      "subskills": [
+        {
+          "id": "social-ab-test",
+          "name": "设计 A/B 测试",
+          "desc": "封面/标题单一变量",
+          "trigger": "\"设计封面或标题 A/B 测试\""
+        },
+        {
+          "id": "social-weekly-report",
+          "name": "出数据周报",
+          "desc": "TOP/BOTTOM 归因",
+          "trigger": "\"出数据周报\""
+        },
+        {
+          "id": "social-viral-analysis",
+          "name": "做爆款拆解",
+          "desc": "高赞内容结构归因",
+          "trigger": "\"做爆款拆解\""
+        }
+      ]
+    }
+  ],
+  "skills": [
+    {
+      "id": "social-topic-bank",
+      "name": "建选题库",
+      "description": "按四维+支柱建常青选题表",
+      "trigger": "\"建选题库\"",
+      "section": "strategy",
+      "sort_order": 1
+    },
+    {
+      "id": "social-content-calendar",
+      "name": "排内容日历",
+      "description": "排一周内容并标注形式/平台",
+      "trigger": "\"排内容日历\"",
+      "section": "strategy",
+      "sort_order": 2
+    },
+    {
+      "id": "social-reels-script",
+      "name": "写 Reels 脚本",
+      "description": "钩子+结构+CTA 三段式",
+      "trigger": "\"写一条 Reels 脚本\"",
+      "section": "hooks",
+      "sort_order": 3
+    },
+    {
+      "id": "social-ig-caption",
+      "name": "写 IG caption",
+      "description": "首句钩子+埋词+CTA",
+      "trigger": "\"写 IG caption\"",
+      "section": "hooks",
+      "sort_order": 4
+    },
+    {
+      "id": "social-tiktok-hook",
+      "name": "设计 TikTok 钩子",
+      "description": "前3秒钩子+视觉",
+      "trigger": "\"设计 TikTok 前3秒钩子\"",
+      "section": "hooks",
+      "sort_order": 5
+    },
+    {
+      "id": "social-thread-write",
+      "name": "写 X 线程",
+      "description": "钩子+编号展开+末条总结",
+      "trigger": "\"写一条 X 线程\"",
+      "section": "hooks",
+      "sort_order": 6
+    },
+    {
+      "id": "social-hashtag-set",
+      "name": "组 IG 标签",
+      "description": "30 个分级标签组",
+      "trigger": "\"组一套 IG 标签\"",
+      "section": "platforms",
+      "sort_order": 7
+    },
+    {
+      "id": "social-xiaohongshu-cover",
+      "name": "做小红书封面",
+      "description": "大字+对比图爆款封面",
+      "trigger": "\"做一张小红书封面\"",
+      "section": "platforms",
+      "sort_order": 8
+    },
+    {
+      "id": "social-cross-post",
+      "name": "一源多发裁剪",
+      "description": "按平台裁剪同一素材",
+      "trigger": "\"一源多发\"",
+      "section": "platforms",
+      "sort_order": 9
+    },
+    {
+      "id": "social-story-poll",
+      "name": "设计 Story 互动",
+      "description": "投票/问答贴纸",
+      "trigger": "\"设计 Story 互动贴纸\"",
+      "section": "platforms",
+      "sort_order": 10
+    },
+    {
+      "id": "social-posting-time",
+      "name": "定发布时间",
+      "description": "按平台洞察定最佳时段",
+      "trigger": "\"定最佳发布时间\"",
+      "section": "growth",
+      "sort_order": 11
+    },
+    {
+      "id": "social-competitor-audit",
+      "name": "拆解竞品账号",
+      "description": "高赞内容归因复用",
+      "trigger": "\"拆解竞品高赞账号\"",
+      "section": "growth",
+      "sort_order": 12
+    },
+    {
+      "id": "social-ugc-campaign",
+      "name": "发起 UGC 征集",
+      "description": "带话题挑战赛",
+      "trigger": "\"发起 UGC 征集\"",
+      "section": "growth",
+      "sort_order": 13
+    },
+    {
+      "id": "social-dm-outreach",
+      "name": "写 DM 话术",
+      "description": "三段式获客话术",
+      "trigger": "\"写 DM 获客话术\"",
+      "section": "conversion",
+      "sort_order": 14
+    },
+    {
+      "id": "social-bio-link",
+      "name": "优化 bio link",
+      "description": "单目标漏斗",
+      "trigger": "\"优化 bio link 漏斗\"",
+      "section": "conversion",
+      "sort_order": 15
+    },
+    {
+      "id": "social-conversion-funnel",
+      "name": "设计转化路径",
+      "description": "社媒→私域路径",
+      "trigger": "\"设计社媒到私域路径\"",
+      "section": "conversion",
+      "sort_order": 16
+    },
+    {
+      "id": "social-tattoo-case",
+      "name": "做纹身对比内容",
+      "description": "愈合前后对比素材",
+      "trigger": "\"做纹身愈合对比内容\"",
+      "section": "conversion",
+      "sort_order": 17
+    },
+    {
+      "id": "social-ab-test",
+      "name": "设计 A/B 测试",
+      "description": "封面/标题单一变量",
+      "trigger": "\"设计封面或标题 A/B 测试\"",
+      "section": "analytics",
+      "sort_order": 18
+    },
+    {
+      "id": "social-weekly-report",
+      "name": "出数据周报",
+      "description": "TOP/BOTTOM 归因",
+      "trigger": "\"出数据周报\"",
+      "section": "analytics",
+      "sort_order": 19
+    },
+    {
+      "id": "social-viral-analysis",
+      "name": "做爆款拆解",
+      "description": "高赞内容结构归因",
+      "trigger": "\"做爆款拆解\"",
+      "section": "analytics",
+      "sort_order": 20
+    }
+  ],
+  "subsystems": [
+    {
+      "key": "topic-bank",
+      "label": "建选题库",
+      "skillId": "social-topic-bank",
+      "phase": "strategy",
+      "sort_order": 1
+    },
+    {
+      "key": "content-calendar",
+      "label": "排内容日历",
+      "skillId": "social-content-calendar",
+      "phase": "strategy",
+      "sort_order": 2
+    },
+    {
+      "key": "reels-script",
+      "label": "写 Reels 脚本",
+      "skillId": "social-reels-script",
+      "phase": "hooks",
+      "sort_order": 3
+    },
+    {
+      "key": "ig-caption",
+      "label": "写 IG caption",
+      "skillId": "social-ig-caption",
+      "phase": "hooks",
+      "sort_order": 4
+    },
+    {
+      "key": "tiktok-hook",
+      "label": "设计 TikTok 钩子",
+      "skillId": "social-tiktok-hook",
+      "phase": "hooks",
+      "sort_order": 5
+    },
+    {
+      "key": "thread-write",
+      "label": "写 X 线程",
+      "skillId": "social-thread-write",
+      "phase": "hooks",
+      "sort_order": 6
+    },
+    {
+      "key": "hashtag-set",
+      "label": "组 IG 标签",
+      "skillId": "social-hashtag-set",
+      "phase": "platforms",
+      "sort_order": 7
+    },
+    {
+      "key": "xiaohongshu-cover",
+      "label": "做小红书封面",
+      "skillId": "social-xiaohongshu-cover",
+      "phase": "platforms",
+      "sort_order": 8
+    },
+    {
+      "key": "cross-post",
+      "label": "一源多发裁剪",
+      "skillId": "social-cross-post",
+      "phase": "platforms",
+      "sort_order": 9
+    },
+    {
+      "key": "story-poll",
+      "label": "设计 Story 互动",
+      "skillId": "social-story-poll",
+      "phase": "platforms",
+      "sort_order": 10
+    },
+    {
+      "key": "posting-time",
+      "label": "定发布时间",
+      "skillId": "social-posting-time",
+      "phase": "growth",
+      "sort_order": 11
+    },
+    {
+      "key": "competitor-audit",
+      "label": "拆解竞品账号",
+      "skillId": "social-competitor-audit",
+      "phase": "growth",
+      "sort_order": 12
+    },
+    {
+      "key": "ugc-campaign",
+      "label": "发起 UGC 征集",
+      "skillId": "social-ugc-campaign",
+      "phase": "growth",
+      "sort_order": 13
+    },
+    {
+      "key": "dm-outreach",
+      "label": "写 DM 话术",
+      "skillId": "social-dm-outreach",
+      "phase": "conversion",
+      "sort_order": 14
+    },
+    {
+      "key": "bio-link",
+      "label": "优化 bio link",
+      "skillId": "social-bio-link",
+      "phase": "conversion",
+      "sort_order": 15
+    },
+    {
+      "key": "conversion-funnel",
+      "label": "设计转化路径",
+      "skillId": "social-conversion-funnel",
+      "phase": "conversion",
+      "sort_order": 16
+    },
+    {
+      "key": "tattoo-case",
+      "label": "做纹身对比内容",
+      "skillId": "social-tattoo-case",
+      "phase": "conversion",
+      "sort_order": 17
+    },
+    {
+      "key": "ab-test",
+      "label": "设计 A/B 测试",
+      "skillId": "social-ab-test",
+      "phase": "analytics",
+      "sort_order": 18
+    },
+    {
+      "key": "weekly-report",
+      "label": "出数据周报",
+      "skillId": "social-weekly-report",
+      "phase": "analytics",
+      "sort_order": 19
+    },
+    {
+      "key": "viral-analysis",
+      "label": "做爆款拆解",
+      "skillId": "social-viral-analysis",
+      "phase": "analytics",
+      "sort_order": 20
+    }
+  ],
+  "projects": [
+    {
+      "id": "ink-flows-social",
+      "name": "InkFlow 社媒获客",
+      "site_type": "SMM",
+      "status": {
+        "topic-bank": "todo",
+        "content-calendar": "todo",
+        "reels-script": "todo",
+        "ig-caption": "todo",
+        "tiktok-hook": "todo",
+        "thread-write": "todo",
+        "hashtag-set": "todo",
+        "xiaohongshu-cover": "todo",
+        "cross-post": "todo",
+        "story-poll": "todo",
+        "posting-time": "todo",
+        "competitor-audit": "todo",
+        "ugc-campaign": "todo",
+        "dm-outreach": "todo",
+        "bio-link": "todo",
+        "conversion-funnel": "todo",
+        "tattoo-case": "todo",
+        "ab-test": "todo",
+        "weekly-report": "todo",
+        "viral-analysis": "todo"
+      }
+    }
+  ]
+}

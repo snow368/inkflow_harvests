@@ -4047,17 +4047,31 @@ async function ensureMarketingTasksTable(db: D1Database) {
   )`).run(); } catch {}
 }
 
-// Pick the best-performing active script for a category (server-side fill, 方案 A)
-async function selectBestScript(db: D1Database, category: string, _intent?: string): Promise<{ id: number; content: string } | null> {
+// Deterministic string hash (FNV-1a-ish) for stable per-target rotation.
+function hashString(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+// Pick an active script for a category with per-target ROTATION (方案 A, 防 DM 千篇一律).
+// - Same target_handle → always the same variant (stable across retries/re-sends).
+// - Different targets → spread across all active variants for that category (no repetition per category).
+async function selectBestScript(db: D1Database, category: string, targetHandle: string, _intent?: string): Promise<{ id: number; content: string } | null> {
   let sql = 'SELECT id, content FROM marketing_scripts WHERE active = 1';
   const params: any[] = [];
   if (category) { sql += ' AND category = ?'; params.push(category); }
-  sql += ' ORDER BY success_rate DESC, usage_count DESC, id DESC LIMIT 1';
+  sql += ' ORDER BY id ASC';
   const { results } = params.length
     ? await db.prepare(sql).bind(...params).all()
     : await db.prepare(sql).all();
-  const row: any = (results || [])[0];
-  if (!row) return null;
+  const rows: any[] = results || [];
+  if (!rows.length) return null;
+  const idx = hashString(targetHandle || 'anon') % rows.length;
+  const row = rows[idx];
   return { id: Number(row.id), content: String(row.content || '') };
 }
 
@@ -4104,13 +4118,37 @@ app.delete('/api/marketing/scripts/:id', async (c) => {
 app.get('/api/marketing/scripts/ab-test', async (c) => {
   await ensureMarketingScriptsTable(c.env.DB);
   const { results } = await c.env.DB.prepare(`SELECT category, COUNT(*) as count, AVG(success_rate) as avgSuccessRate, MAX(usage_count) as maxUsage FROM marketing_scripts WHERE active=1 GROUP BY category`).all();
-  const categories = (results || []).map((r: any) => ({
-    category: r.category,
-    count: r.count,
-    avgSuccessRate: Math.round((Number(r.avgSuccessRate) || 0) * 100) / 100,
-    topScriptTitle: null,
-    recommendedDirection: null,
-  }));
+  const categories: any[] = [];
+  for (const r of (results || [])) {
+    const { results: scripts } = await c.env.DB.prepare(
+      `SELECT id, title, content, active, success_rate, usage_count FROM marketing_scripts WHERE active=1 AND category=? ORDER BY success_rate DESC, usage_count DESC`
+    ).bind(r.category).all();
+    const scriptList = (scripts || []).map((s: any) => {
+      const sr = Number(s.success_rate) || 0;
+      return {
+        id: Number(s.id),
+        title: s.title || '(untitled)',
+        active: Number(s.active) === 1,
+        // success_rate may be stored as 0-1 (fraction) or 0-100 (percent); normalize to percent.
+        conversionRate: sr <= 1 ? Math.round(sr * 100) : Math.round(sr),
+        // Per-script send/reply/converted counts aren't tracked in the table yet;
+        // usage_count is the best available proxy for "times sent".
+        taskSentCount: Number(s.usage_count) || 0,
+        taskRepliedCount: 0,
+        taskConvertedCount: 0,
+      };
+    });
+    const best = scriptList[0] || null;
+    categories.push({
+      category: r.category,
+      scriptCount: Number(r.count) || scriptList.length,
+      avgSuccessRate: Math.round((Number(r.avgSuccessRate) || 0) * 100) / 100,
+      scripts: scriptList,
+      bestScript: best ? { id: best.id, title: best.title, conversionRate: best.conversionRate } : null,
+      topScriptTitle: best ? best.title : null,
+      recommendedDirection: null,
+    });
+  }
   return c.json({ categories });
 });
 
@@ -4146,7 +4184,7 @@ app.post('/api/automation/create-marketing-task', async (c) => {
       if (sr) { scriptId = Number(sr.id); scriptContent = String(sr.content || ''); }
     }
     if (!scriptContent) {
-      const best = await selectBestScript(c.env.DB, category, intent || undefined);
+      const best = await selectBestScript(c.env.DB, category, targetHandle, intent || undefined);
       if (best) { scriptId = best.id; scriptContent = best.content; }
     }
     const id = `mt_${now}_${Math.random().toString(36).slice(2, 8)}`;
@@ -4291,7 +4329,7 @@ app.post('/api/marketing/scripts/select', async (c) => {
   try {
     const b: any = await c.req.json().catch(() => ({}));
     const category = String(b.category || '');
-    const best = await selectBestScript(c.env.DB, category, b.intent ? String(b.intent) : undefined);
+    const best = await selectBestScript(c.env.DB, category, b.targetHandle ? String(b.targetHandle) : '', b.intent ? String(b.intent) : undefined);
     if (!best) return c.json({ selected: null });
     await c.env.DB.prepare('UPDATE marketing_scripts SET usage_count = usage_count + 1 WHERE id = ?').bind(best.id).run().catch(() => {});
     return c.json({ selected: { id: best.id, content: best.content, category } });

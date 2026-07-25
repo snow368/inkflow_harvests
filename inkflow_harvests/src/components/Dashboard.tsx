@@ -1040,7 +1040,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (tab: any) => v
                 )}
 
                 <div className="space-y-1.5">
-                  {cat.scripts.map((s: any) => {
+                  {(cat.scripts || []).map((s: any) => {
                     const maxVal = Math.max(s.taskSentCount, s.taskRepliedCount, s.taskConvertedCount, 1);
                     return (
                       <div key={s.id} className={cn(

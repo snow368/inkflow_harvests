@@ -1,0 +1,40 @@
+Intent,Keyword,Volume,Competition,SERP_Evidence,Target_Page
+MOFU-商业型,tattoo studio management software,100-1K,低,"产品页+Altegio博客+AppStore → 在选方案",/ (首页)
+MOFU-商业型,tattoo shop management software,100-1K,低,"同类模式 → 管理软件选型",/features
+MOFU-商业型,online tattoo booking,100-1K,中,"AppStore+Capterra → 预约方案对比",/features/booking
+MOFU-商业型,tattoo booking software,100-1K,中,"AppStore+案例+对比文 → 选booking方案",/features/booking
+MOFU-商业型,tattoo booking app,100-1K,中,"AppStore列表+功能对比 → 选app",/features/booking
+MOFU-商业型,tattoo appointment booking,100-1K,中,"AppStore+预约系统对比 → 选预约方案",/features/booking
+MOFU-商业型,tattoo appointment scheduler,100-1K,中,"同上 → 预约工具对比",/features/booking
+MOFU-商业型,tattoo appointment app,10-100,中,"AppStore列表 → 选app",/features/booking
+MOFU-商业型,tattoo booking system,10-100,中,"产品页+对比 → 预约系统选型",/features/booking
+BOFU-交易型,best tattoo studio software,10-100,低,"SoftwareAdvice+对比列表 → 做决定",/compare/best-tattoo-studio-software
+BOFU-交易型,best tattoo booking software,10-100,低,"同类 → 用户在选"最好的"",/blog
+BOFU-交易型,tattoo studio software free,10-100,低,"免费试用对比+定价页 → 找免费方案",/pricing
+MOFU-商业型,tattoo scheduling software,10-100,低,"产品页+对比 → 排期工具选型",/features/booking
+MOFU-商业型,tattoo business management software,10-100,低,"管理模式 → 综合管理软件对比",/features
+MOFU-商业型,tattoo artist software,10-100,低,"AppStore+工具对比 → 艺术家工具选型",/features
+MOFU-商业型,tattoo studio app,10-100,中,"AppStore列表 → 选app方案",/features
+MOFU-商业型,tattoo shop pos,10-100,低,"Lightspeed+对比文+Tattoogenda → POS方案对比",/features/payments
+MOFU-商业型,tattoo waiver software,—,低,"对比文+Tattoogenda → waiver方案对比",/features/waivers
+MOFU-商业型,digital waiver for tattoo shop,—,低,"同waiver类 → 方案对比",/features/waivers
+MOFU-商业型,tattoo waiver app,10-100,低,"AppStore+对比 → waiver app选型",/features/waivers
+MOFU-商业型,tattoo waiver digital,—,低,"同类",/features/waivers
+MOFU-商业型,tattoo consent form app,10-100,低,"AppStore+Jotform+Tattoogenda → consent方案对比",/features/waivers
+MOFU-商业型,digital tattoo consent form,10-100,低,"同上",/features/waivers
+MOFU-商业型,tattoo intake form software,—,低,"同waiver类 → 表单工具对比",/features/waivers
+MOFU-商业型,tattoo release form digital,—,低,"同类",/features/waivers
+MOFU-商业型,tattoo deposit software,—,低,"产品页 → 定金方案对比",/features/payments
+MOFU-商业型,tattoo payment processing,—,低,"Square+Revify+教育文 → 支付方案对比",/features/payments
+MOFU-商业型,tattoo POS system,—,低,"Lightspeed+Tattoogenda+对比 → POS选型",/features/payments
+MOFU-商业型,tattoo commission software,—,低,"Capterra+对比 → 佣金方案对比",/features/payments
+MOFU-商业型,tattoo client software,—,低,"CRM列表+Capterra → 客户管理方案对比",/features/crm
+MOFU-商业型,tattoo client management software,—,低,"同上",/features/crm
+MOFU-商业型,tattoo CRM software,—,低,"同上",/features/crm
+BOFU-交易型,inkflow vs booksy,—,低,"vs词 → 用户在做最后决定",/compare/booksy
+MOFU-商业型,inkflow software,—,低,"品牌认知词 → 了解InkFlow",/about
+TOFU-信息型,how to digitize tattoo waivers,200-500,低,"教程+步骤指南 → 在学习",/blog/how-to-digitize-tattoo-waivers
+TOFU-信息型,how to reduce no-shows tattoo studio,200-500,低,"教程+最佳实践 → 在学习",/blog/reduce-no-shows-deposit-booking
+TOFU-信息型,tattoo aftercare automation guide,100-300,低,"指南类内容 → 在学习",/blog/tattoo-aftercare-automation
+TOFU-信息型,multi-artist commission tracking guide,100-300,低,"指南类 → 在学习",/blog/multi-artist-commission-tracking
+TOFU-信息型,tattoo inventory management guide,200-500,低,"指南类 → 在学习",/blog/tattoo-inventory-guide

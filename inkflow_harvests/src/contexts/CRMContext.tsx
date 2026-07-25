@@ -19,6 +19,7 @@ import {
 } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { safeJsonParse } from '../lib/gemini';
+import { getUserBotPrefs } from '../lib/botPrefs';
 
 // Helper to sanitize data for Firestore
 const sanitizeForFirestore = (obj: any): any => {
@@ -1519,14 +1520,14 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!artist || !account) return;
 
     // Humanization Profile Generation (Anti-Bot Logic)
+    // 每用户动作偏好：点赞/评论/关注次数取自该用户的存储偏好（默认 2/1/0），而非随机
+    const prefs = getUserBotPrefs(user.uid);
+    const sessionLikes = prefs.likesPerSession;
+    const sessionComments = prefs.commentsPerSession;
+    const sessionFollows = prefs.followsPerSession;
     // Randomize working hours (e.g., 8-11 AM start, 6-10 PM end)
     const startHour = 8 + Math.floor(Math.random() * 4); 
     const endHour = 18 + Math.floor(Math.random() * 5);
-    
-    // Randomize session intensity
-    const sessionLikes = 1 + Math.floor(Math.random() * 3);
-    const sessionComments = Math.random() > 0.4 ? 1 : 0;
-    const sessionFollows = Math.random() > 0.7 ? 1 : 0;
 
     // Timezone & Working Hours Awareness
     const currentHour = new Date().getHours(); 
@@ -1541,11 +1542,15 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          userId: user.uid,
           artistId,
           accountId,
           behaviorProfile: account.behaviorProfile,
           artistHandle: artist.username,
           accountHandle: account.username,
+          // 任务路由：派给该用户自己 VPS 上的 bot 实例（每台 VPS 只拉自己 botId 的任务）
+          targetBotId: prefs.botId || 'bot_ig_01',
+          botIgHandle: prefs.igHandle || undefined,
           humanization: {
             startHour,
             endHour,

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InkFlow SEO 资源中心 · 融合版</title>
+<style>
+  :root{ --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --border:#2a2f3a; --txt:#e6e8ec; --muted:#9aa3b2; --rose:#fb7185; --amber:#fbbf24; --cyan:#22d3ee; --emerald:#34d399; --blue:#60a5fa; --purple:#a78bfa; --green:#4ade80; }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--txt);line-height:1.6}
+  a{color:var(--blue);text-decoration:none}
+  a:hover{text-decoration:underline}
+  header{padding:28px 32px 20px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#14171d,#0f1115)}
+  h1{margin:0 0 6px;font-size:22px}
+  .sub{color:var(--muted);font-size:13px}
+  .wrap{display:flex;min-height:calc(100vh - 90px)}
+  nav{width:230px;flex:0 0 230px;padding:18px 12px;border-right:1px solid var(--border);position:sticky;top:0;height:calc(100vh - 90px);overflow:auto}
+  nav a{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:9px;color:var(--muted);font-size:14px;margin-bottom:3px}
+  nav a:hover{background:var(--panel2);color:var(--txt);text-decoration:none}
+  nav a.active{background:var(--panel2);color:var(--txt);font-weight:600}
+  main{flex:1;padding:26px 34px;max-width:1100px}
+  .toolbar{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+  .pill{padding:6px 14px;border-radius:999px;border:1px solid var(--border);background:var(--panel);color:var(--muted);font-size:13px;cursor:pointer}
+  .pill.active{background:var(--emerald);color:#06281a;border-color:var(--emerald);font-weight:600}
+  section{display:none;scroll-margin-top:20px}
+  section.active{display:block}
+  .sec-h{font-size:19px;margin:0 0 4px}
+  .sec-d{color:var(--muted);font-size:13px;margin-bottom:18px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:820px){.grid{grid-template-columns:1fr}.wrap{flex-direction:column}nav{width:100%;height:auto;position:relative;border-right:none;border-bottom:1px solid var(--border)}}
+  .col{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px}
+  .col h3{margin:0 0 12px;font-size:14px;display:flex;align-items:center;gap:7px}
+  .tag{font-size:10px;padding:2px 8px;border-radius:6px;font-weight:600}
+  .tag.skill{background:rgba(167,139,250,.15);color:var(--purple)}
+  .tag.kb{background:rgba(52,211,153,.15);color:var(--emerald)}
+  .item{padding:9px 0;border-bottom:1px dashed var(--border);font-size:13px}
+  .item:last-child{border-bottom:none}
+  .item .t{color:var(--txt);font-weight:500}
+  .item .d{color:var(--muted);font-size:12px;margin-top:2px}
+  .biglink{display:inline-block;margin-top:10px;padding:8px 14px;border-radius:9px;background:var(--panel2);border:1px solid var(--border);color:var(--blue);font-size:13px}
+  .stat{display:flex;gap:18px;margin:10px 0 18px;flex-wrap:wrap}
+  .stat .b{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 18px;text-align:center}
+  .stat .n{font-size:22px;font-weight:700;color:var(--emerald)}
+  .stat .l{font-size:11px;color:var(--muted)}
+  .proj{font-size:10px;padding:1px 6px;border-radius:5px;margin-left:6px}
+  .proj.b2b{background:rgba(96,165,250,.15);color:var(--blue)}
+  .proj.cons{background:rgba(74,222,128,.15);color:var(--green)}
+  .note{background:var(--panel2);border-left:3px solid var(--amber);padding:10px 14px;border-radius:8px;font-size:12px;color:var(--muted);margin-top:14px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧭 InkFlow SEO 资源中心 <span style="font-size:13px;color:var(--muted)">· 融合版</span></h1>
+  <div class="sub">技能知识库（AI Core playbooks）⟷ harvests 情报/应用（feeds·learn·apply）· 双源融合 · 分项目（🟦B2B / 🟩消费侧）</div>
+</header>
+<div class="wrap">
+<nav id="nav">
+  <a href="#acq" class="active">📡 获客</a>
+  <a href="#tools">🔍 SEO 工具</a>
+  <a href="#strategy">💡 产品战略</a>
+  <a href="#authority">🏷️ Topical Authority</a>
+  <a href="#og">🔍 OG Checker</a>
+  <a href="#gap">📊 Content Gap</a>
+  <a href="#skills">📚 技能知识库</a>
+  <a href="#board">📊 SEO 进度看板</a>
+</nav>
+<main>
+  <div class="toolbar">
+    <span class="pill active" data-p="all">全部</span>
+    <span class="pill" data-p="b2b">🟦 B2B</span>
+    <span class="pill" data-p="cons">🟩 消费侧</span>
+  </div>
+
+  <!-- 1 获客 -->
+  <section id="acq" class="active">
+    <h2 class="sec-h">📡 获客 Acquisition</h2>
+    <div class="sec-d">把流量引进来：外链 + 社媒分发 + 增长飞轮 + 冷启动。</div>
+    <div class="grid">
+      <div class="col"><h3>🟣 技能库方法论 <span class="tag skill">skill</span></h3>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-link">外链建设全攻略</a><div class="d">25 策略 · 质量铁律 · B2B 第一梯队(DA70+) · 纹身 Niche 资源 · Webinar</div></div>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-workflow">Social SEO 分发 / 增长 4 策略 / 复合飞轮</a><div class="d">SEO→社媒→品牌搜→外链自然增长</div></div>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-workflow">B2B 冷邮件 + Reddit 冷启动</a><div class="d">冷邮件 20→50→500/周；Reddit 三阶段</div></div>
+      </div>
+      <div class="col"><h3>🟢 harvests 情报/应用 <span class="tag kb">kb</span></h3>
+        <div class="item proj b2b"><a class="t" href="seo-link/hridoyreh-startup-backlinks-v7-2026-07-19.md">Hridoy 外链平台清单 v7</a><div class="d">16 平台 DR 值 · Goodfirms/Altern 优先执行</div></div>
+        <div class="item proj b2b"><a class="t" href="apply/inkflow-b2b/">品牌声量 / 外链清单</a><div class="d">B2B 第一梯队 + 纹身 Niche 落地</div></div>
+        <div class="item proj b2b"><a class="t" href="seo-link/">sources/*</a><div class="d">geoly 反模式 · LaunchClash · Jakob 外链法</div></div>
+      </div>
+    </div>
+    <div class="note">融合点：技能库的「外链质量铁律」直接约束 harvests 情报的执行——geoly 换链目录被标 low-value 即源于此。</div>
+  </section>
+
+  <!-- 2 SEO 工具 -->
+  <section id="tools">
+    <h2 class="sec-h">🔍 SEO 工具 SEO Tools</h2>
+    <div class="sec-d">8 个工具型技能（审计/技术/速度/schema/meta/sitemap/GSC/关键词）+ WorkBuddy 技能。</div>
+    <div class="grid">
+      <div class="col"><h3>🟣 技能库方法论 <span class="tag skill">skill</span></h3>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-technical">技术 SEO 规范（13 模块）</a><div class="d">URL/Schema/Meta/内链/CWV/JS SEO/多语言/检查清单</div></div>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-workflow">GSC 数据分析 / 上线清单</a><div class="d">Experiment Log 模板 · 9 步启动</div></div>
+        <div class="item"><span class="t">WorkBuddy SEO 技能</span><div class="d">seo-site-audit · seo-technical-check · seo-schema-injector · seo-speed-optimizer · seo-meta-optimizer · seo-sitemap-config · seo-gsc-analyzer · seo-keyword-finder</div></div>
+      </div>
+      <div class="col"><h3>🟢 harvests 情报/应用 <span class="tag kb">kb</span></h3>
+        <div class="item"><a class="t" href="learn/site-content-seo-ruleset.md">site-content-seo-ruleset</a><div class="d">核心规范：Title=H1=第一段主词一致 · H2 拆子话题</div></div>
+        <div class="item"><a class="t" href="learn/seo-page-checklist.md">seo-page-checklist</a><div class="d">建页 6 档 21 项勾选清单</div></div>
+        <div class="item proj b2b"><a class="t" href="apply/inkflow-b2b/inkflow-site-architecture-blueprint.md">站点架构蓝图</a><div class="d">B2B 技术地基落地产物</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 产品战略 -->
+  <section id="strategy">
+    <h2 class="sec-h">💡 产品战略 Product Strategy</h2>
+    <div class="sec-d">排名体系、站点类型矩阵、SaaS 差异化定位。</div>
+    <div class="grid">
+      <div class="col"><h3>🟣 技能库方法论 <span class="tag skill">skill</span></h3>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-strategy">SEO 战略与排名体系</a><div class="d">150 策略 · 排名因子 · 站点类型×策略矩阵 · 冲突观点决策</div></div>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-strategy">SaaS 特有：Product-Led SEO / 对比页排名力</a></div>
+      </div>
+      <div class="col"><h3>🟢 harvests 情报/应用 <span class="tag kb">kb</span></h3>
+        <div class="item proj b2b"><a class="t" href="seo-strategy/">sources/*</a><div class="d">Noel Ceta 本地 SEO · Caleb 主题权威 · 子木找竞品</div></div>
+        <div class="item proj b2b"><a class="t" href="apply/inkflow-b2b/b2b-saas-ranking-plan.md">B2B SaaS 排名计划</a></div>
+        <div class="item proj b2b"><a class="t" href="apply/inkflow-b2b/inkflow-site-architecture-blueprint.md">站点架构蓝图</a></div>
+        <div class="item proj b2b"><a class="t" href="apply/inkflow-b2b/inkflow-brand-voice-style-guide.md">品牌声量/语气指南</a></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 Topical Authority -->
+  <section id="authority">
+    <h2 class="sec-h">🏷️ Topical Authority</h2>
+    <div class="sec-d">内容集群、主题权威、GEO/AEO 写作。</div>
+    <div class="grid">
+      <div class="col"><h3>🟣 技能库方法论 <span class="tag skill">skill</span></h3>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-content">内容创作与 GEO/AEO（9 模块）</a><div class="d">内容矩阵 · BLUF · AEO 四法则 · 案例研究 7 段</div></div>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-keyword">主题集群 Hub-and-Spoke</a><div class="d">支柱页+集群页→权重通道</div></div>
+      </div>
+      <div class="col"><h3>🟢 harvests 情报/应用 <span class="tag kb">kb</span></h3>
+        <div class="item proj b2b"><a class="t" href="apply/inkflow-b2b/briefs/">tattoo-software 簇 briefs</a><div class="d">13 页 cluster brief + gap-analysis</div></div>
+        <div class="item proj b2b"><a class="t" href="seo-content/">sources/*</a><div class="d">Curlheinz AI Agent · Max 文章 pipeline · Semrush 枢纽</div></div>
+        <div class="item proj cons"><a class="t" href="apply/inkflows-consumer/">消费侧内容集群</a><div class="d">tattoo-meaning 长尾 · 分类映射</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 OG Checker -->
+  <section id="og">
+    <h2 class="sec-h">🔍 OG Checker</h2>
+    <div class="sec-d">Open Graph / Twitter Card / Meta 标签规范与检查。</div>
+    <div class="grid">
+      <div class="col"><h3>🟣 技能库方法论 <span class="tag skill">skill</span></h3>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-technical">Meta 标签规则 + OG/Twitter Card</a><div class="d">Title≤60 前置 · Description≤155 · og:title/desc/image/url · twitter:card=summary_large_image</div></div>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-technical">技术检查 14 项（含 Meta 误伤）</a></div>
+      </div>
+      <div class="col"><h3>🟢 harvests 情报/应用 <span class="tag kb">kb</span></h3>
+        <div class="item"><a class="t" href="learn/site-content-seo-ruleset.md">site-content-seo-ruleset §3/§7</a><div class="d">Title/H1 字面一致 · 第一段主词 · Meta 规则</div></div>
+        <div class="item proj b2b"><a class="t" href="apply/inkflow-b2b/inkflow-manager/">ink-flows 营销站 Meta 检查</a></div>
+        <div class="item"><a class="t" href="learn/seo-page-checklist.md">seo-page-checklist（Meta 档）</a></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 Content Gap -->
+  <section id="gap">
+    <h2 class="sec-h">📊 Content Gap</h2>
+    <div class="sec-d">竞品差距分析、SERP 拆解、信息增益。</div>
+    <div class="grid">
+      <div class="col"><h3>🟣 技能库方法论 <span class="tag skill">skill</span></h3>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-keyword">竞品关键词差距 + SERP 竞争分析</a><div class="d">site:竞品 找对方有你无；首页 10 条两层 gap</div></div>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-strategy">竞品分析计分卡 / 找 SEO 竞品</a></div>
+      </div>
+      <div class="col"><h3>🟢 harvests 情报/应用 <span class="tag kb">kb</span></h3>
+        <div class="item proj b2b"><a class="t" href="apply/inkflow-b2b/briefs/">tattoo-software-cluster-gap-analysis</a><div class="d">真实对手 Bookedin/Square/Booksy/Vagaro 差距矩阵</div></div>
+        <div class="item proj b2b"><a class="t" href="apply/inkflow-b2b/briefs/">tattoo-software-cluster-brief</a><div class="d">13 页逐页结构 brief</div></div>
+        <div class="item proj b2b"><a class="t" href="seo-keyword/">sources/*</a><div class="d">Okara BOFU 关键词 · 子木意图×页面</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 技能知识库 -->
+  <section id="skills">
+    <h2 class="sec-h">📚 技能知识库 Skill Library</h2>
+    <div class="sec-d">AI Core playbooks 全量镜像（6 维度 · 62 模块 · 25 操作技能），已落 harvests 为融合锚点。</div>
+    <div class="stat">
+      <div class="b"><div class="n">6</div><div class="l">知识维度</div></div>
+      <div class="b"><div class="n">62</div><div class="l">知识模块</div></div>
+      <div class="b"><div class="n">25</div><div class="l">操作技能</div></div>
+    </div>
+    <div class="grid">
+      <div class="col"><h3>🟣 6 维度总览 <span class="tag skill">skill</span></h3>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-strategy">① seo-strategy 战略与排名</a></div>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-keyword">② seo-keyword 关键词/集群</a></div>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-content">③ seo-content 内容/GEO/AEO</a></div>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-technical">④ seo-technical 技术规范</a></div>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-link">⑤ seo-link 外链建设</a></div>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#seo-workflow">⑥ seo-workflow 工作流/增长</a></div>
+      </div>
+      <div class="col"><h3>🟢 harvests 落地点 <span class="tag kb">kb</span></h3>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md">learn/seo-skill-library.md（全量）</a><div class="d">本文件即融合锚点，资源中心所有「技能库」链接都指向它</div></div>
+        <div class="item"><a class="t" href="learn/seo-learnings-log.md">learn/seo-learnings-log</a><div class="d">每篇 feed 学到→用到 闭环追踪</div></div>
+        <div class="item"><span class="t">同步机制</span><div class="d">AI Core 仅运行态；本文件为 harvests 单一真相源，改这里</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 进度看板 -->
+  <section id="board">
+    <h2 class="sec-h">📊 SEO 进度看板 Progress Board</h2>
+    <div class="sec-d">AI Core board（ink-flows.com 25 子系统）⟷ harvests 页面状态（13 页 + learnings）。</div>
+    <div class="grid">
+      <div class="col"><h3>🟣 技能库 board 状态 <span class="tag skill">skill</span></h3>
+        <div class="item"><a class="t" href="learn/seo-skill-library.md#board">ink-flows.com 进度看板</a><div class="d">25 子系统：done 9 · doing 4 · blocked 3 · not-started 4</div></div>
+        <div class="item"><span class="t">blocked</span><div class="d">sitemap / speed / launch（待技术/部署解阻塞）</div></div>
+        <div class="item"><span class="t">not-started</span><div class="d">content-refresh / gsc / backlink / outreach</div></div>
+      </div>
+      <div class="col"><h3>🟢 harvests 页面状态 <span class="tag kb">kb</span></h3>
+        <div class="item proj b2b"><a class="t" href="board.md">seo-progress-board</a><div class="d">13 页 B2B 状态 + 消费侧 + learnings 闭环</div></div>
+        <div class="item proj b2b"><a class="t" href="apply/inkflow-b2b/briefs/">13 页 tattoo-software</a><div class="d">内容+Schema 已建，待 build→push main</div></div>
+        <div class="item"><a class="t" href="kb-index.md">SEO-KB-INDEX</a><div class="d">harvests 单一来源索引（feeds+learn+apply）</div></div>
+      </div>
+    </div>
+    <div class="note">融合点：技能库 board 的「blocked/not-started」与 harvests 的「待 build/deploy」是同一批任务的两种视角——以 harvests 看板为执行真相源。</div>
+  </section>
+</main>
+</div>
+<script>
+  // 板块导航
+  const nav=document.getElementById('nav');
+  nav.addEventListener('click',e=>{const a=e.target.closest('a');if(!a)return;e.preventDefault();
+    nav.querySelectorAll('a').forEach(x=>x.classList.remove('active'));a.classList.add('active');
+    const id=a.getAttribute('href').slice(1);
+    document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');});
+  // 项目筛选
+  const pills=document.querySelectorAll('.pill');
+  pills.forEach(p=>p.addEventListener('click',()=>{
+    pills.forEach(x=>x.classList.remove('active'));p.classList.add('active');
+    const f=p.dataset.p;
+    document.querySelectorAll('.item.proj').forEach(it=>{
+      const isB2B=it.classList.contains('b2b'),isCons=it.classList.contains('cons');
+      it.style.display=(f==='all')||(f==='b2b'&&isB2B)||(f==='cons'&&isCons)?'':'none';
+    });
+  }));
+</script>
+</body>
+</html>
