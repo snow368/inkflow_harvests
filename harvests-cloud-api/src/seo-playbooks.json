@@ -29,7 +29,10 @@
             "④ 页面体验 — LCP<2.5s、INP<200ms、CLS<0.1",
             "⑤ 搜索意图匹配 — 页面内容格式与query意图一致",
             "⑥ 品牌信号 — 品牌搜索量、品牌词提及、品牌权威性",
-            "SaaS特有: Product-Led SEO、Content-to-Product漏斗、对比页排名能力"
+            "SaaS特有: Product-Led SEO、Content-to-Product漏斗、对比页排名能力",
+            "2026 双轨：既要排 Google 传统结果，又要被 AI 引擎（AIO/ChatGPT/Perplexity/Gemini）选中引用",
+            "零点击率已达 64.82%；AIO 查询零点击率 83%，排名第一 CTR 下降 34.5% → 流量≠排名",
+            "SaaS/出海特有：Product-Led SEO（对比/替代品页承接付费意图）、Content-to-Product 路径、创始人/团队行业经验是 E-E-A-T 硬信号"
           ]
         },
         {
@@ -38,7 +41,8 @@
             "Niche竞争度: 0-3 Easy (SERP<1000/DA<30) | 4-6 Medium | 7-10 Hard (SERP>10000/DA>60)",
             "手动KD检查: Reddit/论坛排首页=低KD ✅ | Forbes/HubSpot排首页=高KD ❌",
             "低KD信号: 0-2广告、搜索结果<5000万条、内容过时文章在前排",
-            "高KD信号: Wikipedia在首页、全是Landing Page、4+广告"
+            "高KD信号: Wikipedia在首页、全是Landing Page、4+广告",
+            "用计分卡给每个竞品打分（内容深度/外链/关键词覆盖/技术/品牌/更新频率）→ 定位「打哪个缝隙」"
           ]
         },
         {
@@ -57,7 +61,9 @@
             "B2C电商: 产品页>分类页>导购 | 评测站/导购站外链 | KD<25 | 产品数决定",
             "B2B供应商: 产品规格页>认证页 | 行业目录外链 | KD<15 | SKU数决定",
             "内容站: 聚合页>模板页 | 靠量取胜 | KD<10 | 数百到数百万页",
-            "品牌站: 品牌故事>PR>案例 | 媒体报道外链 | 少而精"
+            "品牌站: 品牌故事>PR>案例 | 媒体报道外链 | 少而精",
+            "⚠️ 禁止把 SaaS playbook 套所有站；先分型再动手（InkFlow 官方定性 SaaS）",
+            "B2C 有歧义：卖实物=货品站(seo-b2c)；卖订阅软件=仍属 SaaS。定性看「卖货 vs 卖软件」"
           ]
         },
         {
@@ -91,6 +97,73 @@
             "找法3：扩词法—核心词根→best类/alternatives类/use case类",
             "评估维度：Top Pages非品牌词内容策略 + 排名上升期外链策略",
             "来源: @CoderJeffLee 子木聊AI增长"
+          ]
+        },
+        {
+          "label": "2026 范式转移：排名→被引用",
+          "items": [
+            "The Great Decoupling（大脱钩）：印象与点击的历史关系断裂，衡量从 Share of Search 转向 Share of Model",
+            "AI 引用率取代关键词排名成主 KPI（90% 置信，2027 中）",
+            "品牌提及超越外链成最高权威信号（75%，2027 中）",
+            "Reddit/YouTube/论坛成顶级 AI 引用源（98%，已发生）→ DEO 发现引擎优化",
+            "Schema 标记成强制项（90%，2026 底）；作者权威/E-E-A-T 成硬性要求（95%，已成立）",
+            "本地 SEO ROI 超全国性（92%，已成立）"
+          ]
+        },
+        {
+          "label": "静默期生存法则",
+          "items": [
+            "新站/新页有 4-8 周静默期，Google 在评估，属正常不是错误",
+            "静默期内不要乱动结构：换 URL/改 Title/删页会重置静默期",
+            "正确做法：持续产出 + 内链 + GSC 监控，不动根结构"
+          ]
+        },
+        {
+          "label": "SERP 反推：让结果告诉你页面形态",
+          "items": [
+            "搜目标主词看 SERP TOP10：80% 文章→写 Blog；80% 产品页→做产品页；80% 分类页→做分类页",
+            "别凭空决定页面形态，让 SERP 决定"
+          ]
+        },
+        {
+          "label": "竞品持续对标 + 流量承接链拆解（日课视角）",
+          "items": [
+            "对标是日课非一次性审计：每天看竞品 SEO 打法，价值随持续积累复利；说对标没用的 99% 是没坚持做下去",
+            "别只抄关键词：点开竞品页面，沿「哪页持续拿流量→靠什么意图承接→送哪个转化动作」链路拆，信息量比盯排名大得多",
+            "流量承接链=竞品打法地图：①长期稳定引流页(现金牛) ②该页承接的搜索意图(信息/商业/交易) ③末端的转化动作(试用/留资/加购/咨询)",
+            "来源：X @GoSailGlobal (Jason Zhu) 2026-07-30 + 高赞回复 @UncleJAI/@ninthbit_ai"
+          ]
+        },
+        {
+          "label": "流量暴跌诊断与恢复（实战框架）",
+          "items": [
+            "诊断优先：流量暴跌先 GSC 精准定位根因，忌盲目改结构/标题（改错=重置静默期雪上加霜）",
+            "4 类致命根因(真实案例数据)：① Scaled Content Abuse(AI批量万级页)→Mom Cozy/AI Invest(950万→<8000/月) ② 意图错位+Pogo-sticking(信息页塞CTA推销)→WP Beginner/ClickUp 蒸发90%+ ③ Topical Overreach(追高量无关词)→HubSpot 辞职信/名言模板被HCU判缺第一手专业(2200万→500万) ④ AIO 吞噬(排名不掉流量腰斩)→ASL Bloom -50%(视频被AIO直播)",
+            "止血：Content Pruning 删/合并 Crawled-currently-not-indexed 低质页(删50%反增)，别像ClickUp继续堆新页；UX 开门见山答问题",
+            "恢复三板斧：① BOFU 转向(弃被 AI 抢的信息科普词，攻商业意图词；ASL Bloom 转「Duolingo 有手语课吗」带下载) ② 品牌信号救赎(播客/YouTube/社媒/本地赞助→品牌搜索量，难伪造的信任信号；HouseFresh 5万→1000→27. Risk万) ③ Parasite SEO 跳板(YouTube/Medium/LinkedIn 高权重平台拦截恢复期权重流量)",
+            "核心结论：恢复不靠 SEO 漏洞，停止迎合机器→建真实实体品牌；来源 成海《独立站与SEO艺术》2026-07-28"
+          ]
+        },
+        {
+          "label": "外链逻辑重构（2026）：从信任代理到信任加速器",
+          "items": [
+            "旧逻辑\"别人说你行你就行\"(外链=信任代理) → 新逻辑\"你拿证据算法自己判\"(2026内容本身成信任源)；外链从\"信任代理\"变\"信任加速器\"",
+            "外链角色翻转：内容扎实时高质量外链加速确认；内容空洞堆再多外链也补不了\"算法觉得你不像真人\"这个根本问题",
+            "SpamBrain 2025-10 新能力：识别非自然链接模式(来源域集中度/链接增速/锚文本分布规律)→整站信用评级下调；PBN/购买站链接网络清理后失90%+可见度",
+            "自然外链复利效应：内容提供别人无法凭空生成的价值(真实数据/案例)时链接自己来(案例:质检表80条自然外链,来自行业分析师/博主/媒体自发引用)",
+            "实战动作：购买外链 Disavow + 删外包内容(LED厂案例)；省下外链预算投 Experience 信号(署名作者/公开数据)",
+            "来源：微信「每日学点SEO」2026-07-31《别再堆外链了…Experience信号权重首超外链》"
+          ]
+        },
+        {
+          "label": "本地 SEO 专项（GBP + 三大支柱）",
+          "items": [
+            "GBP 最高杠杆：首要类别最重要（\"人身伤害律师\">\"律师事务所\"）；用客户语言填服务/产品；UTM 追踪必备（否则 GA 归为自然流量）",
+            "GBP 误区：照片地理标记无影响(Google 剥离 EXIF) / 验证≠排名 / 描述堆词无效(类别才是排名字段) / 折扣换评价禁止 / GBP 不替代网站",
+            "评价速度(Review Velocity)关键：稳定流>一次性活动；97% 消费者读评价、31% 只看 4.5+；追踪 7 天 & 30 天新增",
+            "三大支柱 2026：相关性(类别>描述) / 距离(不变) / 知名度(AI 重视用户参与模式+内容新鲜度+评价情感分析)",
+            "Reddit 信号：Google 以 $6000万/年签 Reddit 数据许可，Reddit 讨论成 Prominence 关键信号；用 site:reddit.com \"品牌\" \"城市\" 监测提及",
+            "检查清单：研究竞品类别 / 客户语言服务 / UTM / Review Velocity / NAP 一致 / LocalBusiness Schema(经纬度+营业时间+服务区) / 视频验证准备(建筑+招牌+内部≤2分钟)"
           ]
         }
       ],
@@ -131,7 +204,9 @@
             "商业价值 ⭐⭐⭐⭐ — 注册概率: 对比页>功能页>博客",
             "搜索量 ⭐⭐⭐ — 太低没流量、太高做不上去",
             "内容匹配度 ⭐⭐⭐ — 能否自然融入已有内容结构",
-            "评分示例: digital tattoo consent form app → 总分40/50 ✅ 做"
+            "评分示例: digital tattoo consent form app → 总分40/50 ✅ 做",
+            "⚠️ 权重修正（实战口径）：商业价值40% / 搜索意图25% / 竞争度(KD)15% / AI引用潜力10% / 搜索量10%",
+            "优先级公式：高商业价值 × 低 KD × 意图明确 = 先做"
           ]
         },
         {
@@ -247,6 +322,67 @@
             "注意: 一个关键词可能跨意图 → 需SERP拆解确认主意图 → 一页只做一个intent",
             "来源: @CoderJeffLee 子木聊AI增长"
           ]
+        },
+        {
+          "label": "2026 关键词三大转变",
+          "items": [
+            "搜索量→商业价值：92.4% 的查询月搜<10；别只盯大词，低量高意图词更值钱",
+            "仅 Google→全网：挖词要覆盖 Reddit/YouTube/Quora/TikTok（DEO）",
+            "查询→提示词：用户越来越多用长句/对话式提示，长尾+自然语言是主战场",
+            "分工：信息词负责建权威+被 AI 引用，交易词负责转化"
+          ]
+        },
+        {
+          "label": "程序化 SEO 生死线 + 四门槛",
+          "items": [
+            "2024 HCU→2026 Core Update 三连击清除纯模板站，损失 40-90% 索引页 → 纯模板已死",
+            "幸存 = AI + Human 混合：数据层→AI 生成层→人工审查富化层（非协商）→季度质量监控",
+            "四门槛（每页必过）：①真实搜索需求(月搜≥1) ②60%+ 独有内容 ③真实数据支撑 ④合理规模(30警告/50+硬停)",
+            "试点验证 4 指标：4 周索引率≥70% / 信息 CTR>1.5% / 商业 CTR>2.5% / 互动>45 秒",
+            "⚠️ Bing 索引是 ChatGPT Search 引用先决条件，需单独提交 Bing 站长"
+          ]
+        },
+        {
+          "label": "可结构化对象判断（程序化选题）",
+          "items": [
+            "适合对象：国家/城市/职业/文件格式/模板/平台/错误码/品类/场景/品种",
+            "两问：①能拆成「相同模板+不同字段」吗？②每个变体有独立搜索需求吗？两个「是」才做",
+            "案例：日本工具站 70→700 页，3 月 1,274 点击/7.14 万曝光/CTR 1.8%，靠「模板×对象+20 篇 Blog+内链」"
+          ]
+        },
+        {
+          "label": "抗 AI 关键词筛选（AI Overviews 时代）",
+          "items": [
+            "实测：AIO 使搜索 CTR 15%→8%(Pew 2025)；信息类词 36% 被 AI 吸收、对比类\"最好X\" 95%、交易类仅 5% → 纯信息词流量是虚荣指标",
+            "4 问筛选法：①AI 回答需哪种素材？②该素材是否缺失/无源？③你能否稳定产出带源素材？④能否更新防守？全\"是\"= 抗 AI 词",
+            "抗 AI 词类型：直接购买(prix/devis/acheter)、对比(meilleur/vs/comparatif)、评价(avis/test/fiable)、本地即时(près de moi/ouvert)、品牌词([品牌]+avis)",
+            "思维转变：旧问\"如何获更多流量\" → 新问\"哪些词 ChatGPT 永远吃不了\" → 答案=自有专有数据+行动意图词(买/demo/报价)",
+            "来源：X @TimSEO 2026-07-29 长文「SEO = Site + Linkedin + Contenu」"
+          ]
+        },
+        {
+          "label": "2026 长尾词模板与选词三标准（零点击时代）",
+          "items": [
+            "背景：AIO 零点击率 83%、AI Mode 93%；\"能被一句话答完的查询\"被 AI 吃掉，\"需具体判断/操作细节的查询\"仍导向真网页 → 选词标准变了",
+            "值钱长尾词三标准（须同时满足）：①AI 没法三句话答完(需场景参数/实物图/结合用户自身判断) ②搜的人离采购决策不远 ③你的答案有别人凭空生成不了的东西(真实售后数据/车间实拍/客户实测)",
+            "模板一 问题诊断型：[具体故障/异常]+[产品/场景]+怎么解决/什么原因 → 展示排除过程建立信任(例:液压油缸冬天压力上不去 三种原因排查)",
+            "模板二 规格选择型：选什么规格/型号/参数+用于什么具体场景 → 接采购决策最后一公里,必须给可操作计算/选择方法(例:三层楼+60米深井选多大扬程深井泵)",
+            "模板三 真实成本型：[产品/服务]+实际要花多少钱+什么条件 → 透明拆隐性成本(机器价≠落地价),海外B2B\"不隐藏成本\"信任价值>最低价",
+            "模板四 替代方案型：替换[某方案/品牌/材料]+用什么替代+代价 → 敢写缺点才可信;⚠️不攻击具体竞品品牌(只说材料方案,避免采购商反向警惕)",
+            "模板五 数据实测型：实测/统计+[关心但无公开数据的指标]+多少/多久/怎么变 → AI 训练数据无你内部记录=天生护城河(例:海南暴晒5年色差实测)",
+            "优先级：新站→模板一+二(接意图最近采购流量) / 有流量低转化→模板三+四 / 同质化严重→模板五 / 有稳定客户→五模板轮值选题日历",
+            "来源：微信「每日学点SEO」2026-08-01《独立站 SEO 实操：5 个长尾词模板，零点击也能拿询盘》"
+          ]
+        },
+        {
+          "label": "语音/对话式搜索优化",
+          "items": [
+            "2026 融合：Siri→Apple Intelligence / Google Assistant→Gemini / Alexa→生成式 AI；语音答案多由 AI 生成而非传统索引提取",
+            "本地语音四要素：LocalBusiness Schema(名/结构化地址/E.164电话/营业时间/经纬度) + NAP 一致性(跨 GBP/Bing Places/Apple Maps/Yell/FB) + 对话式内容(问题式标题+40-60字直接答案+每服务页 8-15 FAQ) + 本地限定词自然融入",
+            "语音 Schema：LocalBusiness / FAQPage / Speakable(语音专用) / HowTo",
+            "四类意图：信息型(直接答40-60字) / 导航型(GBP+LocalBusiness) / 交易型(Product+Offer) / 本地型(\"best near me\"→LocalBusiness+GBP)",
+            "30 天行动：第1周审计+竞品FAQ研究 → 第2周 40-60字 H2 FAQ → 第3周部署 LocalBusiness+FAQPage+Speakable → 第4周 GBP 全面优化"
+          ]
         }
       ],
       "subskills": [
@@ -295,7 +431,8 @@
             "定价页: 层级→功能矩阵→FAQ | Product+Offer",
             "免费工具: 界面→用法→数据→FAQ | WebPage | 800-1200字",
             "工具榜单: 横向评测→优劣→排名推荐(定期更新) | 1500-2000字",
-            "教程页: Step-by-step+截图→H3分步→信任→转化 | 1000-1500字"
+            "教程页: Step-by-step+截图→H3分步→信任→转化 | 1000-1500字",
+            "关于页：故事→团队→数据→CTA | Organization | 500-1000 字（矩阵第 10 型）"
           ]
         },
         {
@@ -304,7 +441,8 @@
             "核心: 传统SEO优化'点击'，AEO优化'被AI引用'",
             "AEO vs SEO: 直接结构化答案 vs 深度长文、问题-答案配对 vs 关键词密度",
             "AEO四法则: ①H2下第一段40-60字直接回答 ②问题-答案对 ③列表表格(准确率+30-40%) ④FAQ Schema",
-            "AEO关键词优先: What is X > How to X > Best X for Y > X vs Y"
+            "AEO关键词优先: What is X > How to X > Best X for Y > X vs Y",
+            "SEO+GEO 是同一枚硬币两面：同一篇内容「既排 Google、又被 AI 引用」，在写作流程内建可引用性，而非另起炉灶"
           ]
         },
         {
@@ -380,6 +518,89 @@
             "核心: Google不care谁写的（AI或人），care有没有EEAT信号",
             "来源: @maks6361"
           ]
+        },
+        {
+          "label": "GEO 七大杠杆（P0-P3 按 ROI 排）",
+          "items": [
+            "P0（本周）：FAQPage Schema(+3.4x)、Article Schema(headline+author+datePublished+dateModified,+3.1x)、Person Schema(sameAs→LinkedIn,+41%)",
+            "P1（本月）：90 天更新周期(GVS 溢价 79%)、每 500 词≥3 事实锚点(+2.1x)、AI 爬虫审计(robots.txt 别挡 GPTBot 等)",
+            "P2（季度）：第三方平台存在感(85% AI 引用来自第三方)、数字 PR 嘉宾文(+38%)、原创研究报告",
+            "P3（战略）：跨平台引用（各引擎重叠<14%）",
+            "⚠️「已部署」≠「有效」：用 Google Rich Results Test + Schema.org Validator 验证"
+          ]
+        },
+        {
+          "label": "结构化偏好 + 证据层（GEO 最高杠杆）",
+          "items": [
+            "结构化偏好：表格 34% / Q&A 块 29% / 列表 21% / 叙述 8%（按篇幅分配）",
+            "证据层占可引用度 43%（权威引述16%+带出处统计14%+可追溯13%），而结构(标题/表格/FAQ)只占 12%",
+            "铁律：每条 claim 打 [source-supported]/[externally-verified]/[needs-citation]，永不编造；来源优先级 学术>报告>机构>专家>案例",
+            "硬证据：内容加引用/引文/统计使生成式引擎可见度 +40%（GEO, KDD 2024, arXiv 2311.09735）"
+          ]
+        },
+        {
+          "label": "GEO 三件套 + 平台引用时效",
+          "items": [
+            "三件套：FAQ Schema + 结构化表格 + 直接回答段落，三者齐全被 AI Overview 引用概率最高",
+            "部署效果(n=15)：全上三件套首次 AI 引用中位 21-45 天；只上一件 70-120 天甚至不来",
+            "分平台 time-to-first-citation：Perplexity 9-21 天 / ChatGPT 18-32 / Claude 30-50 / Gemini 别单独优化(优化 Google Search,滞后~60天)",
+            "甜点区：单段可引用长度 134-167 字；FAQ 每答<300 字，pillar 8-12 问"
+          ]
+        },
+        {
+          "label": "FAQ 写作规则",
+          "items": [
+            "问题=真实搜索词（非营销包装）；答案首句 BLUF 40-60 字，整答<300 字",
+            "常规页 3-5 问；pillar/综合页 5-8 问",
+            "FAQPage Schema 使 AI 引用 +3.4x"
+          ]
+        },
+        {
+          "label": "GEO 多平台引用 + 内容机器（抗 AI 吸收）",
+          "items": [
+            "多平台发独有数据=成为 AI 引用源：在 LinkedIn/YouTube/Reddit/X 发布原创发现/独有数据，这些正成 AI Overview 首选引用源（Reddit/YouTube 98% 已成顶级源）",
+            "一篇权威发现(\"分析了N个账号发现X\")跨平台分发→多处被 AI 引用→反哺主站权威；分发顺序：网站首发(结构+Schema+内链)→LinkedIn 摘要→X 线程(末条回链)→Reddit 以问题触发讨论",
+            "内容机器：不全自动(纯 AI 生成易被 AI 自身替代)；自动化「找数据/fact-check/加自有数据」三环节，人保留判断与声音；用 Obsidian 聚合多平台信号成自有内容树",
+            "产出 AI 难概括的复杂上下文内容(需领域经验/多源整合/决策框架)，AI 摘要只能\"指路\"不能\"替代\"",
+            "防守锚=自有专有数据(proprietary data)：用户要\"行动\"(买/demo/报价)而非仅\"知晓\"时，你的页是 AI 补充而非替代；每页≥1个\"只有你能写\"的元素",
+            "来源：X @TimSEO 2026-07-29 长文「SEO = Site + Linkedin + Contenu」"
+          ]
+        },
+        {
+          "label": "稳排名的好内容知识策略（5 支柱 + 监控闭环）",
+          "items": [
+            "核心命题：稳排名=内容同时具备 5 类抗衰减信号，缺一根就波动；5 支柱=意图精确承接×第一手专业E-E-A-T×主题权威集群×段落自包含Passage×专有数据护城河",
+            "①意图精确承接：先判 SERP 主导意图(信息/商业/交易/导航)，页面形态让 SERP 决定；信息页只给答案不塞 CTA；反例 ClickUp/WPBeginner 信息页塞推销→pogo-sticking→蒸发90%+",
+            "②第一手专业 E-E-A-T：具名作者+资历+bio、审稿人、2+真实引用(禁维基换Britannica/官方/学术)、发布+更新日期、第一手体验信号；反例 HubSpot 追无关词被HCU判缺第一手专业→2200万→500万",
+            "③主题权威集群：Hub-and-Spoke 集群+实体SEO(知识图谱对齐)+内链织网；不追单篇爆款，追\"该主题我是否最全\"；反例 Topical Overreach 追高量无关词被HCU砍",
+            "④段落自包含 Passage：BLUF 首句40-60字、每段自包含一个答案、列表/表格优先、FAQ 结构化；每段可被 Passage Ranking 与 AI Overview 单独抽取引用(FAQPage Schema +3.4x)",
+            "⑤专有数据护城河：每篇带自有数据/调研/案例；半自动内容机器(找数据→fact-check→加自有数据，Obsidian 聚合)；把独有数据发 LinkedIn/YouTube/Reddit/X 成 AI 引用源；无专有数据页迟早被 AIO 吸干",
+            "监控闭环：日课对标(哪一页持续拿流量→靠什么意图承接→送哪个转化动作, 来源 X @GoSailGlobal)+ GSC 监控 cannibalisation/Coverage/流量突变 + 流量跌先分\"惩罚/质量\"vs\"AIO吞噬\"再定 Pruning/补内容",
+            "发布前 5 项 checklist：意图一致? E-E-A-T齐? 在集群内有内链? 段落自包含+FAQ? 至少1个\"只有你能写\"的专有数据/行动意图元素?",
+            "来源：综合 seo-content/seo-semantic/seo-keyword-research/seo-strategy/seo-gsc-analyzer 五维交集 + X @TimSEO 抗AI词框架 + @GoSailGlobal 对标 + 成海流量暴跌恢复"
+          ]
+        },
+        {
+          "label": "Experience 信号权重首超外链（2026）",
+          "items": [
+            "核心数据：外链权重占比 2020 ~28%→2023 21%→2025 15%→2026中 9%-13%(历史最低；First Page Sage/Backlinko/Semrush 2026H1)",
+            "谷歌「第一人称经验识别」语义模型(2025末-2026初上线)：区分「写出来的知识」(公开资料/教科书/AI生成,缺不可替代细节) vs「做出来的经验」(具体数字/试错过程/现场描述/个人判断)",
+            "判定铁律：内容含\"只有亲身经历才说得出的细节\"(例:模具温度低5度、试3次、报废200多件) 才是 Experience 信号；搜索3分钟拼出的泛化句(\"温度是关键因素\")无信号",
+            "3 案例：①机械配件厂 $3000外链预算 vs 零外链同行(工程师署名+车间实拍,3词进前5) ②LED电源厂删外包内容+Disavow,自然流量+67%、询盘问具体电容型号(确认你真干过) ③质检对比表(带检测机构名+报告编号)零外链推广→80条自然外链→成AI搜索首选源",
+            "预算重投3方向：①工程师/业务变署名作者(每周2h访谈→整理→工程师确认→署名+LinkedIn) ②公开内部数据(询盘周期/退换货率/技术QA统计/工艺实测)注明\"自由引用\" ③Schema身份验证(见 seo-technical 章)",
+            "关键澄清：不是外链没用,是购买式/工业化获取失效；高质量自然外链仍2026最有价值资产之一,角色从\"信任代理\"→\"信任加速器\"；本篇=好内容5支柱②第一手专业E-E-A-T的Experience(E)支柱硬化+数据支撑",
+            "来源：微信「每日学点SEO」2026-07-31《别再堆外链了…Experience信号权重首超外链》"
+          ]
+        },
+        {
+          "label": "长尾词 GEO 内容格式（结构化表格/专有数据/具体提问 CTA）",
+          "items": [
+            "结构化表格是 AI 引用最高杠杆格式：同一组数据用 <table> 呈现被 AI 引用概率是用段落写的 3-5 倍 → 关键数据绝不藏在正文段落里",
+            "数据实测型模板=专有数据护城河落地：越原始越可信(手机拍测试台/手写记录/Excel截图)；每个数据点后写清测试条件与方法(样本量/设备/局限)让别人敢署名引用",
+            "文末具体提问入口 > 泛 CTA：\"你的工况/场景跟文中提到的有什么不同？把具体情况告诉我,我帮你看看\" 比一百个 Get a Quote 按钮更有效(用户点进来前就在找答案)",
+            "写完最后一公里三件事：①每篇留具体提问入口 ②关键数据做成 <table> 结构化 ③GSC 监控零点击展示(高展示低点击=AI代答需加深、有展示有点击没询盘=没接住查CTA/速度/表单)",
+            "来源：微信「每日学点SEO」2026-08-01《5 个长尾词模板，零点击也能拿询盘》(与 seo-keyword「2026长尾词模板与选词三标准」配套,本篇落地内容格式侧)"
+          ]
         }
       ],
       "subskills": [
@@ -448,7 +669,10 @@
             "对比页/替代品页: FAQPage（3-5问答）",
             "定价页: Product + Offer",
             "博客: Article + BreadcrumbList",
-            "关于页: Organization | 联系页: ContactPage | 免费工具: WebPage + SoftwareApplication"
+            "关于页: Organization | 联系页: ContactPage | 免费工具: WebPage + SoftwareApplication",
+            "验证三件套：Schema.org Validator(协议) → Google Rich Results Test(富结果资格) → 生产环境预览(真实渲染)",
+            "InkFlow 优先级：功能页加 SoftwareApplication(17页影响最大)→对比页改 FAQPage(7页)→首页 Organization→博客 Article",
+            "BreadcrumbList 必须项（常被忽略）：给每页加面包屑路径 Schema，把「Home→分类→本页」层级显式交给 Google，不再让它猜页面归属；SERP 展示面包屑路径+强化内链孤岛；Schema 层级必须与可见面包屑 UI 一致；Local SEO 服务类站点尤重（强化 Services→服务页 silo）"
           ]
         },
         {
@@ -554,6 +778,91 @@
             "站点行为模式: 内容发布模式一致性、新链接流入规律、内容质量突变检测",
             "来源: @foley_seo"
           ]
+        },
+        {
+          "label": "技术 SEO 四层逻辑 + 优先级分级",
+          "items": [
+            "四层：抓取(robots/sitemap/404) → 渲染(JS/SSR/移动) → 索引(Schema/canonical/hreflang) → 排名(CWV/内链)",
+            "每一层都可能成为阻断器；目标不是「完美」，而是「确保没有阻断器」",
+            "优先级：P0 阻断器(24h 内先修) > P1 速赢(本周) > P2 项目(本月) > P3 增强(季度)"
+          ]
+        },
+        {
+          "label": "IndexNow（0.5天 0成本，进 ChatGPT Search）",
+          "items": [
+            "ChatGPT Search 依赖 Bing 索引；有 IndexNow 5-10 天进 ChatGPT，无则 1-4 周",
+            "三步：生成 API key(16进制8-128字符)→根目录放 {key}.txt→发布/更新时 POST api.indexnow.org/indexnow",
+            "Cloudflare 一键集成；与 WebSearch(Bing) 同理增益"
+          ]
+        },
+        {
+          "label": "机器可读性 / AI 爬虫审计",
+          "items": [
+            "2026 新增「索引层」：内容必须机器可读——Schema 标记实体、canonical 自引用、AI 爬虫(GPTBot/Google-Extended)未被屏蔽",
+            "关键内容必须在原始 HTML（不依赖 JS 渲染）；`curl -A Googlebot` 验证",
+            "⚠️ robots.txt 别误挡 GPTBot/Google-Extended/ClaudeBot（2026 新风险）"
+          ]
+        },
+        {
+          "label": "内容修剪（技术侧）",
+          "items": [
+            "过去 12 月零自然流量页 → 改进保留 / 301 合并到最强页 / noindex+移出 sitemap",
+            "标签页/日期归档/空分类页默认 noindex"
+          ]
+        },
+        {
+          "label": "按业务类型 Schema 差异",
+          "items": [
+            "SaaS：SoftwareApplication 必须；Product+Offer 有定价可用；AggregateRating 接 G2",
+            "B2C 电商：Product+Offer+AggregateRating 必须；分面导航 canonical 必要(避免重复分类页)",
+            "B2B：LocalBusiness(有线下地址)；Organization+Article+Person"
+          ]
+        },
+        {
+          "label": "301 重定向链条检测与修复（Screaming Frog + AI 辅助）",
+          "items": [
+            "问题：HTTP→HTTPS/改版叠加 301 形成 A→B→C→D 链条，每跳损耗 PageRank，Google 约 5 跳上限后爬虫放弃",
+            "检测：Screaming Frog → Reports → Redirect Chains → 导出 CSV；2 跳需处理，3 跳+优先修",
+            "修复关键认知：不能只修 A→C，需找所有以 B 为中间节点的入口（D→B→C, E→B→C）全部指向最终目标",
+            "AI 辅助：CSV 丢给 Claude/ChatGPT，让它按中间节点分组生成修改清单表格 → AI 清单逐条改 → ⚠️中间节点规则保留（外部链接可能仍指向它）",
+            "验证：修改后重跑 Screaming Frog → Redirect Chains 应为空"
+          ]
+        },
+        {
+          "label": "Schema 身份验证：让算法验证你是真人",
+          "items": [
+            "内容做好还需让爬虫用机器语言读懂\"人\"——降算法验证身份难度,越易验证越倾向信任；Schema 本身不加排名分但降身份核验摩擦",
+            "Organization Schema：标明公司实体(成立年份/地址/联系方式),不让谷歌猜你是否真实存在的公司",
+            "Person + sameAs：作者真名+职位+sameAs 指向 LinkedIn 主页,机器交叉比对\"页面说的人\"与\"LinkedIn上的人\"",
+            "ClaimReview：标记内容中的数据/事实声明,AI 引擎提取引用时决定是否优先；配合 seo-content 的署名作者策略",
+            "来源：微信「每日学点SEO」2026-07-31《别再堆外链了…Experience信号权重首超外链》"
+          ]
+        },
+        {
+          "label": "图片 SEO（LCP/CLS + ImageObject Schema）",
+          "items": [
+            "图片占页面权重 60-80%；ImageObject Schema + 优化图 = 提高 AI Overview 引用率；直接影响 LCP/CLS",
+            "格式：WebP 主力(比 JPEG 小 25-35%) / AVIF 渐进增强(小 40-50%) / SVG 图标 / WebM 替 GIF",
+            "文件预算：页面<1.5MB(移动) / 主图<100KB / 次要<50KB / 缩略<20KB",
+            "懒加载：折叠下 loading=lazy；LCP 图 loading=eager + fetchpriority=high + preload；⚠️ 永不懒加载 LCP 图",
+            "语义：alt 描述性≤125字符含关键词不堆砌；文件名小写连字符；figure+figcaption(注意力+300%)",
+            "ImageObject Schema(contentUrl/name/description/author/license) 提升 AI 引用",
+            "80/20：描述性 alt + WebP + ImageObject Schema = 80% 效果；实测 12.4MB→1.6MB、LCP 4.8s→1.4s、PageSpeed 52→97"
+          ]
+        },
+        {
+          "label": "国际化/多语言 SEO（hreflang 区域消歧）",
+          "items": [
+            "2026 变化：纯多语言站点可能不需 hreflang(Google 语言检测够好)；hreflang 现在核心价值=区域消歧(en-IN vs en-GB vs en-US)",
+            "必须用：多区域同语言(en-US vs en-GB) / 同语言区域变体(西班牙 vs 墨西哥西语)；可能不需：纯多语言全球站 / 每语言内容独特",
+            "URL 结构：子目录(example.com/uk/)推荐(权重集中,复杂度最低) > 子域名 > ccTLD",
+            "实施：2-5 语言→HTML Link Tags；5+→XML Sitemap(2026 推荐)；PDF 等非 HTML→HTTP Headers",
+            "关键规则：自引用 + 双向互指 + x-default + canonical 一致 + 仅索引页可用；90%+ 站点至少 1 处错误",
+            "编码错误：en-uk→en-gb / jp→ja / cn→zh / es-la 不存在",
+            "最佳实践：先子目录 → AI 翻译+人工校对 → 优先译高转化页 → 独立 title/meta → IP 重定向用横幅非强制跳转 → 语言切换器要改 URL → 4-6 周生效",
+            "日本市场：用户看场景/标准/对比/注意事项/Blog 建信任；内容不能只有功能+价格+FAQ+CTA；本地表达非机翻(AI 初稿+人工日语修改)",
+            "InkFlow 执行：Phase1 英文(/) → ES/PT/FR(/es//pt//fr/) → DE/JP/ZH；先译 Landing+3 核心功能页+5 热门博客；Astro 原生 i18n 路由"
+          ]
         }
       ],
       "subskills": [
@@ -621,7 +930,10 @@
             "域名多样性>总数量 — 100个不同域名>1000个同域名",
             "质量优先(DA/DR) — 高权威链接远大于低质链接",
             "相关性 — 同行业链接价值更高（纹身行业链接>通用链接）",
-            "自然度 — 不买链接、不过度优化锚文本、增长曲线自然"
+            "自然度 — 不买链接、不过度优化锚文本、增长曲线自然",
+            "锚文本分布：40% 品牌 / 25% 裸 URL / 20% 通用 / 10% 部分匹配 / 仅 5% 精确匹配",
+            "速度自然：每月 10-20 个新引用域名像自然增长，暴涨归零像买链",
+            "先有内容资产再 outreach：没有「值得链接」的页面 = 空手套白狼"
           ]
         },
         {
@@ -710,6 +1022,81 @@
             "竞品新获得的外链=你的机会信号",
             "Google的3种方法: 论坛提问+自然留链接、Chrome扩展页面、Google Sites/Docs建页面"
           ]
+        },
+        {
+          "label": "2026 AI 可见性新规则（外链范式转移）",
+          "items": [
+            "nofollow ≈ dofollow（AI 引用权重视角）",
+            "跨平台存在感 > 孤立单点外链；4+ 平台提及 → AI 引用率 +2.8x",
+            "品牌搜索量 = 最强 AI 引用预测信号（取代 DA/DR）",
+            "结论：新站先做「跨平台品牌提及」打基础，有排名后再收割高质量编辑外链"
+          ]
+        },
+        {
+          "label": "4 周外链战役框架 + 5 大战术",
+          "items": [
+            "4 周：第1周研究建表→第2周 Outreach(A 5-10封/天,B 15-20封/天)→第3周跟进(7天后追)→第4周复盘",
+            "战术1 Broken Link：竞品 404→做匹配内容→告知替换（成功率 8-12%）",
+            "战术2 Skyscraper：做更好版本→outreach 原链接方（15-25%）",
+            "战术3 HARO/Featured：记者要专家意见，前 6h 提交转化+20%（5-15%）",
+            "战术4 #JournoRequest（X）：约 70% 国家级媒体曝光来自记者直接请求",
+            "战术5 数字 PR/原创数据：发有新闻价值数据，媒体自然报道，$500-2000/场"
+          ]
+        },
+        {
+          "label": "外链质量评估 + 危险阈值",
+          "items": [
+            "高质量：DA≥40 / 紧密相关 / 正文位置 / 品牌或裸URL锚 / 月流量≥1000 / 主动编辑链接",
+            "危险阈值：精确匹配锚>10-15%(Penguin) / 月增速>50(人工审查) / 30%+同IP / >20%同锚文本 / 爆发后归零(像买链)",
+            "可接受 nofollow：社媒 profile / 博客评论 / 行业目录(流量价值>SEO)"
+          ]
+        },
+        {
+          "label": "Reddit SEO 90 天路径",
+          "items": [
+            "1-14 天准备：专用账号+Profile+90/10 法则攒 100+ Karma；别首天发链接/别 AI 语气",
+            "15-30 天研究：site:reddit.com [词] 找已排名但答案差的帖=机会；起草 5 篇",
+            "31-60 天稳定输出：周一/周五各 3-5 评论，周三 1 帖，周末回评；90/10 放开到 10% 推广",
+            "61-90 天衡量：GA4 引荐/AI 引用/品牌搜索/UTM；案例 B2B SaaS 引荐 210→1850/月(+781%)"
+          ]
+        },
+        {
+          "label": "AI 自动化外链（n8n，新站打基础）",
+          "items": [
+            "Google Sheet 主题队列→Claude 生成 4 版独特内容(WP/LinkedIn/Reddit/Dev.to)→自动发布(主站+交叉链接)→更新追踪表",
+            "成本 ~€3/月；适用：新站/0-500 词用 AI 分发打基础，有排名后转手动战役"
+          ]
+        },
+        {
+          "label": "目录站看「收录能力」非 DR",
+          "items": [
+            "提交成功≠获得外链，页面存在≠Google 收录；DR 可被互投刷高",
+            "优先选收录快(48h 内、页面收录率≥80%)的目录（=有真实编辑团队）"
+          ]
+        },
+        {
+          "label": "记者关键词 + 统计页链接磁铁（Data Journalism）",
+          "items": [
+            "记者关键词 = 记者写稿时用来检索的词（如 \"social media usage\"），本质是数据/统计导向词；做一篇完美回答该词的统计页 → 记者主动链接（被动获链，零主动外联）",
+            "5 步：①找记者关键词 ②规划内容(回答记者最关心的问题) ③采集数据 ④优化统计页(SEO+记者友好呈现) ⑤被动获链",
+            "用 PASF（People Also Search For）挖记者要的数据：例写 \"Claude\" 需营收/最火模型/月年用户数 —— 把这些问题变成页面小节",
+            "数据来源：Statista（统计最佳）+ Google News；用权威数据同时喂 E-E-A-T 证据层（来源优先级 学术>报告>机构>专家>案例）",
+            "时间预期现实化：被动获链需 6-9 个月（案例 7 个月拿 53 链接，除做内容无任何外联）—— 属长期资产，别指望速赢",
+            "与现有战术互补：记者关键词页是 HARO / #JournoRequest / 数字 PR 的「被引用素材」；先有此页再响应记者请求转化最高",
+            "来源：X @hridoyreh (2026-07-25)「journalist keyword way, 53 backlinks in 7 months」"
+          ]
+        },
+        {
+          "label": "Webinar 外链基础设施（权威型研讨会）",
+          "items": [
+            "权威型 Webinar（\"分析了1,200个账号发现X\"）才会被引用；内容型(\"101\")无效",
+            "Webinar-as-Link-Bait：独特角度 → 联合知名主持人(可信度3-4x) → 原创可分享发现 → 策略性分发 → 多格式复用",
+            "平均一场权威研讨会产生 140+ 外链；案例 340人注册 → 3月 187外链 / 23媒体报道 / 1.2万博客阅读",
+            "复用格式：博客 + 信息图 + PDF 报告 + 新闻稿 + 视频片段 = 多种引用机会",
+            "分发时间线：前2周联系记者 → 当天直播+社媒 → 后1月向合作伙伴分发录像（研讨会=外链基础设施，非一次性活动）",
+            "预算 $500-2K/场；规模化：第1年2场~280外链 → 第3年6场~840外链",
+            "红线：通用话题 / 单人主持 / 无原创发现 / 分发不足 / 一次性复用 / 无后续跟进 = 常见错误"
+          ]
         }
       ],
       "subskills": [
@@ -767,7 +1154,8 @@
             "竞品替代: 跟踪竞品排名，写更好版本抢占位置",
             "非品牌增长: 非品牌词占自然流量>60%才算健康（户外装备站: 15%→58%/4个月）",
             "程序化增长: 程序化SEO+内容集群=可复制引擎（前提: 50-100篇手写+一定DA）",
-            "复合增长飞轮: SEO→社交分发→品牌搜索↑→外链自然增长→排名↑→更多流量"
+            "复合增长飞轮: SEO→社交分发→品牌搜索↑→外链自然增长→排名↑→更多流量",
+            "复合增长飞轮：SEO→社交分发→品牌搜索↑→外链自然增长→排名↑→更多流量（飞轮自增强）"
           ]
         },
         {
@@ -831,6 +1219,79 @@
             "国际大V: @Kevin_Indig(企业SaaS) · @BrianEDean(Skyscraper) · @KristinaAzarenko(技术)",
             "新手5大错误: 只追大词/无集群/忽略技术/期望短期/只做SEO不做多渠道"
           ]
+        },
+        {
+          "label": "先网站后社交（间接作用链）",
+          "items": [
+            "社交链接 nofollow 不直接传权重；但间接链真实：初始流量→品牌搜索↑(GSC可测)→外链触发↑→AI 引用↑(第三方存在感)",
+            "重要内容必须先网站首发(正确结构+Schema+内链)建立主题权威，再分发社交"
+          ]
+        },
+        {
+          "label": "7 天多渠道分发日历 + 20% 复用",
+          "items": [
+            "Day1 上线+IndexNow+邮件列表；Day2 LinkedIn 摘要；Day3 视觉(IG/Pinterest)；Day5 X 线程(末条回链)；Day7 Reddit 以问题触发讨论",
+            "20% 复用：每篇≥3 次分发——第1次首发 / 第2次 Day14 换角度 / 第3次 Day30 更新版(「有新数据了」)"
+          ]
+        },
+        {
+          "label": "按业务社交平台优先级 + LinkedIn B2B",
+          "items": [
+            "SaaS：LinkedIn #1 + Reddit⭐⭐⭐⭐；B2C：TikTok/Reddit #1 + Pinterest #2；B2B：LinkedIn #1 + Reddit⭐⭐⭐",
+            "LinkedIn B2B(Anne)：主页信任内容→轻互动→问题触达→场景引入→征求同意后发产品；私聊首条不带附件"
+          ]
+        },
+        {
+          "label": "SEO 工具对比矩阵 + n8n 自动化",
+          "items": [
+            "Semrush $139.95(全链路,Perplexity追踪) / Ahrefs $99(Brand Radar) / Surfer $89 / Frase $15(Google+AI双评分) / SE Ranking $52(AI Overview Tracker)",
+            "开源：geo-seo-claude(并行 AI 代理做 GEO 审计)",
+            "n8n 4 流：新内容→IndexNow / GSC 排名下降→通知 / 内容更新→推 sitemap / 竞品监测→差距报告"
+          ]
+        },
+        {
+          "label": "Gen Z 搜索行为适配",
+          "items": [
+            "40% Gen Z 先用 TikTok；社交搜索查询比 Google 长 47%（用完整问题做标题）",
+            "定性词(honest/real/worth it)使用率是 Google 3 倍（文案用这种语气）"
+          ]
+        },
+        {
+          "label": "LinkedIn B2B 客户开发（信任建设 + 私聊触达）",
+          "items": [
+            "LinkedIn 链接 nofollow 不传权重，但 3 间接作用：品牌搜索信号 → AI 引用信号 → 外链触发；定位=信任建设+关系触达",
+            "核心逻辑：主页内容(信任)→私聊触达→询盘；内容本身少直接带询盘，价值在客户点主页判断你靠不靠谱",
+            "客户角色区分(采购/市场/创始人/批发商)决定触达策略；不区分→统一发产品→回复率极低(80% 人做不起来的原因)",
+            "触达三层：①轻互动→再私聊(回复率最高) ②问题替代产品(\"in your 2026 lineup?\"=给对方说话理由) ③场景型(展会+工厂+项目)",
+            "私聊第一条不带附件；先征求同意再发产品；每天加好友≤25人防限制",
+            "三合一链路：领英找靶 + 邮箱破冰(第一句必有交集,冷邮3%/领英18-25%) + WhatsApp 加热",
+            "内容引擎 70/20/10：TOFU70%可见 / MOFU20%思考 / BOFU10%开口；Hook≤55字符(Social proof/Numbers/Relevance)",
+            "AI 进流程但每条有人\"背锅\"：Writer+Designer+QA，QA 必须人做（红线：AI 不能直接变最终发布者）",
+            "90 天节奏：positioning(1-4周)→authority(5-8)→conversion(9-12)；每周2-3条，3月知有效/6月认得出/12月 inbound 稳定"
+          ]
+        },
+        {
+          "label": "YouTube SEO（DEO 发现引擎优化）",
+          "items": [
+            "三层排名轨道：①长视频发现(搜索/推荐,首小时CTR+AVD+会话时长) ②Shorts 独立引擎(完播/重播) ③AI 主题匹配(2026新增,频道专注2-3主题)",
+            "2026 最大变化：满意度信号取代虚荣指标（点赞不重要；回访/订阅/调查好评才重要）",
+            "发布前：关键词验证(搜索量>500+中竞争→过) + 竞品 Top5(标题位置/缩略图共性/未答问题=差异化)",
+            "发布前48h：标题关键词前3词+≤60字符；缩略图含人脸+高对比(CTR+15-20%)；描述前2行重复查询；章节≥3时间戳(强制)；标签5层≤400字符；SRT 字幕(比自动好15-25%)",
+            "首小时 CTR≥8%；满意信号：回访率 + 会话观看时长（看后离平台→排名受损）",
+            "第一梯队因子(推70%排名)：首小时CTR / AVD / 会话时长 / 回访率(2026) / 频道主题权威；前15-30秒直接交付核心价值",
+            "按业务：SaaS(产品Demo/对比/教程) / B2C(开箱/评测/Before-After) / B2B(行业洞察/案例/报告)；CTA 各异(Start free trial/Shop now/Book demo)",
+            "周节奏：选题→脚本→拍摄→优化发布→评论+Shorts→数据；KPI 首小时CTR≥8% / AVD×0.7 / 评论率>1%"
+          ]
+        },
+        {
+          "label": "视频内容多平台复用飞轮（YouTube→Short→TikTok→SEO 页）",
+          "items": [
+            "飞轮 5 步：①YouTube 长视频定位关键词→排 YouTube+Google 视频嵌入位+成 AI Overview 源 ②剪 Short→同词双占位 ③Short 发 TikTok→站内搜索红利同素材多占 ④用长视频 transcript 建高质量 SEO 页→\"真实人物真实观点\"天然满足 E-E-A-T 第一手经验 ⑤等排名（来源 X @VengeonsP / ChatSEO 2026-07-30）",
+            "视频 SEO 优势：竞争远低于文字、转化更高（\"让人安心的真人\"因子）；标题含目标词+视频答搜索意图即可；前 20 秒复述主题+为什么看",
+            "transcript 技巧：上传前可重写 transcript 稠化词场（YouTube 只校验语言不校验逐字 fidelity，来源回复 @DlplqGab）；transcript 即页面正文骨架=段落自包含+真实经验",
+            "工具链：Claude 自动剪竖版、Metricool 免费计划发 TikTok/Shorts；一条素材 4 平台复用（YouTube / Short / TikTok / SEO 页）",
+            "与「好内容 5 支柱」关联：本飞轮即操作化 ⑤专有数据护城河(多平台发独有数据成 AI 源)+④段落自包含(transcript 页)；视频页补文字页缺的\"真人信任\"信号"
+          ]
         }
       ],
       "subskills": [
@@ -847,6 +1308,190 @@
           "trigger": "\"分析GSC\""
         }
       ]
+    },
+    {
+      "id": "eeat",
+      "title": "E-E-A-T 与信任信号",
+      "icon": "ShieldCheck",
+      "color": "indigo",
+      "summary": "四大维度 · EAS 评分 · 来源分层 · Person/Article/FAQ Schema · 事实锚点 · 90天更新 · B2B 信任",
+      "sort_order": 7,
+      "chapters": [
+        {
+          "label": "四大维度定义 + 量化标尺 EAS",
+          "items": [
+            "E 经验：第一手实践/用过产品 — 真实测试数据、工作室实操、案例复盘",
+            "E 专业：主题专业度 — 具名作者+凭据、行业认证、学术背景",
+            "A 权威：行业公认度 — 权威引用来源、外链质量、品牌搜索量、第三方平台存在感",
+            "T 信任：可核实透明 — 真实数据可溯源、About页资质、评价/认证、无编造",
+            "EAS 实体权威评分(0-100)：Schema覆盖40% + 实体信号35% + 新鲜度25%",
+            "基准：无GEO中位数EAS=12；全结构化+实体堆栈=27；EAS>65 域名引用频率是<40的 3.4x",
+            "目标：先把 InkFlow 推过 EAS 27，再瞄 65（12→27 只需 Schema+署名作者+90天更新）"
+          ]
+        },
+        {
+          "label": "来源权威性分层 + 引用铁律",
+          "items": [
+            "断言类型决定来源：行业/统计→行业报告(Ipsos/IBISWorld/Statista)+政府(BLS)",
+            "文化/历史/起源→机构(Smithsonian/大英/National Geographic)+学术期刊+Britannica（替换 Wikipedia）",
+            "心理/动机→同行评审(Body Image/J Social Psychology)；象征理论→学术著作(Jung)",
+            "引用优先级铁律：学术>行业报告>权威机构>专家观点>实践案例",
+            "每条 claim 打 [source-supported]/[externally-verified]/[needs-citation]，永不编造"
+          ]
+        },
+        {
+          "label": "署名作者 + Person/Article Schema（低成本高回报）",
+          "items": [
+            "每作者页加 Person Schema(sameAs→LinkedIn)，引用可能性 +41%",
+            "每内容页 Article Schema 必含 headline+author+datePublished+dateModified，AI 引用 +3.1x",
+            "具名作者(含title+bio+About链接)+审核人(含credentials)；占位符不渲染、不注入 reviewerSchema",
+            "⚠️「已部署」≠「有效」：用 Rich Results Test + Schema.org Validator 验证必填字段"
+          ]
+        },
+        {
+          "label": "FAQPage Schema + 引用来源升级",
+          "items": [
+            "每内容页加 FAQPage JSON-LD，AI 引用 +3.4x；常规 3-5 问，pillar 5-8 问",
+            "Wikipedia→权威机构/报告升级（已落地 15 类）：Smithsonian/Wohlrab/Jung/IBISWorld/Ipsos",
+            "全局增益：「约30%美国成年人至少1个纹身(Ipsos 2019)；美国纹身行业2025达$1.3B(IBISWorld)」（正文写 U.S. 限定）"
+          ]
+        },
+        {
+          "label": "真实经验数据锚点 + 90 天更新",
+          "items": [
+            "每 500 词≥3 个可验证事实锚点 → 引用率是≤1的 2.1x",
+            "锚点类型：第三方报告数据 / 自家产品使用数据 / 行业基准统计；用原创数据可 +89% top-10 因子",
+            "内容 90 天内更新过且有真数据变化 → 新鲜度满分（GVS 溢价 79%）",
+            "建更新日历：季度 revisits + 数据刷新"
+          ]
+        },
+        {
+          "label": "B2B 隐性信任信号 + 第三方平台",
+          "items": [
+            "采购商5层顾虑：真实存在/持续供货/出事保障/MOQ交期匹配/行业里见过你",
+            "反直觉：主动划定边界(「500起订,不适合一次性小单」)比「什么都能做」更显专业",
+            "每产品页 3-5 张隐性图：真实工序/出货细节/规格实物对比/认证截图；FAQ 写「顾虑」非「参数」",
+            "Trustpilot：注册品牌profile(DR90+)→免费高质外链；看竞品差评挖痛点；摘好评挂LP当社会证明"
+          ]
+        },
+        {
+          "label": "反模式 + AEO/GEO 发布自检（E-E-A-T 部分）",
+          "items": [
+            "反模式：大量无真实测试的AI薄内容、引用只用Wikipedia、来源伪造、标题党、180+天不更新",
+            "案例：HouseFresh HCU暴跌→删/重写低质AI+发真实实验室数据+具名作者+透明方法→回升",
+            "自检：每段自包含？有可验证第三方数据？署名作者？原创数据点？90天内更新？claim已打标签？"
+          ]
+        }
+      ],
+      "subskills": []
+    },
+    {
+      "id": "seo-agent-arch",
+      "title": "SEO Agent 能力架构（生产级模块图谱）",
+      "icon": "Boxes",
+      "color": "amber",
+      "summary": "8 能力域 · 6 完全 / 1 部分 / 1 缺口（监测 Veille；社交信号缺 X回复舱）",
+      "sort_order": 8,
+      "chapters": [
+        {
+          "label": "架构总览：生产级 SEO Agent 的 8 大能力域",
+          "items": [
+            "来源：X @TimSEO (2026-07-27) 公开其 SEO Agent 目录结构（arborescence），作为生产级模块划分的权威参考；本维度将其翻译为中文能力地图，并标注与 InkFlow 现有 seo-playbooks 的覆盖关系",
+            "8 域：①关键词 ②语义 ③架构 ④GSC数据 ⑤内容 ⑥GEO ⑦社交信号 ⑧监测（Veille）",
+            "覆盖判定：[已有]=playbooks 已有对应维度/章节；[部分]=有基础但需补完；[缺口]=需新建模块",
+            "覆盖度：8 域中 6 域完全覆盖（关键词/架构/内容/GEO/GSC数据运营/语义）、1 域部分（社交信号缺 X 回复舱）、1 域缺口（监测 Veille）"
+          ]
+        },
+        {
+          "label": "① 关键词域 Mots-clés",
+          "items": [
+            "/recherche-mots-cles 关键词研究 → [已有] seo-keyword：5维评分系统、2026三大转变、可结构化对象判断",
+            "/clustering-mots-cles 关键词聚类（意图/主题聚合）→ [部分] seo-topic-cluster 有 Hub-and-Spoke，缺「自动化聚类→映射单页」流水线",
+            "/mots-cles-decisionnels 决策型关键词（交易/商业意图优先）→ [已有] 5维评分中「商业价值40%权重」+ 站点类型矩阵",
+            "/mots-cles-overview 关键词全景看板 → [缺口] 缺统一关键词看板（搜索量/排名/KD/意图一屏），可接 seo-gsc-analyzer"
+          ]
+        },
+        {
+          "label": "② 语义域 Sémantique ✅ 已覆盖",
+          "items": [
+            "/preparation-semantique 语义准备流程（主题→实体→同义上下位→术语清单→注入）→ [已有] seo-semantic §三 六步系统化流程（实体抽取/NER/同义上下位/Query Coverage≥3/语义聚类/注入）",
+            "/entites-vectorielles 向量实体（entity embeddings / 向量检索内容差距 / 实体嵌入空间蓝海选题）→ [已有] seo-semantic §五",
+            "/entity-seo 实体 SEO（Knowledge Graph/Wikidata/schema.org sameAs/实体权威/实体消歧）→ [已有] seo-semantic §四",
+            "/topical-authority 主题权威（实体/子主题覆盖广度 + 内部实体链接网 + 覆盖率测量）→ [已有] seo-semantic §六",
+            "/passage-ranking 段落优化（BERT段落级匹配 + 段落自包含 + 直接答案前置）→ [已有] seo-semantic §七",
+            "/semantic-clustering 语义聚类（按语义相似度而非仅意图分组，防 cannibalisation）→ [已有] seo-semantic §八",
+            "/brief-contenu 内容简报生成 → [已有] seo-content-brief skill（标题/大纲/关键词/FAQ/内链/Schema 一键生成，可加实体清单字段）"
+          ]
+        },
+        {
+          "label": "③ 架构域 Architecture",
+          "items": [
+            "/cluster-aeo AEO 集群（Hub-and-Spoke 主题集群）→ [已有] seo-topic-cluster + seo-content AEO",
+            "/modeles-pseo PSEO 模板（程序化页面模板）→ [已有] seo-keyword 程序化SEO四门槛（真实需求/60%独有/真实数据/合理规模）",
+            "/programmatique-pseo 程序化 PSEO 执行 → [已有] 程序化SEO生死线（AI+Human混合、试点4指标）",
+            "/maillage-systeme 系统化内链 → [已有] seo-technical 内链/四类意图 + seo-content 内链布局"
+          ]
+        },
+        {
+          "label": "④ GSC 数据运营域 Données Search Console ✅ 已覆盖",
+          "items": [
+            "/quick-win GSC 速赢（高曝光低点击、排名11-20上拉）→ [已有] seo-gsc-analyzer §四/§五 四象限+CTR公式+低垂果实",
+            "/cannibalisation 关键词自相残杀检测（多页争同词）→ [已有] seo-gsc-analyzer §六 Query×Page交叉+合并/canonical/意图重分配决策树",
+            "/maillage-gsc 基于 GSC 数据的内链建议（用真实曝光/点击喂内链）→ [已有] seo-gsc-analyzer §九 高展示页→潜力页导流+锚文本用GSC真实词+orphan审计",
+            "/indexation-check 索引检查（收录率/收录异常/orphan 页）→ [已有] seo-gsc-analyzer §七 sitemap vs Coverage差集+收录率公式+noindex/robots误伤排查",
+            "/coverage 索引覆盖诊断（错误/有效但需注意/已排除三类优先级）→ [已有] seo-gsc-analyzer §八",
+            "/core-web-vitals 页面体验CWV（LCP≤2.5s/CLS≤0.1/INP≤200ms/移动可用性）→ [已有] seo-gsc-analyzer §十 阈值+排名因子关联",
+            "/sitemap Sitemap管理与收录对账 → [已有] seo-gsc-analyzer §十一",
+            "/url-inspection 单页实时抓取/索引/结构化数据诊断 → [已有] seo-gsc-analyzer §十二",
+            "/enhancements 富媒体/Schema报告（FAQ/Product/Review/Breadcrumb）→ [已有] seo-gsc-analyzer §十三",
+            "/links 外链增长+引用域多样性 / 内链权重页+断链 → [已有] seo-gsc-analyzer §十四",
+            "/anomaly 流量骤降异常监测（分段对比/算法更新日历/技术故障/惩罚）→ [已有] seo-gsc-analyzer §十五",
+            "/api-bq GSC API/BigQuery自动化（速赢扫描/排名告警/收录率监控）→ [已有] seo-gsc-analyzer §十六/§十七"
+          ]
+        },
+        {
+          "label": "⑤ 内容域 Contenu",
+          "items": [
+            "/workflow-article 文章生产工作流 → [已有] seo-content-writing 14维矩阵（页面类型×格式×Schema）",
+            "/ton-de-voix 品牌语气调性 → [已有] seo-workflow LinkedIn B2B / 品牌信号",
+            "/redaction-guide 写作指南 → [已有] seo-content-writing BLUF/段落自包含/列表表格优先",
+            "/page-statistiques 统计页（数据页链接磁铁）→ [已有] seo-link 记者关键词+统计页链接磁铁（Data Journalism，被动获链）"
+          ]
+        },
+        {
+          "label": "⑥ GEO 域",
+          "items": [
+            "/geo-audit GEO 审计 → [已有] seo-content GEO七杠杆（P0-P3 ROI 排序）",
+            "/donnees-structurees 结构化数据 → [已有] seo-technical Schema 对照表 + eeat 署名/FAQ Schema",
+            "/product-led-seo 产品驱动 SEO → [已有] seo-strategy SaaS/Product-Led SEO/Content-to-Product"
+          ]
+        },
+        {
+          "label": "⑦ 社交信号域 Signaux sociaux",
+          "items": [
+            "/reddit-cockpit Reddit 作战舱 → [已有] seo-link Reddit SEO 90天路径",
+            "/x-reply-cockpit X 回复作战舱（系统化 X 互动/回复引流）→ [缺口] 有 #JournoRequest 战术但缺「X 回复/互动」常态化作战模块，待建",
+            "/linkedin-journal LinkedIn 日志 → [已有] seo-workflow LinkedIn B2B 客户开发"
+          ]
+        },
+        {
+          "label": "⑧ 监测域 Veille ← 缺口",
+          "items": [
+            "/breves-quotidiennes 每日简报（行业快讯/算法更新速递）→ [缺口] 缺每日监测模块（可接 n8n + GSC 排名下降通知）",
+            "/newsletter-ia AI Newsletter（自动汇编周/月报）→ [缺口] 缺自动简报生成（可复用 seo-workflow n8n 4 流）"
+          ]
+        },
+        {
+          "label": "能力覆盖度自检 + 下一步建设清单",
+          "items": [
+            "已覆盖（直接复用）：关键词 / 语义7子模块 / 架构4项 / 内容4项 / GEO 3项 / GSC数据运营12子模块 / Reddit+LinkedIn → 6 域稳",
+            "待建模块（2 块）：B. X 回复作战舱（社交信号域）C. 监测 Veille（每日简报+AI Newsletter）；GSC数据运营与语义域均已补全（seo-gsc-analyzer / seo-semantic）",
+            "优先级：X 回复舱 > 监测 Veille（GSC数据运营与语义域已完成）",
+            "闭环：每个缺口模块建好后回写本维度标 [已有]，保持能力地图与实况同步"
+          ]
+        }
+      ],
+      "subskills": []
     }
   ],
   "skills": [
