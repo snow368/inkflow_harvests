@@ -601,6 +601,35 @@
             "写完最后一公里三件事：①每篇留具体提问入口 ②关键数据做成 <table> 结构化 ③GSC 监控零点击展示(高展示低点击=AI代答需加深、有展示有点击没询盘=没接住查CTA/速度/表单)",
             "来源：微信「每日学点SEO」2026-08-01《5 个长尾词模板，零点击也能拿询盘》(与 seo-keyword「2026长尾词模板与选词三标准」配套,本篇落地内容格式侧)"
           ]
+        },
+        {
+          "label": "实体提取写作层（Semantic SEO：让机器稳定抽取 triple）",
+          "items": [
+            "主语优先（Subject FIRST）：主动语态「A founded B」优于被动「B was founded by A」；被动颠倒主谓宾顺序，机器需额外推理重建关系，易丢 triple",
+            "代词断裂实体链：用 it/they/this/the company/we 制造孤儿事实——共指消解(coreference resolution)不免费也不可靠；宁可重复品牌名（人类读着略拗口，机器抽取效果好 100 倍）",
+            "模糊措辞(Hedging)摧毁事实置信度：「one of/arguably/may/helps to/can be considered」是在主动降级自己的 triple；要自信但真实，把主张写成可断言事实而非猜测",
+            "否定必须局部（Local Negation）：「X happened. This is false.」不可靠（声明与纠正被分块，声明独自存活，机器保留错误关联）；「X did NOT happen」才行（否定附动词）。声誉管理尤关键——「声明-纠正」结构可能强化你想去除的东西",
+            "实体距离稀释（Distance Dilutes）：主语与宾语隔 40 词的关系弱于紧邻；缩短句子、把实体放一起，关系强度随距离下降",
+            "Chunk 边界是沉默杀手（页面级）：内容被切块，主张在块 A、证据在块 B → 检索层常只拉一块 → 半个事实不可用、不被引用；主张与支撑必须同块，别让最佳 triple 孤悬段落底部",
+            "H2 当查询字符串：每 H2 声明其下块回答什么（「What Is Entity SEO」能匹配，「The Hidden Architecture of Modern Search 2026」匹配不到）；H2 是检索入口不是创意写作",
+            "表格/列表是预解析 triple：满足共识+独特价值+SERP 格式的表格=一堆现成主谓宾（行头/列头/值已分好）；比较内容用散文是笨办法，表格优先",
+            "命名一致性：每段用完全相同写法（「Charles Floate」不要变「Charlie/CF/God of SEO」），机器把变体当不同未匹配字符串 → 实体权威被稀释",
+            "全站编排最难：哪些声明推、什么顺序、跨哪些来源需逆向工程细分/竞品/SERP+AI 输出；但写作层免费，可训练 AI 做 95%",
+            "来源：X @Charles_SEO (Charles Floate) 2026-08-01「REAL ENTITY SEO LESSON #2 - SEMANTIC SEO」"
+          ]
+        },
+        {
+          "label": "实体 SEO 理论基础（triple / 共识 / 消歧：为什么自声明 Schema 不算证据）",
+          "items": [
+            "Subject → Predicate → Object 是实体关系基本单元：例「Charles Floate founded Charles Floate Training」「Charles Floate Training is a SEO education platform」；品牌与关键词同页出现=共现(co-occurrence)，但被显式关系连接才构成 triple(主谓宾)，机器才抽取得到",
+            "共识(consensus)决定事实强度：单一来源断言的 triple=claim(主张)；多个独立可信来源共同断言=机器眼中的 fact(事实)；Google 研究确认事实置信度同时取决于「断言的独立来源数量」与「来源可靠度」",
+            "不能自声明进知识图谱：自家 Schema 是 claim 不是证据，white-hat 鼓吹「加 Schema 就能进 KG」不成立；500 个来源用 50 种方式描述你=500 条弱主张，30 个来源完全一致措辞=1 条强事实 → 一致性胜过数量(consistency beats volume)",
+            "消歧(disambiguation)是另一半：同字符串不同实体(如 Apple 公司 vs 水果)靠周围共现实体解析；品牌若与错误实体簇共现→被解析到错误节点甚至无节点(成未匹配字符串)；语境比提及次数更重要——错误语义邻域的提及不仅无效还可能建负面关联",
+            "LLM 也在核实(corroborate)：模型只敢推荐它能交叉印证的内容；图谱若对你的身份困惑，模型不会冒险推荐你；模糊(ambiguity)不是中性，是 disqualifying(取消资格)",
+            "落地协调清单：①文本中显式(非暗示)写明关系 ②全站相同方式描述自己(同属性/同配对/同措辞) ③在「你控制不了的来源」(外站/UGC/百科)赢得一致描述 ④进对语义邻域而非最大的 ⑤审计 Google 实际抽取了什么(而非你希望它抽的)",
+            "与上一章「实体提取写作层」互补：上一章是写作层让机器「抽得出 triple」；本章是理论层讲「抽出的 triple 如何被验证成 fact」——两者合起来=实体 SEO 完整闭环(可抽取 + 可验证 + 可消歧)，且呼应 seo-technical「Schema 身份验证」章(自站 Schema=claim，外站共识=fact)",
+            "来源：X @Charles_SEO (Charles Floate) 2026-07-31「90% OF ENTITY SEO ADVICE IS JUST SCHEMA MARKUP」(实体 SEO 理论基础帖，与 Lesson #2 写作层互补)"
+          ]
         }
       ],
       "subskills": [
