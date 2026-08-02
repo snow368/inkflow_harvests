@@ -198,6 +198,7 @@ const PUBLIC_PATHS = new Set([
   '/api/amazon/report',
   '/api/voice/log',
   '/api/inventory/stock',
+  '/api/inventory/stock/reset',
   '/api/inventory/stocktake',
   '/api/inventory/alerts',
   '/api/inventory/inbounds',
@@ -234,8 +235,7 @@ const PUBLIC_PATHS = new Set([
   '/api/marketing/tasks/poll',
   '/api/marketing/tasks/report',
   '/api/marketing/tasks/mark-converted',
-  '/api/marketing/scripts/select',
-  '/api/seo/playbooks'
+  '/api/marketing/scripts/select'
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -288,6 +288,28 @@ app.get('/api/states', (c) => {
   return c.json({ states: STATES[country] || [] });
 })
 
+// 一键清零库存（破坏性操作）。仅将 current_stock 置 0，出库/入库流水与历史记录保留以便审计。
+// 防误触：必须 body.confirm === 'RESET-ALL-STOCK'；可选 STOCK_RESET_KEY 环境变量做二次防护。
+// 重要：清零后必须先重新盘点填数（CSV 导入写入 current_stock），再让 Shopify 订单从指定日起扣减，
+// 否则订单会从 0 开始扣成负数（超卖）。配合 SHOPIFY_SYNC_FROM 使用。
+app.post('/api/inventory/stock/reset', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({})) as any
+    if (body?.confirm !== 'RESET-ALL-STOCK') {
+      return c.json({ error: 'confirm_required', hint: "body must include { confirm: 'RESET-ALL-STOCK' }" }, 400)
+    }
+    const key = c.env.STOCK_RESET_KEY
+    if (key && body?.key !== key) {
+      return c.json({ error: 'invalid_key' }, 403)
+    }
+    const res = await c.env.DB.prepare('UPDATE inventory_products SET current_stock = 0, updated_at = ?').bind(Date.now()).run() as any
+    const changes = res?.meta?.changes ?? res?.changes ?? 0
+    return c.json({ ok: true, updated: changes })
+  } catch (e: any) {
+    return c.json({ error: String(e?.message || e) }, 500)
+  }
+})
+
 app.get('/api/inventory/stock', async (c) => {
   const rows = await c.env.DB.prepare(`
     SELECT p.*,
@@ -297,8 +319,8 @@ app.get('/api/inventory/stock', async (c) => {
   `).all()
   const items = (rows.results || []).map((r: any) => ({
     ...r,
-    status: (r.total_inbound || 0) - (r.total_outbound || 0) === 0 ? 'out_of_stock'
-      : (r.total_inbound || 0) - (r.total_outbound || 0) <= (r.reorder_point || 0) ? 'low_stock' : 'healthy'
+    status: (r.current_stock || 0) <= 0 ? 'out_of_stock'
+      : (r.current_stock || 0) <= (r.reorder_point || 0) ? 'low_stock' : 'healthy'
   }))
   return c.json({ ok: true, items })
 })
@@ -316,11 +338,11 @@ app.get('/api/inventory/alerts', async (c) => {
   const rows = await c.env.DB.prepare(`
     SELECT p.sku, p.name, p.category, p.reorder_point, p.reorder_qty, p.lead_time_days, p.moq, p.carton_qty,
       COALESCE(inb.total_in, 0) as total_inbound, COALESCE(out.total_out, 0) as total_outbound,
-      COALESCE(inb.total_in, 0) - COALESCE(out.total_out, 0) as current_stock
+      COALESCE(p.current_stock, 0) as current_stock
     FROM inventory_products p
     LEFT JOIN (SELECT product_sku, SUM(quantity) as total_in FROM inventory_inbounds GROUP BY product_sku) inb ON p.sku = inb.product_sku
     LEFT JOIN (SELECT product_sku, SUM(quantity) as total_out FROM inventory_outbounds GROUP BY product_sku) out ON p.sku = out.product_sku
-    WHERE (COALESCE(inb.total_in, 0) - COALESCE(out.total_out, 0)) <= p.reorder_point
+    WHERE COALESCE(p.current_stock, 0) <= p.reorder_point
     ORDER BY current_stock ASC
   `).all()
   return c.json({ ok: true, alerts: rows.results || [] })
@@ -1379,8 +1401,28 @@ app.get('/api/shopify/callback', async (c) => {
 
 // ============ Shopify Webhook ============
 
+// 校验 Shopify webhook 签名（X-Shopify-Hmac-SHA256）。
+// 需在 wrangler 配置 SHOPIFY_WEBHOOK_SECRET（Shopify 后台 Webhook 签名密钥）。
+// 未配置时仅告警不拒绝（过渡期，避免断单）；生产环境必须配置，否则任何人可伪造扣减请求。
+async function verifyShopifyWebhook(c: any, rawBody: string): Promise<boolean> {
+  const secret = c.env?.SHOPIFY_WEBHOOK_SECRET as string | undefined
+  const hmac = c.req.header('X-Shopify-Hmac-SHA256')
+  if (!secret) { console.warn('[webhook] SHOPIFY_WEBHOOK_SECRET 未配置，跳过 HMAC 校验（请尽快配置）'); return true }
+  if (!hmac) return false
+  try {
+    const enc = new TextEncoder()
+    const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+    const sig = await crypto.subtle.sign('HMAC', key, enc.encode(rawBody))
+    const computed = btoa(String.fromCharCode(...new Uint8Array(sig)))
+    return computed === hmac
+  } catch (e: any) { console.error('[webhook] HMAC 校验异常', e?.message || e); return false }
+}
+
 app.post('/api/shopify/webhook/orders-create', async (c) => {
-  const order = await c.req.json() as any
+  const rawBody = await c.req.text()
+  if (!verifyShopifyWebhook(c, rawBody)) return c.json({ error: 'Invalid signature' }, 401)
+  let order: any
+  try { order = JSON.parse(rawBody) } catch { return c.json({ error: 'Invalid payload' }, 400) }
   if (!order?.id) return c.json({ error: 'Invalid payload' }, 400)
 
   const orderId = String(order.id)
@@ -1388,9 +1430,16 @@ app.post('/api/shopify/webhook/orders-create', async (c) => {
   const existing = await c.env.DB.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? LIMIT 1').bind(orderId).first()
   if (existing) return c.json({ ok: true, skipped: true, reason: 'already processed' })
 
+  // 仅当订单已发货/已履约才扣减（用户决策：Shopify 显示已发货再减库存）
   const fulfillmentStatus = String(order.fulfillment_status || '').toLowerCase()
-  if (fulfillmentStatus !== 'fulfilled') {
+  if (fulfillmentStatus !== 'fulfilled' && fulfillmentStatus !== 'shipped') {
     return c.json({ ok: true, skipped: true, reason: `not fulfilled (${fulfillmentStatus})` })
+  }
+
+  // 时间门槛：仅处理 SHOPIFY_SYNC_FROM 之后的订单（用户决策：从指定日起才扣库存，不回溯历史）
+  const syncFrom = c.env.SHOPIFY_SYNC_FROM
+  if (syncFrom && order.created_at && new Date(order.created_at) < new Date(syncFrom)) {
+    return c.json({ ok: true, skipped: true, reason: `before SHOPIFY_SYNC_FROM (${syncFrom})` })
   }
 
   const customerName = order.customer ? `${order.customer.first_name||''} ${order.customer.last_name||''}`.trim() : ''
@@ -1408,9 +1457,13 @@ app.post('/api/shopify/webhook/orders-create', async (c) => {
     const noteParts = [`Shopify Order #${orderName}`, '����?��: webhook']
     if (customerNote) noteParts.push(`?��?�쨢???: ${customerNote}`)
     if (item.title) noteParts.push(`����?��: ${item.title}`)
-    await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-      .bind(sku, qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, noteParts.join(' | '), now).run()
-    deductedCount++
+    try {
+      await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
+        .bind(sku, qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, noteParts.join(' | '), now).run()
+      // 写穿扣减：直接减 current_stock；允许为负（负值=超卖，页面预警）
+      await c.env.DB.prepare('UPDATE inventory_products SET current_stock = COALESCE(current_stock,0) - ? WHERE sku = ?').bind(qty, sku).run()
+      deductedCount++
+    } catch (e: any) { console.error('[webhook] deduct failed for', sku, e?.message || e) }
   }
 
   // Gift deduction
@@ -1421,9 +1474,12 @@ app.post('/api/shopify/webhook/orders-create', async (c) => {
       const resolved = await resolveGiftSku(c.env.DB, gift, defaultSeries);
       if (!resolved) continue
       const outboundDate = new Date().toISOString().split('T')[0]
-      await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-        .bind(resolved, gift.quantity, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | Gift: ${resolved}`, now).run()
-      deductedCount++
+      try {
+        await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
+          .bind(resolved, gift.quantity, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | Gift: ${resolved}`, now).run()
+        await c.env.DB.prepare('UPDATE inventory_products SET current_stock = COALESCE(current_stock,0) - ? WHERE sku = ?').bind(gift.quantity, resolved).run()
+        deductedCount++
+      } catch (e: any) { console.error('[webhook] gift deduct failed for', resolved, e?.message || e) }
     }
   }
 
@@ -4448,7 +4504,7 @@ async function runShopifySync(env: any, opts: { full?: boolean; sinceId?: number
       const orderNumber = String(order.order_number || '');
       // Store the human order name "#4737" (NOT the internal numeric Shopify id) so the
       // frontend can display/search it directly. Matches the manual import interface.
-      const orderId = orderNumber ? '#' + orderNumber : String(order.id);
+      const orderId = String(order.id);
       totalOrders++;
       lastProcessedId = Number(order.id);
       let hadSku = false;
@@ -4460,19 +4516,25 @@ async function runShopifySync(env: any, opts: { full?: boolean; sinceId?: number
           // Ensure the parent product exists (inventory_outbounds.product_sku → inventory_products.sku FK).
           // Shopify SKUs may not yet live in the warehouse products table, so create a minimal stub if missing.
           try {
+            // [2026-07-31] 不再自动建产品：以 harvests 库存表为准，Shopify 同步只记录出库流水，不污染 products 表。
             const prod = await env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first();
             if (!prod) {
-              await env.DB.prepare(`INSERT INTO inventory_products (sku,name,category,vendor,unit,unit_price,reorder_point,reorder_qty,lead_time_days,moq,carton_qty,source,shopify_variant_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-                .bind(sku, (item.title || sku), 'General', '', 'Box', 0, 50, 1000, 45, 500, 100, 'shopify', item.variant_id || null, Date.now(), Date.now()).run();
+              console.log('[shopify-sync] skip auto-create for unknown SKU', sku, '(records outbound only)');
             }
           } catch (e: any) { console.log('[shopify-sync] stub product ensure failed for', sku, ':', e?.message || e); }
           // Dedup per (order, sku) so a prior partial/mismatched row never blocks a correct re-sync.
           const existing = await env.DB.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? AND product_sku = ? LIMIT 1').bind(orderId, sku).first();
         if (existing) continue;
+        const prod = await env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first();
+        if (!prod) { console.log('[shopify-sync] skip unknown SKU', sku, '(no matching inventory product)'); continue; }
         const note = `Shopify Order #${orderNumber}`;
-        await env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-          .bind(sku, item.quantity, 'B2C', ((order.customer?.firstName || '') + ' ' + (order.customer?.lastName || '')).trim() || order.customer?.email || '', orderId, (order.created_at || '').slice(0, 10), note, Date.now()).run();
-        deductedItems++;
+        try {
+          await env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
+            .bind(sku, item.quantity, 'B2C', ((order.customer?.firstName || '') + ' ' + (order.customer?.lastName || '')).trim() || order.customer?.email || '', orderId, (order.created_at || '').slice(0, 10), note, Date.now()).run();
+          // 写穿扣减：直接减 current_stock（允许为负=超卖预警）
+          await env.DB.prepare('UPDATE inventory_products SET current_stock = COALESCE(current_stock,0) - ? WHERE sku = ?').bind(item.quantity, sku).run();
+          deductedItems++;
+        } catch (e: any) { console.log('[shopify-sync] insert/deduct failed for', sku, ':', e?.message || e); }
       }
       if (!hadSku) skippedNoSku.push('#' + orderNumber);
     }
@@ -4613,6 +4675,27 @@ function requireDev(c: any): any | null {
   return u;
 }
 
+// 授权账号门禁：snow368 / role=admin / user_permissions 里被授予指定 tab 的账号。
+// 用于「知识/内容」类端点——不是所有登录用户都能用，必须被授权过对应板块。
+async function requireTab(c: any, tab: string): Promise<any | null> {
+  const u = c.get('user');
+  if (!u) return null;
+  if (u.email === 'snow368@gmail.com') return u;
+  try {
+    const roleRow = await c.env.DB.prepare('SELECT role FROM users WHERE user_id = ?').bind(u.uid).first() as any;
+    if (roleRow?.role === 'admin') return u;
+  } catch {}
+  try {
+    await ensurePermsTable(c.env.DB);
+    const row = await c.env.DB.prepare('SELECT tabs FROM user_permissions WHERE email = ?').bind(u.email || '').first() as any;
+    if (row) {
+      const tabs = JSON.parse(row.tabs || '[]');
+      if (Array.isArray(tabs) && tabs.includes(tab)) return u;
+    }
+  } catch {}
+  return null;
+}
+
 app.post('/api/kb-intake', async (c) => {
   if (!requireDev(c)) return c.json({ error: 'dev_only' }, 403);
   let body: any;
@@ -4646,7 +4729,9 @@ app.post('/api/kb-intake', async (c) => {
 });
 
 app.get('/api/kb', async (c) => {
-  if (!requireDev(c)) return c.json({ error: 'dev_only' }, 403);
+  // 只读列表仅对「授权账号」开放：snow368 / admin / 被授予 inkflow-outreach tab 的账号。
+  // 写操作（/api/kb-intake 入库、DELETE /api/kb/:id 删除）仍 requireDev(snow368) 双重门禁。
+  if (!(await requireTab(c, 'inkflow-outreach'))) return c.json({ error: 'not_authorized' }, 403);
   const kb = c.req.query('kb') || null;
   const bucket = c.req.query('bucket') || null;
   const limit = Math.min(parseInt(c.req.query('limit') || '200', 10) || 200, 500);
@@ -4680,7 +4765,9 @@ app.delete('/api/kb/:id', async (c) => {
 // 前端「InkFlow 获客 → SEO 工具 → 📚 技能知识库 → 技能图谱」读取此端点。
 // 数据来自打包进 worker 的 seo-playbooks.json（与 AI Core seo_playbooks 同源）。
 // 组件期望 { items: Section[] }，而 JSON 顶层为 { sections, skills, ... }，故映射为 items。
-app.get('/api/seo/playbooks', (c) => {
+app.get('/api/seo/playbooks', async (c) => {
+  // 已从 PUBLIC_PATHS 移除：需有效 Firebase token + 授权（snow368/admin/inkflow-outreach tab）。
+  if (!(await requireTab(c, 'inkflow-outreach'))) return c.json({ error: 'not_authorized' }, 403);
   const sections = Array.isArray(seoPlaybooks?.sections) ? seoPlaybooks.sections : [];
   return c.json({ items: sections });
 });
@@ -4705,7 +4792,19 @@ export default {
         catch { storeDomain = String(config.api_base_url).replace(/^https?:\/\//, '').replace(/\/.*$/, ''); }
       }
       const apiVersion = '2024-10';
-      let ordersUrl = `https://${storeDomain}/admin/api/${apiVersion}/orders.json?status=any&fulfillment_status=shipped&created_at_min=${new Date(Date.now() - 7 * 86400000).toISOString()}&limit=250`;
+      // 时间门槛：默认扫最近 7 天；若设了 SHOPIFY_SYNC_FROM，则从该日起扣（不回溯历史）
+      const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+      let minCreatedAt = sevenDaysAgo;
+      try {
+        const fromEnv = env.SHOPIFY_SYNC_FROM;
+        if (fromEnv) {
+          const d = new Date(fromEnv);
+          if (!isNaN(d.getTime()) && d.getTime() > new Date(sevenDaysAgo).getTime()) {
+            minCreatedAt = d.toISOString();
+          }
+        }
+      } catch {}
+      let ordersUrl = `https://${storeDomain}/admin/api/${apiVersion}/orders.json?status=any&fulfillment_status=shipped&created_at_min=${minCreatedAt}&limit=250`;
       let totalOrders = 0, deductedItems = 0;
       while (ordersUrl) {
         const resp = await fetch(ordersUrl, { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } });
@@ -4716,7 +4815,8 @@ export default {
           const orderNumber = String(order.order_number || '');
           // Store the human order name "#4737" (NOT the internal numeric Shopify id) so the
           // frontend can display/search it directly. Matches the manual import interface.
-          const orderId = orderNumber ? '#' + orderNumber : String(order.id);
+          // 统一幂等键 = Shopify 内部数字 id（与 webhook 一致），避免两路重复扣
+          const orderId = String(order.id);
           totalOrders++;
           const existing = await env.DB.prepare('SELECT id, note FROM inventory_outbounds WHERE shopify_order_id = ? LIMIT 1').bind(orderId).first();
           if (existing) {
@@ -4739,20 +4839,19 @@ export default {
             let sku = (item.sku || item.variant_sku || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
             sku = sku.startsWith('PEACH-') ? sku.slice(6) : sku; // 归一：PEACH- 前缀变体与基 SKU 合并，避免 SKU 翻倍
             if (!sku || item.quantity <= 0) continue;
-            // Ensure parent product exists (inventory_outbounds.product_sku → inventory_products.sku FK).
-            try {
-              const prod = await env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first();
-              if (!prod) {
-                await env.DB.prepare(`INSERT INTO inventory_products (sku,name,category,vendor,unit,unit_price,reorder_point,reorder_qty,lead_time_days,moq,carton_qty,source,shopify_variant_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-                  .bind(sku, (item.title || sku), 'General', '', 'Box', 0, 50, 1000, 45, 500, 100, 'shopify', item.variant_id || null, Date.now(), Date.now()).run();
-              }
-            } catch (e: any) { console.log('[scheduled] stub product ensure failed for', sku, ':', e?.message || e); }
+            const prod = await env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first();
+            if (!prod) {
+              console.log('[scheduled] skip unknown SKU', sku, '(no matching inventory product)');
+              continue;
+            }
             const note = `Shopify Order #${orderNumber}`;
             try {
               await env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
                 .bind(sku, item.quantity, 'B2C', ((order.customer?.firstName || '') + ' ' + (order.customer?.lastName || '')).trim() || order.customer?.email || '', orderId, (order.created_at || '').slice(0, 10), note, Date.now()).run();
+              // 写穿扣减：直接减 current_stock（允许为负=超卖预警）
+              await env.DB.prepare('UPDATE inventory_products SET current_stock = COALESCE(current_stock,0) - ? WHERE sku = ?').bind(item.quantity, sku).run();
               deductedItems++;
-            } catch (e: any) { console.log('[scheduled] insert failed for', sku, ':', e?.message || e); }
+            } catch (e: any) { console.log('[scheduled] insert/deduct failed for', sku, ':', e?.message || e); }
           }
         }
         ordersUrl = null;
