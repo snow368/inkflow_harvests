@@ -920,7 +920,8 @@ app.delete('/api/fulfillment/orders/:id', async (c) => {
 function inferSeriesFromItems(items: any[]): string | null {
   const series = new Set<string>();
   for (const item of items) {
-    const sku = (item.sku || item.variant_sku || '').toUpperCase();
+    let sku = (item.sku || item.variant_sku || '').toUpperCase();
+    sku = sku.startsWith('PEACH-') ? sku.slice(6) : sku; // 归一：PEACH- 前缀变体（如 PEACH-CON-1225SEM → CON-1225SEM）
     const m = sku.match(/^(CON|COG|AES)[-_]/);
     if (m) series.add(m[1]);
   }
@@ -1096,25 +1097,26 @@ app.get('/api/shopify/orders/deduct', async (c) => {
       if (!forceOrder && syncFrom && order.created_at && new Date(order.created_at) < new Date(syncFrom)) continue;
 
       const existing = await c.env.DB.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? LIMIT 1').bind(orderId).first()
-      if (existing) continue
-
-      for (const item of (order.line_items || [])) {
-        let sku = String(item.sku || '').trim()
-        sku = sku.startsWith('PEACH-') ? sku.slice(6) : sku; // 归一：PEACH- 前缀变体与基 SKU 合并
-        const qty = Number(item.quantity) || 0
-        if (!sku || qty <= 0) continue
-        const product = await c.env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first()
-        if (!product) continue
-        const outboundDate = new Date().toISOString().split('T')[0]
-        const noteParts = [`Shopify Order #${orderName}`]
-        if (customerNote) noteParts.push(`?��?�쨢???: ${customerNote}`)
-        if (item.title) noteParts.push(`����?��: ${item.title}`)
-        await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-          .bind(sku, qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, noteParts.join(' | '), now).run()
-        deductedItems.push({ sku, qty, order: orderName })
+      if (!existing) {
+        for (const item of (order.line_items || [])) {
+          let sku = String(item.sku || '').trim()
+          sku = sku.startsWith('PEACH-') ? sku.slice(6) : sku; // 归一：PEACH- 前缀变体与基 SKU 合并
+          const qty = Number(item.quantity) || 0
+          if (!sku || qty <= 0) continue
+          const product = await c.env.DB.prepare('SELECT sku FROM inventory_products WHERE sku = ?').bind(sku).first()
+          if (!product) continue
+          const outboundDate = new Date().toISOString().split('T')[0]
+          const noteParts = [`Shopify Order #${orderName}`]
+          if (customerNote) noteParts.push(`?��?�쨢???: ${customerNote}`)
+          if (item.title) noteParts.push(`����?��: ${item.title}`)
+          await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
+            .bind(sku, qty, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, noteParts.join(' | '), now).run()
+          deductedItems.push({ sku, qty, order: orderName })
+        }
       }
 
       // Gift deduction from notes (统一防重复扣 + 幂等)
+      // 已同步订单(existing)也补抓赠品：备注常滞后于首次抓取，否则赠品会永久漏掉
       const giftCount = await deductGiftsFromNote(c.env.DB, order, orderId, orderName);
       if (giftCount > 0) deductedItems.push({ order: orderName, item: `Gift x${giftCount}` });
       totalOrders++
