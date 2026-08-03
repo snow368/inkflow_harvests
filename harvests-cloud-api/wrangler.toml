@@ -17,3 +17,6 @@ crons = ["*/30 * * * *"]
 # It's the connection string for Neon cloud DB (holds artists table)
 # SCHEDULER_STATE = "OR"     (optional, override target state via `vars`)
 # SCHEDULER_DAILY_LIMIT = 50 (optional, override via `vars`)
+# 库存扣减基线：仅处理该日期(含)之后发货的 Shopify 订单；之前历史订单不扣库存。
+# 用户决策 2026-08-03：今天起已发货订单才从库存扣减。
+SHOPIFY_SYNC_FROM = "2026-08-03"

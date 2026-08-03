@@ -241,7 +241,7 @@ const PUBLIC_PATHS = new Set([
 app.use('/api/*', async (c, next) => {
   const path = new URL(c.req.url).pathname
   if ([...PUBLIC_PATHS].some(p => path === p || path.startsWith(p + '/'))) return next()
-  if (path === '/api/shopify/status' || path === '/api/shopify/orders/deduct' || path.startsWith('/api/shopify/order/') || path.startsWith('/api/shopify/fix-name/')) return next()
+  if (path === '/api/shopify/status' || path === '/api/shopify/orders/deduct' || path.startsWith('/api/shopify/order/') || path.startsWith('/api/shopify/fix-name/') || path === '/api/shopify/retro-gifts' || path === '/api/shopify/reset-baseline') return next()
   // Manual Shopify backfill uses its own bot-token check (?token=), not Firebase auth
   if (path === '/api/sync/shopify-orders') return next()
 
@@ -982,6 +982,44 @@ async function resolveGiftSku(db: any, gift: any, defaultSeries: string | null):
   return (bare?.sku as string) || null;
 }
 
+/**
+ * 统一赠品扣减：从订单备注解析「送的型号」并写入出库 + 扣库存。
+ * 防重复扣关键：若赠品 SKU 已在本订单 line_items 中（已作为购买项扣过），则跳过。
+ * 幂等：同一 (shopify_order_id, sku) 已存在出库行则跳过。
+ * 供 manual deduct / cron / runShopifySync / webhook / retro-gifts 共用，避免各路逻辑漂移。
+ */
+async function deductGiftsFromNote(db: any, order: any, orderId: string, orderName: string): Promise<number> {
+  const customerNote = shopifyNoteText(order);
+  if (!customerNote) return 0;
+  // 收集本订单已购买的 line_item SKU（归一 PEACH- 前缀），用于跳过已购买赠品
+  const lineItemSkus = new Set<string>();
+  for (const item of (order.line_items || [])) {
+    let sku = String(item.sku || item.variant_sku || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    sku = sku.startsWith('PEACH-') ? sku.slice(6) : sku;
+    if (sku) lineItemSkus.add(sku);
+  }
+  const defaultSeries = inferSeriesFromItems(order.line_items || []);
+  const parsedGifts = parseOrderNote(customerNote, { defaultSeries: defaultSeries || undefined });
+  const custName = ((order.customer?.firstName || '') + ' ' + (order.customer?.lastName || '')).trim() || order.customer?.email || 'Shopify Customer';
+  const outboundDate = (order.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+  let deducted = 0;
+  for (const gift of parsedGifts) {
+    const resolved = await resolveGiftSku(db, gift, defaultSeries);
+    if (!resolved) continue;
+    if (lineItemSkus.has(resolved)) continue; // 已作为购买项扣过 → 跳过，防重复扣
+    const giftExisting = await db.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? AND product_sku = ? LIMIT 1').bind(orderId, resolved).first();
+    if (giftExisting) continue; // 幂等
+    const giftNote = `Shopify Order #${orderName} | Gift: ${resolved}`;
+    try {
+      await db.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
+        .bind(resolved, gift.quantity, 'B2C', custName, orderId, outboundDate, giftNote, Date.now()).run();
+      await db.prepare('UPDATE inventory_products SET current_stock = COALESCE(current_stock,0) - ? WHERE sku = ?').bind(gift.quantity, resolved).run();
+      deducted++;
+    } catch (e: any) { console.log('[gift] insert failed for', resolved, ':', e?.message || e); }
+  }
+  return deducted;
+}
+
 app.get('/api/shopify/status', async (c) => {
   const config = await c.env.DB.prepare("SELECT * FROM carrier_configs WHERE carrier='shopify'").first() as any
   if (!config) return c.json({ connected: false, store: null })
@@ -1053,6 +1091,9 @@ app.get('/api/shopify/orders/deduct', async (c) => {
       const orderName = String(order.order_number || '')
       const customerNote = shopifyNoteText(order)
       const customerName = order.customer ? `${order.customer.first_name||''} ${order.customer.last_name||''}`.trim() : ''
+      // 时间门槛：SHOPIFY_SYNC_FROM 之后的订单才扣（非 force 模式），不回溯历史
+      const syncFrom = c.env.SHOPIFY_SYNC_FROM;
+      if (!forceOrder && syncFrom && order.created_at && new Date(order.created_at) < new Date(syncFrom)) continue;
 
       const existing = await c.env.DB.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? LIMIT 1').bind(orderId).first()
       if (existing) continue
@@ -1073,26 +1114,102 @@ app.get('/api/shopify/orders/deduct', async (c) => {
         deductedItems.push({ sku, qty, order: orderName })
       }
 
-      // Gift deduction from notes
-      if (customerNote) {
-        const defaultSeries = inferSeriesFromItems(order.line_items || []);
-        const parsedGifts = parseOrderNote(customerNote, { defaultSeries: defaultSeries || undefined });
-        for (const gift of parsedGifts) {
-        const resolved = await resolveGiftSku(c.env.DB, gift, defaultSeries);
-        if (!resolved) continue
-          const outboundDate = new Date().toISOString().split('T')[0]
-          await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-            .bind(resolved, gift.quantity, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | Gift: ${resolved}`, now).run()
-          deductedItems.push({ sku: resolved, qty: gift.quantity, order: orderName, item: `Gift ${resolved}` })
-        }
-      }
+      // Gift deduction from notes (统一防重复扣 + 幂等)
+      const giftCount = await deductGiftsFromNote(c.env.DB, order, orderId, orderName);
+      if (giftCount > 0) deductedItems.push({ order: orderName, item: `Gift x${giftCount}` });
       totalOrders++
+    }
+    // Force mode: only process the single requested order, then stop (don't loop all recent orders)
+    if (forceOrder) {
+      console.log('[deduct] force mode: processed', totalOrders, 'order, returning');
+      return c.json({ ok: true, ordersProcessed: totalOrders, itemsDeducted: deductedItems.length, details: deductedItems });
     }
     const linkHeader = resp.headers.get('link')
     ordersUrl = linkHeader ? parseNextLink(linkHeader) : null
   }
   return c.json({ ok: true, ordersProcessed: totalOrders, itemsDeducted: deductedItems.length, details: deductedItems })
 })
+
+// One-time retroactive: parse gifts from notes of ALL existing outbounds that have a 备注
+// but no Gift row yet. Reuses parseOrderNote + resolveGiftSku. Idempotent (skips existing Gift rows).
+app.post('/api/shopify/retro-gifts', async (c) => {
+  const token = c.req.query('token');
+  if (token !== 'vps-bot-secret-2024') return c.json({ error: 'unauthorized' }, 401);
+  try {
+    // 1) group outbounds by order id, collect note + infer series from existing line-item SKUs
+    const rows = await c.env.DB.prepare(
+      "SELECT shopify_order_id, note, product_sku FROM inventory_outbounds WHERE note LIKE '%备注%' OR note LIKE '%Gift%' OR note LIKE '%送%'"
+    ).all() as any;
+    const byOrder: Record<string, { note: string; series: Set<string>; skus: Set<string>; hasGift: boolean }> = {};
+    for (const r of (rows.results || [])) {
+      const oid = r.shopify_order_id;
+      if (!byOrder[oid]) byOrder[oid] = { note: '', series: new Set(), skus: new Set(), hasGift: false };
+      if (r.note) {
+        if (/备注|送/.test(r.note)) byOrder[oid].note = r.note;
+        if (/Gift:/.test(r.note)) byOrder[oid].hasGift = true;
+      }
+      const sku = r.product_sku || '';
+      if (sku) byOrder[oid].skus.add(sku);
+      const m = sku.match(/^([A-Z]+)-/);
+      if (m) byOrder[oid].series.add(m[1]);
+    }
+    let processed = 0, added = 0;
+    for (const [oid, info] of Object.entries(byOrder)) {
+      if (info.hasGift) continue; // already has gift rows
+      const noteText = info.note.replace(/^.*?备注:\s*/s, '').trim();
+      if (!noteText) continue;
+      // default series = the most common series among this order's line items
+      const defaultSeries = [...info.series][0] || null;
+      const parsed = parseOrderNote(noteText, { defaultSeries: defaultSeries || undefined });
+      let custName = '';
+      try {
+        const o = await c.env.DB.prepare('SELECT customer_name FROM inventory_outbounds WHERE shopify_order_id = ? LIMIT 1').bind(oid).first() as any;
+        custName = o?.customer_name || 'Shopify Customer';
+      } catch {}
+      const orderNameMatch = info.note.match(/#(\d+)/);
+      const orderName = orderNameMatch ? orderNameMatch[1] : oid;
+      for (const gift of parsed) {
+        const resolved = await resolveGiftSku(c.env.DB, gift, defaultSeries);
+        if (!resolved) continue;
+        if (info.skus.has(resolved)) continue; // 已作为购买项扣过 → 跳过，防重复扣
+        const giftExisting = await c.env.DB.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? AND product_sku = ? AND note LIKE ?')
+          .bind(oid, resolved, '%Gift%').first();
+        if (giftExisting) continue;
+        const outboundDate = (info.note.match(/(\d{4}-\d{2}-\d{2})/) || ['', new Date().toISOString().slice(0,10)])[1];
+        try {
+          await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
+            .bind(resolved, gift.quantity, 'B2C', custName, oid, outboundDate, `Shopify Order #${orderName} | Gift: ${resolved}`, Date.now()).run();
+          await c.env.DB.prepare('UPDATE inventory_products SET current_stock = COALESCE(current_stock,0) - ? WHERE sku = ?').bind(gift.quantity, resolved).run();
+          added++;
+        } catch (e: any) { console.log('[retro-gifts] insert failed for', resolved, ':', e?.message || e); }
+      }
+      processed++;
+    }
+    return c.json({ ok: true, ordersScanned: Object.keys(byOrder).length, ordersProcessed: processed, giftsAdded: added });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e?.message || String(e) }, 200);
+  }
+});
+
+// One-time: 将库存基线重置到「今天」。撤销所有历史出库扣减并清空出库流水，
+// 仅保留 SHOPIFY_SYNC_FROM 之后的订单在后续同步中重新扣减。token 校验（与 bot 端点一致）。
+// ⚠️ 破坏性：执行前务必已备份 inventory_outbounds / inventory_products。
+app.post('/api/shopify/reset-baseline', async (c) => {
+  const token = c.req.query('token');
+  if (token !== 'vps-bot-secret-2024') return c.json({ error: 'unauthorized' }, 401);
+  try {
+    const rows = await c.env.DB.prepare('SELECT product_sku, quantity FROM inventory_outbounds').all() as any;
+    let reversed = 0;
+    for (const r of (rows.results || [])) {
+      await c.env.DB.prepare('UPDATE inventory_products SET current_stock = COALESCE(current_stock,0) + ? WHERE sku = ?').bind(r.quantity, r.product_sku).run();
+      reversed++;
+    }
+    const del = await c.env.DB.prepare('DELETE FROM inventory_outbounds').run();
+    return c.json({ ok: true, rowsReversed: reversed, rowsDeleted: del.meta?.changes ?? 0 });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e?.message || String(e) }, 200);
+  }
+});
 
 app.get('/api/shopify/order/:orderNumber', async (c) => {
   const orderNumber = c.req.param('orderNumber');
@@ -1466,22 +1583,8 @@ app.post('/api/shopify/webhook/orders-create', async (c) => {
     } catch (e: any) { console.error('[webhook] deduct failed for', sku, e?.message || e) }
   }
 
-  // Gift deduction
-  if (customerNote) {
-    const defaultSeries = inferSeriesFromItems(order.line_items || []);
-    const parsedGifts = parseOrderNote(customerNote, { defaultSeries: defaultSeries || undefined });
-    for (const gift of parsedGifts) {
-      const resolved = await resolveGiftSku(c.env.DB, gift, defaultSeries);
-      if (!resolved) continue
-      const outboundDate = new Date().toISOString().split('T')[0]
-      try {
-        await c.env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
-          .bind(resolved, gift.quantity, 'B2C', customerName||'Shopify Customer', orderId, outboundDate, `Shopify Order #${orderName} | Gift: ${resolved}`, now).run()
-        await c.env.DB.prepare('UPDATE inventory_products SET current_stock = COALESCE(current_stock,0) - ? WHERE sku = ?').bind(gift.quantity, resolved).run()
-        deductedCount++
-      } catch (e: any) { console.error('[webhook] gift deduct failed for', resolved, e?.message || e) }
-    }
-  }
+  // Gift deduction (统一防重复扣 + 幂等)
+  deductedCount += await deductGiftsFromNote(c.env.DB, order, orderId, orderName);
 
   // Also write to orders table for fulfillment
   try {
@@ -4536,6 +4639,8 @@ async function runShopifySync(env: any, opts: { full?: boolean; sinceId?: number
           deductedItems++;
         } catch (e: any) { console.log('[shopify-sync] insert/deduct failed for', sku, ':', e?.message || e); }
       }
+      // Gift deduction from notes (统一防重复扣 + 幂等)
+      deductedItems += await deductGiftsFromNote(env.DB, order, orderId, orderNumber);
       if (!hadSku) skippedNoSku.push('#' + orderNumber);
     }
     if (reachedCap) break;
@@ -4793,18 +4898,20 @@ export default {
       }
       const apiVersion = '2024-10';
       // 时间门槛：默认扫最近 7 天；若设了 SHOPIFY_SYNC_FROM，则从该日起扣（不回溯历史）
+      // 注意：必须用 updated_at_min（不是 created_at_min），因为发货会更新订单的 updated_at。
+      // 用 created_at_min 会漏掉创建日期早于门槛但近期才发货的订单。
       const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
-      let minCreatedAt = sevenDaysAgo;
+      let minUpdatedAt = sevenDaysAgo;
       try {
         const fromEnv = env.SHOPIFY_SYNC_FROM;
         if (fromEnv) {
           const d = new Date(fromEnv);
           if (!isNaN(d.getTime()) && d.getTime() > new Date(sevenDaysAgo).getTime()) {
-            minCreatedAt = d.toISOString();
+            minUpdatedAt = d.toISOString();
           }
         }
       } catch {}
-      let ordersUrl = `https://${storeDomain}/admin/api/${apiVersion}/orders.json?status=any&fulfillment_status=shipped&created_at_min=${minCreatedAt}&limit=250`;
+      let ordersUrl = `https://${storeDomain}/admin/api/${apiVersion}/orders.json?status=any&fulfillment_status=shipped&updated_at_min=${minUpdatedAt}&limit=250`;
       let totalOrders = 0, deductedItems = 0;
       while (ordersUrl) {
         const resp = await fetch(ordersUrl, { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } });
@@ -4833,6 +4940,8 @@ export default {
                 console.log('[scheduled] note backfilled for', orderId);
               } catch (e: any) { console.log('[scheduled] note update failed for', orderId, ':', e?.message || e); }
             }
+            // 已同步订单：备注可能后续才补全，需补抓赠品（统一防重复扣 + 幂等）
+            deductedItems += await deductGiftsFromNote(env.DB, order, orderId, orderNumber);
             continue;
           }
           for (const item of (order.line_items || [])) {
@@ -4844,7 +4953,10 @@ export default {
               console.log('[scheduled] skip unknown SKU', sku, '(no matching inventory product)');
               continue;
             }
-            const note = `Shopify Order #${orderNumber}`;
+          const customerNoteInit = shopifyNoteText(order);
+          const note = customerNoteInit
+            ? `Shopify Order #${orderNumber} | 备注: ${customerNoteInit}`
+            : `Shopify Order #${orderNumber}`;
             try {
               await env.DB.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
                 .bind(sku, item.quantity, 'B2C', ((order.customer?.firstName || '') + ' ' + (order.customer?.lastName || '')).trim() || order.customer?.email || '', orderId, (order.created_at || '').slice(0, 10), note, Date.now()).run();
@@ -4853,6 +4965,8 @@ export default {
               deductedItems++;
             } catch (e: any) { console.log('[scheduled] insert/deduct failed for', sku, ':', e?.message || e); }
           }
+          // Gift deduction from notes (统一防重复扣 + 幂等)
+          deductedItems += await deductGiftsFromNote(env.DB, order, orderId, orderNumber);
         }
         ordersUrl = null;
         const linkHeader = resp.headers.get('link') || '';
