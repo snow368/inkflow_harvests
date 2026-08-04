@@ -212,6 +212,8 @@ const PUBLIC_PATHS = new Set([
   '/api/inventory/customer',
   '/api/inventory/customer-orders',
   '/api/inventory/picked',
+  '/api/inventory/gift-reviews',
+  '/api/inventory/gift-review',
   '/api/inventory/distributor-candidates',
   '/api/inventory/import-distributor',
   '/api/inventory/trends',
@@ -983,6 +985,34 @@ async function resolveGiftSku(db: any, gift: any, defaultSeries: string | null):
   return (bare?.sku as string) || null;
 }
 
+// ── 待人工审核的赠品队列 ──────────────────────────────────────────────
+// 当备注里的赠品型号解析不出「安全 SKU」（典型：订单没买针 + 只写裸型号 0803RL 分不清 CON/COG/AES）
+// 不能瞎猜系列扣错货，也不该静默跳过 —— 记入此表，前端醒目提示转人工审核。
+async function ensureGiftReviewTable(db: any) {
+  await db.prepare(`CREATE TABLE IF NOT EXISTS inventory_gift_review (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shopify_order_id TEXT,
+    order_name TEXT,
+    gift_label TEXT,
+    gift_type TEXT,
+    detected_series TEXT,
+    note TEXT,
+    status TEXT DEFAULT 'pending',
+    created_at INTEGER
+  )`).run();
+}
+
+async function recordGiftReview(db: any, orderId: string, orderName: string, gift: any, defaultSeries: string | null, rawNote: string) {
+  try {
+    await ensureGiftReviewTable(db);
+    const existing = await db.prepare('SELECT id FROM inventory_gift_review WHERE shopify_order_id=? AND gift_label=? AND status=\'pending\' LIMIT 1')
+      .bind(orderId, gift.label).first();
+    if (existing) return; // 幂等：同一订单同一型号只记一次
+    await db.prepare('INSERT INTO inventory_gift_review (shopify_order_id,order_name,gift_label,gift_type,detected_series,note,status,created_at) VALUES (?,?,?,?,?,?,?,?)')
+      .bind(orderId, orderName, gift.label, gift.type, gift.series || defaultSeries || null, rawNote, 'pending', Date.now()).run();
+  } catch (e: any) { console.log('[gift-review] record failed:', e?.message || e); }
+}
+
 /**
  * 统一赠品扣减：从订单备注解析「送的型号」并写入出库 + 扣库存。
  * 防重复扣关键：若赠品 SKU 已在本订单 line_items 中（已作为购买项扣过），则跳过。
@@ -1006,7 +1036,14 @@ async function deductGiftsFromNote(db: any, order: any, orderId: string, orderNa
   let deducted = 0;
   for (const gift of parsedGifts) {
     const resolved = await resolveGiftSku(db, gift, defaultSeries);
-    if (!resolved) continue;
+    if (!resolved) {
+      // 解析不出安全 SKU：记入待人工审核队列（醒目提示），不静默跳过、也不瞎猜扣错货
+      await recordGiftReview(db, orderId, orderName, gift, defaultSeries, customerNote);
+      continue;
+    }
+    // 解析成功：若此前误记了待审核，自动清掉
+    await db.prepare('UPDATE inventory_gift_review SET status=\'resolved\' WHERE shopify_order_id=? AND gift_label=? AND status=\'pending\'')
+      .bind(orderId, gift.label).run();
     if (lineItemSkus.has(resolved)) continue; // 已作为购买项扣过 → 跳过，防重复扣
     const giftExisting = await db.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? AND product_sku = ? LIMIT 1').bind(orderId, resolved).first();
     if (giftExisting) continue; // 幂等
@@ -1020,6 +1057,22 @@ async function deductGiftsFromNote(db: any, order: any, orderId: string, orderNa
   }
   return deducted;
 }
+
+// 待审核赠品队列（前端醒目提示用）
+app.get('/api/inventory/gift-reviews', async (c) => {
+  await ensureGiftReviewTable(c.env.DB);
+  const status = c.req.query('status') || 'pending';
+  const rows = await c.env.DB.prepare('SELECT * FROM inventory_gift_review WHERE status=? ORDER BY created_at DESC').bind(status).all();
+  return c.json({ reviews: rows.results || [], count: (rows.results || []).length });
+});
+
+app.post('/api/inventory/gift-review/:id/resolve', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const resolution = body.resolution || 'manual';
+  await c.env.DB.prepare('UPDATE inventory_gift_review SET status=? WHERE id=?').bind(resolution, id).run();
+  return c.json({ ok: true });
+});
 
 app.get('/api/shopify/status', async (c) => {
   const config = await c.env.DB.prepare("SELECT * FROM carrier_configs WHERE carrier='shopify'").first() as any

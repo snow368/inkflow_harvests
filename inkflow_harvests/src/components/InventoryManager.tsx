@@ -4,6 +4,17 @@ import type { Product, InboundRecord, InboundSummary, OutboundRecord, OutboundSu
 
 type Tab = 'stock' | 'inbound' | 'outbound' | 'customers';
 
+// Shared series metadata — module-level so all tab components can access it
+const SERIES_META: Record<string, { color: string; emoji: string }> = {
+  CON: { color: '#3b82f6', emoji: '🔵' },
+  COG: { color: '#a1a1aa', emoji: '⚪' },
+  AES: { color: '#a855f7', emoji: '🟣' },
+  Pro: { color: '#22c55e', emoji: '🟢' },
+  PRO: { color: '#22c55e', emoji: '🟢' },
+};
+const seriesColor = (s: string) => (SERIES_META[s]?.color) || '#eab308';
+const seriesEmoji = (s: string) => (SERIES_META[s]?.emoji) || '🟡';
+
 export default function InventoryManager() {
   const [tab, setTab] = useState<Tab>('stock');
   const [products, setProducts] = useState<Product[]>([]);
@@ -13,6 +24,7 @@ export default function InventoryManager() {
   const [alerts, setAlerts] = useState<StockAlert[]>([]);
   const [inboundSummary, setInboundSummary] = useState<InboundSummary[]>([]);
   const [outboundSummary, setOutboundSummary] = useState<OutboundSummary[]>([]);
+  const [giftReviews, setGiftReviews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceText, setVoiceText] = useState('');
@@ -28,6 +40,10 @@ export default function InventoryManager() {
   const [scanSterilized, setScanSterilized] = useState(true);
   const [scanLargeCase, setScanLargeCase] = useState(0);
   const [scanSmallBox, setScanSmallBox] = useState(0);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState('');
+  const [resetting, setResetting] = useState(false);
+  const [resetMsg, setResetMsg] = useState('');
 
   const handleVoice = () => {
     if (!SpeechRecognition) { alert('语音识别不支持，请使用Chrome'); return; }
@@ -92,15 +108,20 @@ export default function InventoryManager() {
     const controller = new AbortController();
     const tid = setTimeout(() => controller.abort(), 10000);
     try {
-      const [p, ib, ob, c, a, s, os] = await Promise.all([
+      const [p, ib, ob, c, a, s, os, gr] = await Promise.all([
         api.getStock().catch(() => [] as any), api.getInbounds().catch(() => [] as any), api.getOutbounds().catch(() => [] as any),
         api.getCustomers().catch(() => [] as any), api.getProductAlerts().catch(() => [] as any), api.getInboundSummary().catch(() => [] as any),
-        api.getOutboundSummary().catch(() => [] as any),
+        api.getOutboundSummary().catch(() => [] as any), api.getGiftReviews().catch(() => [] as any),
       ]);
       setProducts(p); setInbounds(ib); setOutbounds(ob);
-      setCustomers(c); setAlerts(a); setInboundSummary(s); setOutboundSummary(os);
+      setCustomers(c); setAlerts(a); setInboundSummary(s); setOutboundSummary(os); setGiftReviews(gr);
     } catch (e: any) { setMessage('Load failed: ' + e.message); }
     setLoading(false);
+  };
+
+  const resolveGiftReviewItem = async (id: number) => {
+    await api.resolveGiftReview(id).catch(() => {});
+    loadAll();
   };
 
   useEffect(() => { loadAll(); const i = setInterval(loadAll, 60000); return () => clearInterval(i); }, []);
@@ -132,7 +153,79 @@ export default function InventoryManager() {
           style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #27272a', background: '#18181b', color: '#a1a1aa', fontSize: 12, cursor: 'pointer' }}>
           {loading ? 'Loading...' : '⟳ Refresh'}
         </button>
+        <button onClick={() => setShowResetModal(true)}
+          style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #f87171', background: '#3f0d0d', color: '#f87171', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+          ⚠ 清零库存
+        </button>
       </div>
+
+      {giftReviews.length > 0 && (
+        <div style={{ background: 'linear-gradient(90deg,#7f1d1d,#b45309)', border: '1px solid #f87171', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 18 }}>🔔</span>
+            <strong style={{ color: '#fff', fontSize: 15 }}>⚠️ {giftReviews.length} 笔订单的赠品无法自动识别系列，需人工审核</strong>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {giftReviews.map((r: any) => (
+              <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,.25)', borderRadius: 8, padding: '8px 12px', gap: 12 }}>
+                <div style={{ color: '#fee2e2', fontSize: 13, lineHeight: 1.5 }}>
+                  <b style={{ color: '#fff' }}>{r.order_name}</b> · 赠品型号 <b style={{ color: '#fde68a' }}>{r.gift_label}</b>
+                  {r.note ? <div style={{ color: '#fca5a5', fontSize: 12, marginTop: 2 }}>{r.note}</div> : null}
+                </div>
+                <button onClick={() => resolveGiftReviewItem(r.id)} style={{ flexShrink: 0, padding: '6px 12px', borderRadius: 8, border: '1px solid #fcd34d', background: '#fde68a', color: '#7c2d12', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  标记已处理
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showResetModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}>
+          <div style={{ background: '#18181b', border: '1px solid #f87171', borderRadius: 12, padding: 24, maxWidth: 400 }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: 16, color: '#f87171' }}>⚠ 确认清零全部库存？</h3>
+            <p style={{ fontSize: 13, color: '#a1a1aa', marginBottom: 16, lineHeight: 1.6 }}>
+              此操作将把 <b style={{ color: '#fafafa' }}>{products.length}</b> 个产品的 <code>current_stock</code> 全部归 0。该操作通过后端 API 执行，不可恢复，请谨慎。
+            </p>
+            <input
+              value={resetConfirm}
+              onChange={e => setResetConfirm(e.target.value)}
+              placeholder="输入 RESET-ALL-STOCK 以确认"
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #27272a', background: '#0a0a0a', color: '#fafafa', fontSize: 13, outline: 'none' }}
+            />
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button
+                onClick={() => setShowResetModal(false)}
+                style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: '1px solid #27272a', background: '#18181b', color: '#a1a1aa', fontSize: 13, cursor: 'pointer' }}
+              >
+                取消
+              </button>
+              <button
+                disabled={resetting || resetConfirm !== 'RESET-ALL-STOCK'}
+                onClick={async () => {
+                  setResetting(true);
+                  setResetMsg('');
+                  try {
+                    await api.resetStock();
+                    setResetMsg('✅ 库存已清零');
+                  } catch (e: any) {
+                    setResetMsg('❌ 失败: ' + e.message);
+                  } finally {
+                    setResetting(false);
+                  }
+                }}
+                style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: '1px solid #f87171', background: resetting ? '#7f1d1d' : '#3f0d0d', color: '#f87171', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              >
+                {resetting ? '清空中...' : '确认清零'}
+              </button>
+            </div>
+            {resetMsg && (
+              <p style={{ fontSize: 12, color: '#a1a1aa', marginTop: 12 }}>{resetMsg}</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {message && (
         <div style={{ background: message.includes('failed') ? '#7f1d1d' : '#14532d', padding: '8px 12px', borderRadius: 8, marginBottom: 12, fontSize: 13, color: message.includes('failed') ? '#fca5a5' : '#86efac' }}>
@@ -382,8 +475,13 @@ function StockTab({ products, onRefresh, setMessage }: { products: Product[]; on
   };
 
   
-// Group by series
-  const seriesOrder = ['CON', 'COG', 'AES'];
+  // Group by series — dynamic: show every category present (so new series like Pro auto-appear)
+  const knownSeries = ['CON', 'COG', 'AES', 'Pro'];
+  const presentCats = [...new Set((products || []).map((p: any) => p.category || 'OTHER'))];
+  const seriesOrder = [
+    ...knownSeries.filter((c) => presentCats.includes(c)),
+    ...presentCats.filter((c) => !knownSeries.includes(c)).sort(),
+  ];
   const filteredGrouped = new Map<string, typeof products>();
   for (const s of seriesOrder) {
     const items = products.filter(p => (p.category || 'OTHER') === s);
@@ -548,10 +646,10 @@ function StockTab({ products, onRefresh, setMessage }: { products: Product[]; on
               const items = (search ? filtered : products).filter(p => (p.category || 'OTHER') === s);
               const stock = items.reduce((a, p) => a + (p.current_stock || 0), 0);
               if (!items.length) return null;
-              const c = s === 'CON' ? '#3b82f6' : s === 'COG' ? '#a1a1aa' : '#a855f7';
+              const c = seriesColor(s);
               return (
                 <span key={s} style={{ fontSize: 12, color: c, fontWeight: 600 }}>
-                  {s === 'CON' ? '🔵' : s === 'COG' ? '⚪' : '🟣'} {s}: <span style={{ color: '#fafafa' }}>{stock}</span>
+                  {seriesEmoji(s)} {s}: <span style={{ color: '#fafafa' }}>{stock}</span>
                 </span>
               );
             })}
@@ -569,12 +667,12 @@ function StockTab({ products, onRefresh, setMessage }: { products: Product[]; on
                 const sStock = items.reduce((s, p) => s + (p.current_stock || 0), 0);
                 const sIn = items.reduce((s, p) => s + (p.total_inbound || 0), 0);
                 const sOut = items.reduce((s, p) => s + (p.total_outbound || 0), 0);
-                const sc = series === 'CON' ? '#3b82f6' : series === 'COG' ? '#a1a1aa' : '#a855f7';
+                const sc = seriesColor(series);
                 return (
                   <>
                     <tr style={{ background: sc + '15', borderBottom: '1px solid ' + sc + '30' }}>
                       <td colSpan={8} style={{ padding: '8px 12px', fontWeight: 700, fontSize: 13, color: sc }}>
-                        {series === 'CON' ? '🔵 CON' : series === 'COG' ? '⚪ COG' : '🟣 AES'} — {items.length} 种型号
+                        {seriesEmoji(series)} {series} — {items.length} 种型号
                         <span style={{ float: 'right', fontWeight: 800, fontSize: 14 }}>
                           库存: <strong style={{ color: '#fafafa' }}>{sStock}</strong>
                           {' | '}入库: <strong style={{ color: '#22c55e' }}>{sIn}</strong>
@@ -608,7 +706,7 @@ function StockTab({ products, onRefresh, setMessage }: { products: Product[]; on
                           {isEditing ? (
                             <select value={editForm.category || ''} onChange={e => setEditForm({...editForm, category: e.target.value})}
                               style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #6366f1', background: '#0c0c0e', color: '#fafafa', fontSize: 12, outline: 'none' }}>
-                              {['CON','COG','AES'].map(c => <option key={c} value={c}>{c}</option>)}
+                              {[...knownSeries, ...presentCats.filter(c => !knownSeries.includes(c))].map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
                           ) : p.category}
                         </td>
@@ -1035,11 +1133,11 @@ function OutboundTab({ outbounds, summary, products, customers, onRefresh, setMe
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
           <span style={{ fontSize: 28, fontWeight: 900, color: '#f59e0b' }}>{totalOutQty.toLocaleString()}<span style={{ fontSize: 14, color: '#fbbf24', fontWeight: 400, marginLeft: 8 }}>盒</span></span>
           <div style={{ display: 'flex', gap: 8, fontSize: 12 }}>
-            {['CON','COG','AES'].map(s => {
+            {['CON','COG','AES','PRO'].map(s => {
               const qty = filteredByDate.filter(r => r.product_sku?.startsWith(s)).reduce((a, r) => a + r.quantity, 0);
               if (!qty) return null;
-              const c = s === 'CON' ? '#3b82f6' : s === 'COG' ? '#a1a1aa' : '#a855f7';
-              return <span key={s} style={{ color: c, fontWeight: 600 }}>{s === 'CON' ? '🔵' : s === 'COG' ? '⚪' : '🟣'} {s}: {qty}</span>;
+              const c = seriesColor(s);
+              return <span key={s} style={{ color: c, fontWeight: 600 }}>{seriesEmoji(s)} {s}: {qty}</span>;
             })}
           </div>
           <div style={{ display: 'flex', gap: 4 }}>

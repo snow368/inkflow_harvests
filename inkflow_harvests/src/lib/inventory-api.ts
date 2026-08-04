@@ -1,5 +1,5 @@
 // Inventory API service — calls cloud-api Worker
-const API = '/api';
+const API = 'https://harvests-cloud-api.inkflowapp.workers.dev/api';
 
 // 自动重试：Worker冷启动时可能EOF，重试3次
 async function apiFetch(url: string, options?: RequestInit, retries = 3): Promise<Response> {
@@ -125,6 +125,44 @@ export async function getProductAlerts(): Promise<StockAlert[]> {
   const res = await fetch(`${API}/inventory/alerts`);
   const data = await res.json();
   return data.alerts || [];
+}
+
+// 待人工审核的赠品队列（备注写了型号但解析不出安全 SKU，如订单无针+裸型号分不清系列）
+export async function getGiftReviews(status = 'pending'): Promise<any[]> {
+  const res = await fetch(`${API}/inventory/gift-reviews?status=${encodeURIComponent(status)}`);
+  const data = await res.json();
+  return data.reviews || [];
+}
+
+export async function resolveGiftReview(id: number, resolution = 'manual'): Promise<{ ok: boolean }> {
+  try {
+    const res = await fetch(`${API}/inventory/gift-review/${id}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resolution }),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: !!data?.ok };
+  } catch (e: any) {
+    return { ok: false };
+  }
+}
+
+export async function resetStock(): Promise<{ ok: boolean; message: string }> {
+  try {
+    const res = await fetch(`${API}/inventory/stock/reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: 'RESET-ALL-STOCK' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { ok: false, message: `HTTP ${res.status}: ${res.statusText}` };
+    }
+    return { ok: true, message: data?.message || '库存已清零' };
+  } catch (e: any) {
+    return { ok: false, message: e?.message || '网络错误' };
+  }
 }
 
 export async function getTrends() {
