@@ -62,7 +62,10 @@ const NEEDLE_CHINESE = /(\d{1,2})[号#](\d{1,2})[针/]?(RL|RS|RG|RT|RM|F|M)/gi;
 const LINE_QTY_PREFIX = /^(\d{1,2})\s*([A-Za-z]{2,})/;
 
 // 额外数量标注: "x2", "*2", "×2", "2盒", "两盒" 等
-const QTY_SUFFIX = /[×xX*]\s*(\d+)|(\d+)\s*盒/g;
+// 注意: ascii x/X 必须不是单词内部字母(否则 "box 0803RL" 的 box 尾字母 x 会被误当乘号,
+//       把后面的针号数字 0803 当成数量). 用负向断言 (?<![A-Za-z]) 排除 letter-adjacent 的 x/X.
+//       ×(U+00D7) 与 *(星号) 不会出现在单词内, 不加限制.
+const QTY_SUFFIX = /(?<![A-Za-z])[×xX*]\s*(\d+)|(\d+)\s*盒/g;
 
 // 行内系列提取: "2Peach CON :" → "CON", "3 AES:" → "AES", "1AES:" → "AES"
 // 系列是冒号前的 2-4 个大写字母（CON/COG/AES 等）
