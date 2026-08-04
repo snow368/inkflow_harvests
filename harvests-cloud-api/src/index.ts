@@ -2825,7 +2825,7 @@ app.get('/api/automation/poll', async (c) => {
             SELECT 1 FROM automation_tasks d
             WHERE d.id != automation_tasks.id
               AND d.status IN ('pending','leased') AND d.updated_at > ${dedupWindow}
-              AND d.json_extract(payload, '$.artistHandle') = automation_tasks.json_extract(payload, '$.artistHandle')
+              AND json_extract(d.payload, '$.artistHandle') = json_extract(automation_tasks.payload, '$.artistHandle')
           ))
       ORDER BY run_at ASC LIMIT ${limit}
     `;
@@ -3406,7 +3406,7 @@ app.post('/api/automation/tasks/clear-duplicate-pending', async (c) => {
           SELECT 1 FROM automation_tasks d
           WHERE d.status IN ('done','leased')
             AND d.updated_at > ${dedupWindow}
-            AND d.json_extract(payload, '$.artistHandle') = automation_tasks.json_extract(payload, '$.artistHandle')
+            AND json_extract(d.payload, '$.artistHandle') = json_extract(automation_tasks.payload, '$.artistHandle')
         )
     `;
     return c.json({ ok: true, deleted: result?.count || 0 });
@@ -3455,7 +3455,7 @@ app.get('/api/automation/poll-debug', async (c) => {
     const readyCount = Number(readyPending?.[0]?.cnt || 0);
 
     // 3. Pending where handle already done in dedup window
-    const dedupBlocked = await sql`SELECT COUNT(*) as cnt FROM automation_tasks t WHERE status = 'pending' AND EXISTS (SELECT 1 FROM automation_tasks d WHERE d.status = 'done' AND d.updated_at > ${dedupWindow} AND d.json_extract(payload, '$.artistHandle') = t.json_extract(payload, '$.artistHandle'))`;
+    const dedupBlocked = await sql`SELECT COUNT(*) as cnt FROM automation_tasks t WHERE status = 'pending' AND EXISTS (SELECT 1 FROM automation_tasks d WHERE d.status = 'done' AND d.updated_at > ${dedupWindow} AND json_extract(d.payload, '$.artistHandle') = json_extract(t.payload, '$.artistHandle'))`;
     const dedupBlockedCount = Number(dedupBlocked?.[0]?.cnt || 0);
 
     // 4. Sample tasks with run_at
@@ -3473,7 +3473,7 @@ app.get('/api/automation/poll-debug', async (c) => {
               SELECT 1 FROM automation_tasks d
               WHERE d.id != automation_tasks.id
                 AND d.status IN ('pending','leased') AND d.updated_at > ${dedupWindow}
-                AND d.json_extract(payload, '$.artistHandle') = automation_tasks.json_extract(payload, '$.artistHandle')
+                AND json_extract(d.payload, '$.artistHandle') = json_extract(automation_tasks.payload, '$.artistHandle')
             ))
         ORDER BY run_at ASC LIMIT ${limit}
       `;
