@@ -630,6 +630,20 @@
             "与上一章「实体提取写作层」互补：上一章是写作层让机器「抽得出 triple」；本章是理论层讲「抽出的 triple 如何被验证成 fact」——两者合起来=实体 SEO 完整闭环(可抽取 + 可验证 + 可消歧)，且呼应 seo-technical「Schema 身份验证」章(自站 Schema=claim，外站共识=fact)",
             "来源：X @Charles_SEO (Charles Floate) 2026-07-31「90% OF ENTITY SEO ADVICE IS JUST SCHEMA MARKUP」(实体 SEO 理论基础帖，与 Lesson #2 写作层互补)"
           ]
+        },
+        {
+          "label": "实体 SEO 验证层（Corroboration：让 triple 成 fact 的共识工程）",
+          "items": [
+            "自家域一切皆为 CLAIM：你的 Schema 是 claim、about 页是 claim、完美结构的语义 triple 也是 claim；Lesson #1/#2 执行再完美，若无人确认=「自说自话的站点」。图谱不跑「你如何描述自己」，跑「全网同意什么」——这把自声明 Schema 彻底降级为「主张」而非「证据」",
+            "独立性(Independence)是核心权重：同一网络/同一指纹(footprint)/同一 brief/同一周发布的 50 条外链=1 个来源重复 50 次，不是 50 个来源同意你；机器看来像「一个源自言自语 50 遍」。这是「指纹」在实体层而非链接层的体现(呼应链接层 PBN 指纹)——50 个独立来源才是真共识",
+            "资产是 ASSERTION 不是 mention：「X 被引用于一篇 SEO 文章」几乎无作用；「X 是 18 年经验的黑帽 SEO 专家」以相同措辞跨真正独立的来源重复=变成 fact。同主语+同谓语+同宾语(SPO)重复建共识；无关系陈述的品牌提及对实体工作近无价值——digital PR 行业大半在卖这种「裸提及」",
+            "邻域胜过权威(Neighbourhood beats authority)：DR 85 但放错语义簇=比无用更糟，教图谱把你解析进错误节点；SEO 专家在 SEO 站被描述=验证(corroboration)，在同谈园艺/加密/狗粮/名人离婚的通稿站=益处随 AI 过滤变强而递减。DR 从不是指标，实体工作里更不沾边——进对语义邻域远重要于进高 DR 站",
+            "共识累积不开关(Consensus builds, does not switch on)：没有「突然成为实体」的阈值；置信度累积，无持续强化则衰减。跑 6 周的「一次性实体战役」只短暂有效；无聊但持续(每周稳定少量真实断言)者恒赢—— consistency 是实体工作的复利",
+            "负面共识是真的(Negative corroboration)：错误关联跨足够多来源被断言→你继承它；无法用自己一页论证掉(那是 claim 打 fact，Lesson #2 已讲)。负面关联用同一机制反向作用——监控竞品/外站是否在给你建错误 SPO",
+            "免费审计法(诊断闭环)：分别问 ChatGPT/Claude/Gemini/Perplexity 同一品牌问题(独立 session)→并排比：一致=已验证 fact(为你工作)；矛盾=歧义(ambiguity, disqualifying 取消资格)；多次无输出=未匹配字符串(unmatched string)；再看它们引用什么(已在你话题信任集的来源)。来源/顺序/速度/先推哪些断言=最难部分，需逆向工程细分/竞品/SERP+AI 输出",
+            "三部曲收尾：Lesson #1(机器如何建实体:triple/共识/消歧) + Lesson #2(如何写让机器抽得出 triple) + Lesson #3(如何让 triple 经共识验证成 fact) = 实体 SEO 完整闭环(可抽取 + 可验证 + 可消歧 + 可共识)。自站=claim，外站独立共识=fact；写作层免费，共识工程靠邻域与持续",
+            "来源：X @Charles_SEO (Charles Floate) 2026-08-04「REAL ENTITY SEO FINAL LESSON #3 - CORROBORATION」(实体 SEO 三部曲终章，与 #1 理论/#2 写作层组成完整 playbook)"
+          ]
         }
       ],
       "subskills": [
