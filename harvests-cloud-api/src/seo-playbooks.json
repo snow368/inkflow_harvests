@@ -156,6 +156,19 @@
           ]
         },
         {
+          "label": "GSC 机会清单（position 4-20 优先翻新，先修存量再发新内容）",
+          "items": [
+            "核心原则：发新内容前先翻新 position 4-20 的存量页；Google 已给排名(页1-2)且有真实搜索量的页，是离 page 1 最近、ROI 最高的机会",
+            "机会清单构建法：拉 GSC Performance → 过滤排名 4-20 → 按曝光(impressions)降序排 → 忽略已排 1-3(够好)和 20 名后(尚无量)，剩下的就是机会清单",
+            "为什么有效：这些页 Google 已认可并给页1-2排名，只差临门一脚；把 1 个词从 position 8 提到 3，流量可能超过 10 篇新博客之和(复利不重开)",
+            "逐页翻新清单(9 项)：① 打开页看是否真正完整回答该查询 ② 没答全就补一段直接回答 ③ 把关键词自然写进一个 heading ④ 覆盖该查询者还会问的相邻问题 ⑤ 加真实案例/数据点/FAQ block ⑥ 加强指向该页的内链 ⑦ CTR 弱就重写 title ⑧ 缺 schema 就补 ⑨ 在 GSC 重新提交该 URL",
+            "复利思维：你不是追逐新排名，而是在 Google 已经给你的位置上做复利；新站/新内容有静默期，存量页翻新几乎无等待成本",
+            "与 content pruning 的区别：pruning 是删/合并低质页止血(见「流量暴跌诊断」)，本框架是翻新有潜力页增收；两者互补，先翻新 4-20 再决定删哪些 20 名后",
+            "排序依据用曝光非点击：曝光高=需求量大，翻新后排名上升带来的点击弹性最大；CTR 弱单独用 title 重写解决",
+            "来源：X @mehrab_build (SEO Mode) 2026-08-04「Do not publish any new content for SEO until you've fixed these first」(GSC position 4-20 opportunity list)"
+          ]
+        },
+        {
           "label": "本地 SEO 专项（GBP + 三大支柱）",
           "items": [
             "GBP 最高杠杆：首要类别最重要（\"人身伤害律师\">\"律师事务所\"）；用客户语言填服务/产品；UTM 追踪必备（否则 GA 归为自然流量）",
