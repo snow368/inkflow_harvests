@@ -62,6 +62,10 @@ async function ensureD1Tables(db: D1Database): Promise<void> {
         reviews INTEGER, following INTEGER, post_count INTEGER, bio TEXT, category TEXT,
         full_name TEXT, address TEXT, profile_pic TEXT, conversion_score REAL, country TEXT
       )`).run().catch(() => {});
+      // 幂等补列：stage(接触阶段, bot 回写) / last_updated(最近接触时间) / location / username / social_signals
+      for (const col of ['stage TEXT', 'last_updated INTEGER', 'location TEXT', 'username TEXT', 'full_name TEXT', 'social_signals TEXT']) {
+        await db.prepare(`ALTER TABLE artists ADD COLUMN ${col}`).run().catch(() => {});
+      }
       await db.prepare(`CREATE INDEX IF NOT EXISTS idx_artists_ig_handle ON artists(ig_handle)`).run().catch(() => {});
       await db.prepare(`CREATE INDEX IF NOT EXISTS idx_artists_shop_name ON artists(shop_name)`).run().catch(() => {});
 
@@ -169,6 +173,8 @@ const PUBLIC_PATHS = new Set([
   '/api/bot/heartbeat',
   '/api/automation/poll',
   '/api/automation/report',
+  '/api/automation/interaction',
+  '/api/automation/tasks/retry-failed',
   '/api/automation/artists',
   '/api/automation/observations',
   '/api/automation/neon-test',
@@ -237,7 +243,30 @@ const PUBLIC_PATHS = new Set([
   '/api/marketing/tasks/poll',
   '/api/marketing/tasks/report',
   '/api/marketing/tasks/mark-converted',
-  '/api/marketing/scripts/select'
+  '/api/marketing/scripts/select',
+  // Maps-Scrape 只读地理参考接口：国家/州/城市列表，纯参考数据无写操作，公开以便前端下拉无需登录
+  '/api/maps-scrape/countries',
+  '/api/maps-scrape/states',
+  '/api/maps-scrape/regions',
+  '/api/maps-scrape/cities',
+  // Maps-Scrape 任务队列读写：VPS 调度器用 bot token 调用 creator/fetcher/status，
+  // handler 内部 mapsScrapeActor→checkBotToken 已校验，公开以便绕过全局 Firebase 鉴权
+  // （与 /api/artists/bulk-import 同模式）。覆盖 /jobs、/jobs/:id/status、/jobs/:id。
+  '/api/maps-scrape/jobs',
+  // ShopOutreach 旧抓取 UI 桥接（2026-08-06）：/api/scrape/* 已桥接到 maps_scrape_jobs+artists。
+  // 查询类（tasks/status/results/export/deep-scan）公开（同 /api/artists）；写类（python/pause/resume/cancel）
+  // handler 内部 mapsScrapeActor 校验 bot token 或登录用户。
+  '/api/scrape/python',
+  '/api/scrape/tasks',
+  '/api/scrape/status',
+  '/api/scrape/results',
+  '/api/scrape/pause',
+  '/api/scrape/resume',
+  '/api/scrape/cancel',
+  '/api/scrape/export',
+  '/api/deep-scan/failed',
+  // 用户 bot 动作偏好（点赞/评论/关注次数）：前台保存/读取，ig-scheduler 生成任务时读取
+  '/api/automation/bot-prefs'
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -283,8 +312,11 @@ app.get('/api/health', async (c) => c.json({ ok: true, ts: Date.now() }))
 // (ShopOutreach falls back to a local constant if this is unavailable, so it's safe to keep public)
 app.get('/api/states', (c) => {
   const country = (c.req.query('country') || 'US').toUpperCase();
+  // US: 全量 50 州（从 US_STATES 常量读，与 maps-scrape 同一份数据，缺 AL 是旧硬编码 bug 已修）
+  if (country === 'US') {
+    return c.json({ states: (US_STATES || []).map((s: any) => s.ab) });
+  }
   const STATES: Record<string, string[]> = {
-    US: ['AZ', 'CA', 'FL', 'NY', 'TX', 'NV', 'WA', 'IL', 'GA', 'PA', 'OR', 'CO', 'NC', 'OH', 'MI', 'NJ', 'MA', 'TN', 'VA'],
     CA: ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'],
   };
   return c.json({ states: STATES[country] || [] });
@@ -1000,14 +1032,37 @@ async function ensureGiftReviewTable(db: any) {
     status TEXT DEFAULT 'pending',
     created_at INTEGER
   )`).run();
+  // 增量列（幂等：列已存在则 ALTER 抛错，忽略即可）
+  for (const col of ['resolved_sku TEXT', 'resolved_series TEXT', 'resolution TEXT', 'resolved_at INTEGER']) {
+    try { await db.prepare(`ALTER TABLE inventory_gift_review ADD COLUMN ${col}`).run(); } catch {}
+  }
+}
+
+/**
+ * 人工审核确认后，按所选系列把赠品真实扣减出库（写 inventory_outbounds + 扣 current_stock）。
+ * 幂等：同一 (shopify_order_id, sku) 已存在出库行则跳过。与 deductGiftsFromNote 的扣减逻辑一致。
+ */
+async function applyManualGiftDeduction(db: any, review: any, sku: string, series: string) {
+  const orderId = review.shopify_order_id || '';
+  const qty = 1;
+  const existing = await db.prepare('SELECT id FROM inventory_outbounds WHERE shopify_order_id = ? AND product_sku = ? LIMIT 1').bind(orderId, sku).first();
+  if (existing) return { already: true };
+  const note = `Shopify Order #${review.order_name || ''} | Gift: ${sku} (manual review, series=${series})`;
+  await db.prepare('INSERT INTO inventory_outbounds (product_sku,quantity,channel,customer_name,shopify_order_id,outbound_date,note,created_at) VALUES (?,?,?,?,?,?,?,?)')
+    .bind(sku, qty, 'B2C', review.order_name || 'Manual', orderId, new Date().toISOString().slice(0, 10), note, Date.now()).run();
+  await db.prepare('UPDATE inventory_products SET current_stock = COALESCE(current_stock,0) - ? WHERE sku = ?').bind(qty, sku).run();
+  return { already: false };
 }
 
 async function recordGiftReview(db: any, orderId: string, orderName: string, gift: any, defaultSeries: string | null, rawNote: string) {
   try {
     await ensureGiftReviewTable(db);
-    const existing = await db.prepare('SELECT id FROM inventory_gift_review WHERE shopify_order_id=? AND gift_label=? AND status=\'pending\' LIMIT 1')
+    // 幂等：同一订单同一型号「存在过记录」就不再重建（含已 resolved 的）。
+    // ⚠️ 2026-08-06 修复：之前只查 status='pending'，用户 resolve 后旧记录变 resolved，
+    //    下次同步又重建一条新的 pending → 审核项永远显示、反复要求人工处理。
+    const existing = await db.prepare('SELECT id FROM inventory_gift_review WHERE shopify_order_id=? AND gift_label=? LIMIT 1')
       .bind(orderId, gift.label).first();
-    if (existing) return; // 幂等：同一订单同一型号只记一次
+    if (existing) return;
     await db.prepare('INSERT INTO inventory_gift_review (shopify_order_id,order_name,gift_label,gift_type,detected_series,note,status,created_at) VALUES (?,?,?,?,?,?,?,?)')
       .bind(orderId, orderName, gift.label, gift.type, gift.series || defaultSeries || null, rawNote, 'pending', Date.now()).run();
   } catch (e: any) { console.log('[gift-review] record failed:', e?.message || e); }
@@ -1069,9 +1124,26 @@ app.get('/api/inventory/gift-reviews', async (c) => {
 app.post('/api/inventory/gift-review/:id/resolve', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => ({}));
-  const resolution = body.resolution || 'manual';
-  await c.env.DB.prepare('UPDATE inventory_gift_review SET status=? WHERE id=?').bind(resolution, id).run();
-  return c.json({ ok: true });
+  const series = (body.series || '').toString().trim().toUpperCase() || null;
+  const resolution = body.resolution || (series ? 'applied' : 'dismissed');
+  const review = await c.env.DB.prepare('SELECT * FROM inventory_gift_review WHERE id=?').bind(id).first() as any;
+  if (!review) return c.json({ ok: false, error: '审核项不存在' }, 404);
+  if (review.status === 'resolved') return c.json({ ok: true, already: true });
+
+  if (series) {
+    // 所选系列下精确/同系列模糊匹配 SKU；型号统一大写后拼（DB 形态如 CON-0803RL）
+    const sku = await resolveGiftSku(c.env.DB, { label: review.gift_label.toUpperCase(), type: review.gift_type || 'needle', quantity: 1, series }, series);
+    if (!sku) return c.json({ ok: false, error: `系列 ${series} 下找不到 ${review.gift_label.toUpperCase()} 对应的库存 SKU（${series}-${review.gift_label.toUpperCase()}）` }, 422);
+    await applyManualGiftDeduction(c.env.DB, review, sku, series);
+    await c.env.DB.prepare('UPDATE inventory_gift_review SET status=?, resolved_sku=?, resolved_series=?, resolution=?, resolved_at=? WHERE id=?')
+      .bind('resolved', sku, series, 'applied', Date.now(), id).run();
+    return c.json({ ok: true, applied: true, sku });
+  }
+
+  // 无系列：仅忽略，不扣库存（如赠品已线下发出、或录入错误）
+  await c.env.DB.prepare('UPDATE inventory_gift_review SET status=?, resolution=?, resolved_at=? WHERE id=?')
+    .bind('resolved', 'dismissed', Date.now(), id).run();
+  return c.json({ ok: true, applied: false });
 });
 
 app.get('/api/shopify/status', async (c) => {
@@ -1753,6 +1825,482 @@ app.post('/api/scrape/update-status', async (c) => {
 
 
 
+
+// ============ MAPS SCRAPE COVERAGE ============
+// Tracks the Google-Maps tattoo-shop scraper runs by (country, state) so the
+// frontend can show what's been scraped, what hasn't, and queue new regions.
+// The scraper (harvests-engine/scripts/python_scraper.py) self-registers a job
+// and reports progress; the operator can also pre-create jobs from the UI.
+
+const US_STATES: { ab: string; name: string }[] = [
+  { ab: 'AL', name: 'Alabama' }, { ab: 'AK', name: 'Alaska' }, { ab: 'AZ', name: 'Arizona' },
+  { ab: 'AR', name: 'Arkansas' }, { ab: 'CA', name: 'California' }, { ab: 'CO', name: 'Colorado' },
+  { ab: 'CT', name: 'Connecticut' }, { ab: 'DE', name: 'Delaware' }, { ab: 'FL', name: 'Florida' },
+  { ab: 'GA', name: 'Georgia' }, { ab: 'HI', name: 'Hawaii' }, { ab: 'ID', name: 'Idaho' },
+  { ab: 'IL', name: 'Illinois' }, { ab: 'IN', name: 'Indiana' }, { ab: 'IA', name: 'Iowa' },
+  { ab: 'KS', name: 'Kansas' }, { ab: 'KY', name: 'Kentucky' }, { ab: 'LA', name: 'Louisiana' },
+  { ab: 'ME', name: 'Maine' }, { ab: 'MD', name: 'Maryland' }, { ab: 'MA', name: 'Massachusetts' },
+  { ab: 'MI', name: 'Michigan' }, { ab: 'MN', name: 'Minnesota' }, { ab: 'MS', name: 'Mississippi' },
+  { ab: 'MO', name: 'Missouri' }, { ab: 'MT', name: 'Montana' }, { ab: 'NE', name: 'Nebraska' },
+  { ab: 'NV', name: 'Nevada' }, { ab: 'NH', name: 'New Hampshire' }, { ab: 'NJ', name: 'New Jersey' },
+  { ab: 'NM', name: 'New Mexico' }, { ab: 'NY', name: 'New York' }, { ab: 'NC', name: 'North Carolina' },
+  { ab: 'ND', name: 'North Dakota' }, { ab: 'OH', name: 'Ohio' }, { ab: 'OK', name: 'Oklahoma' },
+  { ab: 'OR', name: 'Oregon' }, { ab: 'PA', name: 'Pennsylvania' }, { ab: 'RI', name: 'Rhode Island' },
+  { ab: 'SC', name: 'South Carolina' }, { ab: 'SD', name: 'South Dakota' }, { ab: 'TN', name: 'Tennessee' },
+  { ab: 'TX', name: 'Texas' }, { ab: 'UT', name: 'Utah' }, { ab: 'VT', name: 'Vermont' },
+  { ab: 'VA', name: 'Virginia' }, { ab: 'WA', name: 'Washington' }, { ab: 'WV', name: 'West Virginia' },
+  { ab: 'WI', name: 'Wisconsin' }, { ab: 'WY', name: 'Wyoming' }, { ab: 'DC', name: 'District of Columbia' },
+];
+
+const COUNTRY_ALIAS: Record<string, string> = {
+  USA: 'US', 'UNITED STATES': 'US', 'UNITED STATES OF AMERICA': 'US', UK: 'GB',
+};
+function normalizeCountry(c: string): string {
+  const u = (c || 'US').toUpperCase().trim();
+  return COUNTRY_ALIAS[u] || u;
+}
+
+// Countries selectable in the Maps-Scrape UI.
+// `api` is the country name expected by the geo provider (countriesnow.space).
+const SCRAPE_COUNTRIES: { code: string; name: string; flag: string; api: string }[] = [
+  { code: 'US', name: '美国', flag: '🇺🇸', api: 'United States' },
+  { code: 'CA', name: '加拿大', flag: '🇨🇦', api: 'Canada' },
+  { code: 'GB', name: '英国', flag: '🇬🇧', api: 'United Kingdom' },
+  { code: 'IE', name: '爱尔兰', flag: '🇮🇪', api: 'Ireland' },
+  { code: 'AU', name: '澳大利亚', flag: '🇦🇺', api: 'Australia' },
+  { code: 'NZ', name: '新西兰', flag: '🇳🇿', api: 'New Zealand' },
+  { code: 'DE', name: '德国', flag: '🇩🇪', api: 'Germany' },
+  { code: 'FR', name: '法国', flag: '🇫🇷', api: 'France' },
+  { code: 'IT', name: '意大利', flag: '🇮🇹', api: 'Italy' },
+  { code: 'ES', name: '西班牙', flag: '🇪🇸', api: 'Spain' },
+  { code: 'PT', name: '葡萄牙', flag: '🇵🇹', api: 'Portugal' },
+  { code: 'NL', name: '荷兰', flag: '🇳🇱', api: 'Netherlands' },
+  { code: 'BE', name: '比利时', flag: '🇧🇪', api: 'Belgium' },
+  { code: 'CH', name: '瑞士', flag: '🇨🇭', api: 'Switzerland' },
+  { code: 'AT', name: '奥地利', flag: '🇦🇹', api: 'Austria' },
+  { code: 'SE', name: '瑞典', flag: '🇸🇪', api: 'Sweden' },
+  { code: 'NO', name: '挪威', flag: '🇳🇴', api: 'Norway' },
+  { code: 'DK', name: '丹麦', flag: '🇩🇰', api: 'Denmark' },
+  { code: 'FI', name: '芬兰', flag: '🇫🇮', api: 'Finland' },
+  { code: 'PL', name: '波兰', flag: '🇵🇱', api: 'Poland' },
+  { code: 'CZ', name: '捷克', flag: '🇨🇿', api: 'Czech Republic' },
+  { code: 'HU', name: '匈牙利', flag: '🇭🇺', api: 'Hungary' },
+  { code: 'RO', name: '罗马尼亚', flag: '🇷🇴', api: 'Romania' },
+  { code: 'GR', name: '希腊', flag: '🇬🇷', api: 'Greece' },
+  { code: 'TR', name: '土耳其', flag: '🇹🇷', api: 'Turkey' },
+  { code: 'JP', name: '日本', flag: '🇯🇵', api: 'Japan' },
+  { code: 'KR', name: '韩国', flag: '🇰🇷', api: 'South Korea' },
+  { code: 'CN', name: '中国', flag: '🇨🇳', api: 'China' },
+  { code: 'SG', name: '新加坡', flag: '🇸🇬', api: 'Singapore' },
+  { code: 'MY', name: '马来西亚', flag: '🇲🇾', api: 'Malaysia' },
+  { code: 'TH', name: '泰国', flag: '🇹🇭', api: 'Thailand' },
+  { code: 'PH', name: '菲律宾', flag: '🇵🇭', api: 'Philippines' },
+  { code: 'ID', name: '印度尼西亚', flag: '🇮🇩', api: 'Indonesia' },
+  { code: 'VN', name: '越南', flag: '🇻🇳', api: 'Vietnam' },
+  { code: 'IN', name: '印度', flag: '🇮🇳', api: 'India' },
+  { code: 'AE', name: '阿联酋', flag: '🇦🇪', api: 'United Arab Emirates' },
+  { code: 'ZA', name: '南非', flag: '🇿🇦', api: 'South Africa' },
+  { code: 'BR', name: '巴西', flag: '🇧🇷', api: 'Brazil' },
+  { code: 'MX', name: '墨西哥', flag: '🇲🇽', api: 'Mexico' },
+  { code: 'AR', name: '阿根廷', flag: '🇦🇷', api: 'Argentina' },
+  { code: 'CL', name: '智利', flag: '🇨🇱', api: 'Chile' },
+  { code: 'CO', name: '哥伦比亚', flag: '🇨🇴', api: 'Colombia' },
+  { code: 'PE', name: '秘鲁', flag: '🇵🇪', api: 'Peru' },
+];
+
+function countryApiName(code: string): string {
+  const hit = SCRAPE_COUNTRIES.find(c => c.code === code);
+  return hit ? hit.api : code;
+}
+
+// ---- Geo cache (regions / cities resolved from the external provider) ----
+const GEO_API_BASE = 'https://countriesnow.space/api/v0.1';
+const GEO_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+
+async function ensureGeoCacheTable(db: any) {
+  try {
+    await db.prepare(`CREATE TABLE IF NOT EXISTS maps_geo_cache (
+      k TEXT PRIMARY KEY,
+      data TEXT NOT NULL,
+      updated_at INTEGER
+    )`).run();
+  } catch {}
+}
+
+async function geoCacheGet(db: any, k: string): Promise<any | null> {
+  try {
+    const row = await db.prepare('SELECT data, updated_at FROM maps_geo_cache WHERE k = ?').bind(k).first() as any;
+    if (!row) return null;
+    if (Date.now() - (row.updated_at || 0) > GEO_TTL_MS) return null;
+    return JSON.parse(row.data);
+  } catch { return null; }
+}
+
+async function geoCachePut(db: any, k: string, data: any): Promise<void> {
+  try {
+    await db.prepare(
+      'INSERT INTO maps_geo_cache (k, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(k) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at'
+    ).bind(k, JSON.stringify(data), Date.now()).run();
+  } catch {}
+}
+
+// Strip county/parish style entries — the scraper searches "<keyword> <city>, <state>",
+// so administrative areas would just duplicate results.
+function cleanCityList(list: any[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of list || []) {
+    const s = String(raw || '').trim();
+    if (!s || s.length > 60) continue;
+    if (/\b(County|Parish|Census Area|Metropolitan Area)\b/i.test(s)) continue;
+    const key = s.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(s);
+  }
+  return out.sort((a, b) => a.localeCompare(b));
+}
+
+async function getRegions(db: any, country: string): Promise<{ ab: string; name: string }[]> {
+  if (country === 'US') return US_STATES;
+  await ensureGeoCacheTable(db);
+  const key = `regions:${country}`;
+  const cached = await geoCacheGet(db, key);
+  if (cached && Array.isArray(cached) && cached.length) return cached;
+  try {
+    const resp = await fetch(`${GEO_API_BASE}/countries/states/q?country=${encodeURIComponent(countryApiName(country))}`, {
+      headers: { accept: 'application/json' },
+    });
+    if (!resp.ok) return cached || [];
+    const j = await resp.json() as any;
+    const regions = (j?.data?.states || [])
+      .map((s: any) => ({ ab: String(s.state_code || s.name || '').trim(), name: String(s.name || '').trim() }))
+      .filter((r: any) => r.name);
+    if (regions.length) await geoCachePut(db, key, regions);
+    return regions;
+  } catch {
+    return cached || [];
+  }
+}
+
+async function getCities(db: any, country: string, stateName: string): Promise<string[]> {
+  await ensureGeoCacheTable(db);
+  const key = `cities:${country}:${stateName.toLowerCase()}`;
+  const cached = await geoCacheGet(db, key);
+  if (cached && Array.isArray(cached) && cached.length) return cached;
+  try {
+    const url = `${GEO_API_BASE}/countries/state/cities/q?country=${encodeURIComponent(countryApiName(country))}&state=${encodeURIComponent(stateName)}`;
+    const resp = await fetch(url, { headers: { accept: 'application/json' } });
+    if (!resp.ok) return cached || [];
+    const j = await resp.json() as any;
+    const cities = cleanCityList(j?.data || []);
+    if (cities.length) await geoCachePut(db, key, cities);
+    return cities;
+  } catch {
+    return cached || [];
+  }
+}
+
+async function ensureMapsScrapeTable(db: any) {
+  try {
+    await db.prepare(`CREATE TABLE IF NOT EXISTS maps_scrape_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      country TEXT NOT NULL,
+      state TEXT NOT NULL,
+      cities TEXT,
+      status TEXT DEFAULT 'pending',
+      cities_total INTEGER DEFAULT 0,
+      cities_done INTEGER DEFAULT 0,
+      artists_found INTEGER DEFAULT 0,
+      error_text TEXT,
+      created_by TEXT,
+      created_at INTEGER,
+      updated_at INTEGER,
+      UNIQUE(country, state)
+    )`).run();
+  } catch {}
+}
+
+// Allow either a logged-in user (UI) or the VPS bot token (scraper self-register).
+function mapsScrapeActor(c: any): { ok: boolean; uid: string } {
+  if (checkBotToken(c)) return { ok: true, uid: 'bot' };
+  const u = c.get('user');
+  if (u && (u.uid || u.user_id)) return { ok: true, uid: u.uid || u.user_id };
+  return { ok: false, uid: '' };
+}
+
+app.get('/api/maps-scrape/countries', async (c) => {
+  return c.json({ ok: true, countries: SCRAPE_COUNTRIES.map(x => ({ code: x.code, name: x.name, flag: x.flag })) });
+});
+
+app.get('/api/maps-scrape/states', async (c) => {
+  const country = normalizeCountry(c.req.query('country') || 'US');
+  const states = await getRegions(c.env.DB, country);
+  return c.json({ ok: true, country, states });
+});
+
+// Regions (states / provinces / prefectures) of a country.
+app.get('/api/maps-scrape/regions', async (c) => {
+  const country = normalizeCountry(c.req.query('country') || 'US');
+  const regions = await getRegions(c.env.DB, country);
+  return c.json({ ok: true, country, regions });
+});
+
+// All cities of a region — powers the city picker in the UI and the VPS scheduler.
+app.get('/api/maps-scrape/cities', async (c) => {
+  const country = normalizeCountry(c.req.query('country') || 'US');
+  const state = String(c.req.query('state') || '').trim();
+  if (!state) return c.json({ error: 'state required' }, 400);
+  let stateName = String(c.req.query('name') || '').trim();
+  if (!stateName) {
+    const regions = await getRegions(c.env.DB, country);
+    const hit = regions.find(r => r.ab.toUpperCase() === state.toUpperCase())
+      || regions.find(r => r.name.toLowerCase() === state.toLowerCase());
+    stateName = hit ? hit.name : state;
+  }
+  const cities = await getCities(c.env.DB, country, stateName);
+  return c.json({ ok: true, country, state, stateName, count: cities.length, cities });
+});
+
+app.get('/api/maps-scrape/coverage', async (c) => {
+  const actor = mapsScrapeActor(c);
+  if (!actor.ok) return c.json({ error: 'unauthorized' }, 401);
+  const country = normalizeCountry(c.req.query('country') || 'US');
+  await ensureMapsScrapeTable(c.env.DB);
+  const rows = await c.env.DB.prepare(
+    'SELECT * FROM maps_scrape_jobs WHERE country = ? ORDER BY updated_at DESC'
+  ).bind(country).all();
+  const jobs = (rows.results || []) as any[];
+  const jobByState: Record<string, any> = {};
+  for (const j of jobs) jobByState[j.state] = j;
+
+  let states: any[] = [];
+  let notRun: string[] = [];
+  const regions = await getRegions(c.env.DB, country);
+  if (regions.length) {
+    states = regions.map(s => ({
+      ab: s.ab,
+      name: s.name,
+      job: jobByState[s.ab] || jobByState[(s.ab || '').toUpperCase()] || jobByState[s.name.toUpperCase()] || null,
+    }));
+    notRun = states.filter(s => !s.job).map(s => s.ab);
+  } else {
+    states = jobs.map(j => ({ ab: j.state, name: j.state, job: j }));
+  }
+
+  const summary = {
+    total: states.length,
+    ran: jobs.filter(j => j.status === 'completed').length,
+    running: jobs.filter(j => j.status === 'running').length,
+    failed: jobs.filter(j => j.status === 'failed').length,
+    pending: jobs.filter(j => j.status === 'pending').length,
+    notRun: notRun.length,
+    artistsFound: jobs.reduce((a, j) => a + (j.artists_found || 0), 0),
+  };
+  return c.json({ ok: true, country, states, notRun, summary });
+});
+
+app.get('/api/maps-scrape/jobs', async (c) => {
+  const actor = mapsScrapeActor(c);
+  if (!actor.ok) return c.json({ error: 'unauthorized' }, 401);
+  await ensureMapsScrapeTable(c.env.DB);
+  const rows = await c.env.DB.prepare(
+    'SELECT * FROM maps_scrape_jobs ORDER BY updated_at DESC'
+  ).all();
+  return c.json({ ok: true, items: rows.results || [] });
+});
+
+app.post('/api/maps-scrape/jobs', async (c) => {
+  const actor = mapsScrapeActor(c);
+  if (!actor.ok) return c.json({ error: 'unauthorized' }, 401);
+  await ensureMapsScrapeTable(c.env.DB);
+  const body = await c.req.json().catch(() => ({}));
+  const country = normalizeCountry(body.country || 'US');
+  const state = String(body.state || '').trim().toUpperCase();
+  if (!state) return c.json({ error: 'state required' }, 400);
+  const now = Date.now();
+  let citiesArr: string[] = [];
+  if (Array.isArray(body.cities)) citiesArr = body.cities.map((x: any) => String(x).trim()).filter(Boolean);
+  else if (body.cities) citiesArr = String(body.cities).split(',').map((x: string) => x.trim()).filter(Boolean);
+  await c.env.DB.prepare(`
+    INSERT INTO maps_scrape_jobs (country, state, cities, status, cities_total, cities_done, artists_found, error_text, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, 'pending', ?, 0, 0, NULL, ?, ?, ?)
+    ON CONFLICT(country, state) DO UPDATE SET
+      cities = excluded.cities,
+      status = 'pending',
+      cities_total = excluded.cities_total,
+      cities_done = 0,
+      artists_found = 0,
+      error_text = NULL,
+      created_by = excluded.created_by,
+      updated_at = excluded.updated_at
+  `).bind(country, state, JSON.stringify(citiesArr), citiesArr.length, actor.uid, now, now).run();
+  const row = await c.env.DB.prepare('SELECT * FROM maps_scrape_jobs WHERE country = ? AND state = ?')
+    .bind(country, state).first();
+  return c.json({ ok: true, job: row });
+});
+
+app.post('/api/maps-scrape/jobs/:id/status', async (c) => {
+  const actor = mapsScrapeActor(c);
+  if (!actor.ok) return c.json({ error: 'unauthorized' }, 401);
+  await ensureMapsScrapeTable(c.env.DB);
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const { status, cities_done, cities_total, artists_found, error } = body;
+  const now = Date.now();
+  const sets: string[] = ['updated_at = ?'];
+  const binds: any[] = [now];
+  if (status) { sets.push('status = ?'); binds.push(String(status)); }
+  if (typeof cities_done === 'number') { sets.push('cities_done = ?'); binds.push(cities_done); }
+  if (typeof cities_total === 'number') { sets.push('cities_total = ?'); binds.push(cities_total); }
+  if (typeof artists_found === 'number') { sets.push('artists_found = ?'); binds.push(artists_found); }
+  if (error !== undefined) { sets.push('error_text = ?'); binds.push(error || null); }
+  binds.push(id);
+  await c.env.DB.prepare(`UPDATE maps_scrape_jobs SET ${sets.join(', ')} WHERE id = ?`).bind(...binds).run();
+  return c.json({ ok: true });
+});
+
+app.delete('/api/maps-scrape/jobs/:id', async (c) => {
+  const actor = mapsScrapeActor(c);
+  if (!actor.ok) return c.json({ error: 'unauthorized' }, 401);
+  await ensureMapsScrapeTable(c.env.DB);
+  const id = c.req.param('id');
+  const r = await c.env.DB.prepare('DELETE FROM maps_scrape_jobs WHERE id = ?').bind(id).run();
+  return c.json({ ok: true, deleted: (r.meta?.changes || 0) > 0 });
+});
+
+// ============ ShopOutreach 旧 UI 桥接到真任务系统（2026-08-06）============
+// ShopOutreach 页面的 /api/scrape/* 是老一套抓取 UI，接口从未在后端实现（一直 401）。
+// 这里把它们桥接到真实的 maps_scrape_jobs 任务队列 + D1 artists 表：
+//   - 启动抓取 = 创建/重置 maps-scrape job（VPS/本机调度器自动消费）
+//   - 状态/结果 = 从 maps_scrape_jobs / artists 读真数据
+// 鉴权：启动抓取接受 bot token 或登录用户（同 mapsScrapeActor）；查询类接口公开（同 /api/artists）。
+
+// POST /api/scrape/python — 启动/重置一个州的抓取任务（等价于 maps-scrape jobs 创建）
+app.post('/api/scrape/python', async (c) => {
+  const actor = mapsScrapeActor(c);
+  if (!actor.ok) return c.json({ error: 'Unauthorized' }, 401);
+  await ensureMapsScrapeTable(c.env.DB);
+  const body = await c.req.json().catch(() => ({}));
+  const state = String(body.state || '').trim().toUpperCase();
+  if (!state) return c.json({ error: 'state required' }, 400);
+  const country = normalizeCountry(body.country || 'US');
+  const now = Date.now();
+  let citiesArr: string[] = [];
+  if (Array.isArray(body.cities)) citiesArr = body.cities.map((x: any) => String(x).trim()).filter(Boolean);
+  else if (body.cities) citiesArr = String(body.cities).split(',').map((x: string) => x.trim()).filter(Boolean);
+  // cities 为空 = 全州自动抓（调度器从 cloud-api 拉全州城市）；显式传了才覆盖 job 城市列表
+  const citiesJson = citiesArr.length ? JSON.stringify(citiesArr) : JSON.stringify([]);
+  const citiesTotal = citiesArr.length || null;
+  try {
+    await c.env.DB.prepare(`
+      INSERT INTO maps_scrape_jobs (country, state, cities, status, cities_total, cities_done, artists_found, error_text, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, 'pending', COALESCE(?, 0), 0, 0, NULL, ?, ?, ?)
+      ON CONFLICT(country, state) DO UPDATE SET
+        cities = CASE WHEN excluded.cities = '[]' THEN maps_scrape_jobs.cities ELSE excluded.cities END,
+        status = 'pending',
+        cities_total = CASE WHEN excluded.cities = '[]' THEN maps_scrape_jobs.cities_total ELSE excluded.cities_total END,
+        cities_done = 0,
+        artists_found = 0,
+        error_text = NULL,
+        created_by = excluded.created_by,
+        updated_at = excluded.updated_at
+    `).bind(country, state, citiesJson, citiesTotal, actor.uid, now, now).run();
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
+  }
+  const row = await c.env.DB.prepare('SELECT * FROM maps_scrape_jobs WHERE country = ? AND state = ?').bind(country, state).first() as any;
+  return c.json({ ok: true, taskId: String(row?.id || ''), state, status: 'pending' });
+});
+
+// GET /api/scrape/tasks — 任务列表（等价 maps-scrape jobs 列表）
+app.get('/api/scrape/tasks', async (c) => {
+  await ensureMapsScrapeTable(c.env.DB);
+  const rows = await d1All(c.env.DB, `SELECT id, state, status, cities_total, cities_done, artists_found, updated_at FROM maps_scrape_jobs ORDER BY updated_at DESC LIMIT 100`);
+  return c.json((rows || []).map((r: any) => ({
+    id: String(r.id),
+    state: r.state,
+    status: r.status,
+    completed: Number(r.cities_done || 0),
+    total: Number(r.cities_total || 0),
+    shopsSaved: Number(r.artists_found || 0),
+    updatedAt: r.updated_at,
+  })));
+});
+
+// GET /api/scrape/status/:taskId — 任务进度（等价 maps-scrape job 详情）
+app.get('/api/scrape/status/:taskId', async (c) => {
+  await ensureMapsScrapeTable(c.env.DB);
+  const id = c.req.param('taskId');
+  const row = await c.env.DB.prepare('SELECT * FROM maps_scrape_jobs WHERE id = ?').bind(id).first() as any;
+  if (!row) return c.json({ error: 'not_found' }, 404);
+  return c.json({
+    id: String(row.id),
+    state: row.state,
+    status: row.status,
+    completed: Number(row.cities_done || 0),
+    total: Number(row.cities_total || 0),
+    shopsSaved: Number(row.artists_found || 0),
+    errorText: row.error_text || null,
+    logs: [],
+  });
+});
+
+// GET /api/scrape/results/:taskId — 该任务的抓取结果（从 D1 artists 按 state 查）
+app.get('/api/scrape/results/:taskId', async (c) => {
+  await ensureMapsScrapeTable(c.env.DB);
+  const id = c.req.param('taskId');
+  const row = await c.env.DB.prepare('SELECT * FROM maps_scrape_jobs WHERE id = ?').bind(id).first() as any;
+  if (!row) return c.json({ rows: [], warning: 'task_not_found' });
+  const limit = Math.min(500, Math.max(1, parseInt(String(c.req.query('limit') || '100'))));
+  const rows = await d1All(c.env.DB, `SELECT id, shop_name, ig_handle, city, state, import_region, email, phone, website, rating, reviews, followers, stage, last_updated FROM artists WHERE state = ? OR import_region = ? ORDER BY shop_name ASC LIMIT ${limit}`, [row.state, row.state]);
+  return c.json({ rows: rows || [], warning: undefined });
+});
+
+// POST /api/scrape/pause|resume|cancel/:taskId — 任务状态切换
+app.post('/api/scrape/pause/:taskId', async (c) => {
+  const actor = mapsScrapeActor(c);
+  if (!actor.ok) return c.json({ error: 'Unauthorized' }, 401);
+  await ensureMapsScrapeTable(c.env.DB);
+  const id = c.req.param('taskId');
+  await c.env.DB.prepare(`UPDATE maps_scrape_jobs SET status = 'paused', updated_at = ? WHERE id = ?`).bind(Date.now(), id).run();
+  return c.json({ ok: true, status: 'paused' });
+});
+app.post('/api/scrape/resume/:taskId', async (c) => {
+  const actor = mapsScrapeActor(c);
+  if (!actor.ok) return c.json({ error: 'Unauthorized' }, 401);
+  await ensureMapsScrapeTable(c.env.DB);
+  const id = c.req.param('taskId');
+  await c.env.DB.prepare(`UPDATE maps_scrape_jobs SET status = 'pending', updated_at = ? WHERE id = ?`).bind(Date.now(), id).run();
+  return c.json({ ok: true, status: 'pending' });
+});
+app.post('/api/scrape/cancel/:taskId', async (c) => {
+  const actor = mapsScrapeActor(c);
+  if (!actor.ok) return c.json({ error: 'Unauthorized' }, 401);
+  await ensureMapsScrapeTable(c.env.DB);
+  const id = c.req.param('taskId');
+  await c.env.DB.prepare(`UPDATE maps_scrape_jobs SET status = 'cancelled', updated_at = ? WHERE id = ?`).bind(Date.now(), id).run();
+  return c.json({ ok: true, status: 'cancelled' });
+});
+
+// GET /api/scrape/export/:taskId — 导出该州抓取结果 CSV（直接流式返回）
+app.get('/api/scrape/export/:taskId', async (c) => {
+  await ensureMapsScrapeTable(c.env.DB);
+  const id = c.req.param('taskId');
+  const row = await c.env.DB.prepare('SELECT * FROM maps_scrape_jobs WHERE id = ?').bind(id).first() as any;
+  const state = row?.state || '';
+  const rows = state ? await d1All(c.env.DB, `SELECT shop_name, ig_handle, city, state, import_region, email, phone, website, rating, reviews, followers, stage FROM artists WHERE state = ? OR import_region = ? ORDER BY shop_name ASC`, [state, state]) : [];
+  const header = ['Shop Name', 'Instagram', 'City', 'State', 'Import Region', 'Email', 'Phone', 'Website', 'Rating', 'Reviews', 'Followers', 'Stage'];
+  const esc = (v: any) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const lines = [header.join(',')];
+  (rows || []).forEach((r: any) => lines.push([r.shop_name, r.ig_handle, r.city, r.state, r.import_region, r.email, r.phone, r.website, r.rating, r.reviews, r.followers, r.stage].map(esc).join(',')));
+  return c.body(lines.join('\n'), 200, { 'Content-Type': 'text/csv;charset=utf-8', 'Content-Disposition': `attachment; filename="scrape_${id}.csv"` });
+});
+
+// GET /api/deep-scan/failed/:taskId — 深扫失败项（尚未实现深扫，返回空列表）
+app.get('/api/deep-scan/failed/:taskId', async (c) => {
+  return c.json({ items: [] });
+});
 
 // ============ USER REGISTRATION & APPROVAL ============
 
@@ -2802,6 +3350,86 @@ app.post('/api/automation/start', async (c) => {
   }
 });
 
+// ===== 用户 bot 动作偏好（2026-08-06）：前台「动作偏好」面板 ↔ D1 持久化 =====
+// ig-scheduler 生成任务时读取该偏好，把点赞/评论/关注次数写进任务 payload，
+// bot 按 payload 执行 → 前台改的设置真正作用于引流（此前只存 localStorage，bot 不读）。
+app.get('/api/automation/bot-prefs', async (c) => {
+  try {
+    const uid = String(c.req.query('uid') || '').trim();
+    if (!uid) return c.json({ ok: false, error: 'uid required' }, 400);
+    await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_action_prefs (
+      uid TEXT PRIMARY KEY, likes_per_session INTEGER DEFAULT 2, comments_per_session INTEGER DEFAULT 1,
+      follows_per_session INTEGER DEFAULT 0, bot_id TEXT DEFAULT 'bot_ig_01', ig_handle TEXT DEFAULT '',
+      updated_at INTEGER
+    )`).run().catch(() => {});
+    const row = await c.env.DB.prepare('SELECT * FROM bot_action_prefs WHERE uid = ?').bind(uid).first() as any;
+    if (!row) return c.json({ ok: true, prefs: null });
+    return c.json({ ok: true, prefs: {
+      likesPerSession: Number(row.likes_per_session || 0),
+      commentsPerSession: Number(row.comments_per_session || 0),
+      followsPerSession: Number(row.follows_per_session || 0),
+      botId: row.bot_id || 'bot_ig_01',
+      igHandle: row.ig_handle || '',
+    }});
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
+  }
+});
+
+app.post('/api/automation/bot-prefs', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({})) as any;
+    const uid = String(body.uid || '').trim();
+    if (!uid) return c.json({ ok: false, error: 'uid required' }, 400);
+    const likes = Math.max(0, Math.min(10, Number(body.likesPerSession) || 0));
+    const comments = Math.max(0, Math.min(10, Number(body.commentsPerSession) || 0));
+    const follows = Math.max(0, Math.min(10, Number(body.followsPerSession) || 0));
+    const botId = String(body.botId || 'bot_ig_01').trim() || 'bot_ig_01';
+    const igHandle = String(body.igHandle || '').trim();
+    await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_action_prefs (
+      uid TEXT PRIMARY KEY, likes_per_session INTEGER DEFAULT 2, comments_per_session INTEGER DEFAULT 1,
+      follows_per_session INTEGER DEFAULT 0, bot_id TEXT DEFAULT 'bot_ig_01', ig_handle TEXT DEFAULT '',
+      updated_at INTEGER
+    )`).run().catch(() => {});
+    await c.env.DB.prepare(`INSERT INTO bot_action_prefs (uid, likes_per_session, comments_per_session, follows_per_session, bot_id, ig_handle, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(uid) DO UPDATE SET
+        likes_per_session = excluded.likes_per_session,
+        comments_per_session = excluded.comments_per_session,
+        follows_per_session = excluded.follows_per_session,
+        bot_id = excluded.bot_id,
+        ig_handle = excluded.ig_handle,
+        updated_at = excluded.updated_at
+    `).bind(uid, likes, comments, follows, botId, igHandle, Date.now()).run();
+    return c.json({ ok: true, saved: true });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
+  }
+});
+
+// GET /api/automation/bot-prefs/by-bot?botId=xx — ig-scheduler 用：按 botId 找偏好（取最新一条）
+app.get('/api/automation/bot-prefs/by-bot', async (c) => {
+  try {
+    const botId = String(c.req.query('botId') || '').trim() || 'bot_ig_01';
+    await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_action_prefs (
+      uid TEXT PRIMARY KEY, likes_per_session INTEGER DEFAULT 2, comments_per_session INTEGER DEFAULT 1,
+      follows_per_session INTEGER DEFAULT 0, bot_id TEXT DEFAULT 'bot_ig_01', ig_handle TEXT DEFAULT '',
+      updated_at INTEGER
+    )`).run().catch(() => {});
+    const row = await c.env.DB.prepare('SELECT * FROM bot_action_prefs WHERE bot_id = ? ORDER BY updated_at DESC LIMIT 1').bind(botId).first() as any;
+    if (!row) return c.json({ ok: true, prefs: null });
+    return c.json({ ok: true, prefs: {
+      likesPerSession: Number(row.likes_per_session || 0),
+      commentsPerSession: Number(row.comments_per_session || 0),
+      followsPerSession: Number(row.follows_per_session || 0),
+      botId: row.bot_id || 'bot_ig_01',
+      igHandle: row.ig_handle || '',
+    }});
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
+  }
+});
+
 app.get('/api/automation/poll', async (c) => {
   if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
   const botId = c.req.query('botId') || '';
@@ -2818,8 +3446,8 @@ app.get('/api/automation/poll', async (c) => {
     // SELECT pending tasks with dedup（多账号：只拿本 bot 账号的任务；NULL 兼容 ig-scheduler 旧任务）
     const candidates = await sql`
       SELECT id, payload FROM automation_tasks
-      WHERE status = 'pending' AND run_at <= ${now}
-        AND (json_extract(payload, '$.targetBotId') IS NULL OR json_extract(payload, '$.targetBotId') = ${botId})
+      WHERE status = 'pending' AND (run_at IS NULL OR run_at <= ${now})
+        AND (json_extract(payload, '$.targetBotId') IS NULL OR json_extract(payload, '$.targetBotId') = '' OR json_extract(payload, '$.targetBotId') = ${botId})
         AND (json_extract(payload, '$.artistHandle') IS NULL
           OR NOT EXISTS (
             SELECT 1 FROM automation_tasks d
@@ -2863,6 +3491,23 @@ app.post('/api/automation/report', async (c) => {
     } catch (e: any) {
       console.error('[report] Neon error:', e?.message || e);
     }
+    // ---- 2026-08-06: bot 任务 done → 回写 artists.stage（outreach→engaged），供 ShopOutreach 看接触进展 ----
+    if (status === 'done') {
+      try {
+        const rows = await d1All(c.env.DB, `SELECT payload FROM automation_tasks WHERE id = ?`, [commandId]).catch(() => [] as any[]);
+        const p = rows && rows[0] ? (rows[0] as any).payload : null;
+        let handle = '';
+        if (typeof p === 'string') { try { handle = (JSON.parse(p) as any).artistHandle || ''; } catch {} }
+        else if (p && typeof p === 'object') { handle = (p as any).artistHandle || ''; }
+        if (handle) {
+          await d1All(c.env.DB, `UPDATE artists SET stage = 'engaged', last_updated = ? WHERE LOWER(ig_handle) = LOWER(?)`, [now, handle]).catch(() => {});
+          // 2026-08-07: 同时写入互动时间线，前台可见
+          await c.env.DB.prepare(
+            `INSERT INTO artist_interactions (bot_id, artist_handle, event_type, detail, created_at) VALUES (?, ?, 'engaged', ?, ?)`
+          ).bind(botId, String(handle).replace(/^@/, '').toLowerCase(), JSON.stringify({ commandId }), now).run().catch(() => {});
+        }
+      } catch {}
+    }
     try {
       const day = new Date().toISOString().slice(0, 10);
       await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS daily_task_stats (
@@ -2875,6 +3520,84 @@ app.post('/api/automation/report', async (c) => {
       ).bind(day, status === 'done' ? 'done' : 'failed').run().catch(() => {});
     } catch {}
     return c.json({ ok: true, commandId, status });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
+  }
+});
+
+// ===== Artist interaction timeline（记录 bot 每次互动，前台可见每个 lead 的接触历史） =====
+// 2026-08-07: like/comment/follow/dm/follow_back/engaged 等事件写进 artist_interactions，
+// 并同步 artists.stage / follow_back_at，使 ShopOutreach 前台能看到互动时间线。
+const ensureArtistInteractionTables = async (db: any) => {
+  try {
+    await db.prepare(`CREATE TABLE IF NOT EXISTS artist_interactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bot_id TEXT,
+      artist_handle TEXT,
+      event_type TEXT NOT NULL,
+      detail TEXT,
+      created_at INTEGER NOT NULL
+    )`).run().catch(() => {});
+  } catch {}
+  try {
+    await db.prepare(`ALTER TABLE artists ADD COLUMN follow_back_at INTEGER`).run().catch(() => {});
+  } catch {}
+};
+
+const STAGE_BY_INTERACTION: Record<string, string> = {
+  follow: 'followed',
+  follow_back: 'followback',
+  dm: 'dm_sent',
+  engaged: 'engaged',
+  converted: 'converted'
+};
+
+app.post('/api/automation/interaction', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  try {
+    const b = await c.req.json();
+    const botId = String(b.botId || '').trim();
+    const handle = String(b.artistHandle || b.artist_handle || '').replace(/^@/, '').trim().toLowerCase();
+    const eventType = String(b.eventType || '').trim();
+    if (!eventType) return c.json({ error: 'eventType required' }, 400);
+    const detail = b.detail ? (typeof b.detail === 'string' ? b.detail : JSON.stringify(b.detail)) : null;
+    const now = Date.now();
+    await ensureArtistInteractionTables(c.env.DB);
+    if (handle) {
+      await c.env.DB.prepare(
+        `INSERT INTO artist_interactions (bot_id, artist_handle, event_type, detail, created_at) VALUES (?, ?, ?, ?, ?)`
+      ).bind(botId, handle, eventType, detail, now).run().catch(() => {});
+      const stage = STAGE_BY_INTERACTION[eventType];
+      if (stage) {
+        await c.env.DB.prepare(`UPDATE artists SET stage = ?, last_updated = ? WHERE LOWER(ig_handle) = ?`)
+          .bind(stage, now, handle).run().catch(() => {});
+      }
+      if (eventType === 'follow_back') {
+        await c.env.DB.prepare(`UPDATE artists SET follow_back_at = ? WHERE LOWER(ig_handle) = ?`)
+          .bind(now, handle).run().catch(() => {});
+      }
+    }
+    return c.json({ ok: true });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
+  }
+});
+
+// ===== Retry failed tasks（把 status='failed' 的任务重置为 pending，供 VPS bot 重新认领） =====
+// 2026-08-07: 之前因 bot 登出/超时失败的 860 个任务，调用本接口即可重新进入队列。
+app.post('/api/automation/tasks/retry-failed', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  try {
+    const b = (await c.req.json().catch(() => ({}))) || {};
+    const olderThanHours = Number(b.olderThanHours || 0);
+    let sql = `UPDATE automation_tasks SET status = 'pending', leased_by = NULL, lease_until = NULL, error_reason = NULL WHERE status = 'failed'`;
+    const binds: any[] = [];
+    if (olderThanHours > 0) {
+      sql += ` AND updated_at < ?`;
+      binds.push(Date.now() - olderThanHours * 3600_000);
+    }
+    const res = await c.env.DB.prepare(sql).bind(...binds).run().catch((e: any) => ({ error: String(e?.message || e) }));
+    return c.json({ ok: true, info: res });
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
   }
@@ -4392,7 +5115,8 @@ app.post('/api/automation/create-marketing-task', async (c) => {
     const category = String(b.category || 'industry_talk');
     const intent = b.intent ? String(b.intent) : null;
     let scriptId: number | null = null;
-    let scriptContent: string | null = null;
+    // 允许调用方直接带文案（bot 回关建任务时自带 scriptContent），优先于 DB 兜底选取。
+    let scriptContent: string | null = b.scriptContent ? String(b.scriptContent) : null;
     if (b.scriptId) {
       const sr: any = await c.env.DB.prepare('SELECT id, content FROM marketing_scripts WHERE id = ?').bind(Number(b.scriptId)).first();
       if (sr) { scriptId = Number(sr.id); scriptContent = String(sr.content || ''); }
