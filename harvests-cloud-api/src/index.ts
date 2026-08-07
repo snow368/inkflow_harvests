@@ -3908,7 +3908,7 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
     const ids = artistIds.filter((i: any) => String(i).trim().length > 0);
     if (!ids.length) return c.json({ ok: false, error: 'no valid ids' }, 400);
     const idList = ids.map((i: any) => `'${String(i).replace(/'/g, "''")}'`).join(',');
-    const artistRows = await d1All(c.env.DB, `SELECT id, shop_name, ig_handle, city, state FROM artists WHERE id IN (${idList})`);
+    const artistRows = await d1All(c.env.DB, `SELECT id, shop_name, ig_handle, city, state, country, location FROM artists WHERE id IN (${idList})`);
     const artists = artistRows || [];
     if (!artists.length) return c.json({ ok: false, error: 'no artists found' }, 404);
 
@@ -3927,7 +3927,7 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
       const h = a.ig_handle || a.shop_name || '';
       if (existingSet.has(h)) { skipped++; continue; }
       taskIds.push('task_' + h + '_' + ts);
-      payloads.push(JSON.stringify({ artistHandle: h, shopName: a.shop_name, taskType }));
+      payloads.push(JSON.stringify({ artistHandle: h, shopName: a.shop_name, taskType, country: a.country || null, city: a.city || null }));
       runAts.push(ts);
       created++;
     }
