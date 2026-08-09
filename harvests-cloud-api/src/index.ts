@@ -174,6 +174,7 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/poll',
   '/api/automation/report',
   '/api/automation/interaction',
+  '/api/automation/interaction-timeline',
   '/api/automation/tasks/retry-failed',
   '/api/automation/artists',
   '/api/automation/observations',
@@ -266,7 +267,9 @@ const PUBLIC_PATHS = new Set([
   '/api/scrape/export',
   '/api/deep-scan/failed',
   // 用户 bot 动作偏好（点赞/评论/关注次数）：前台保存/读取，ig-scheduler 生成任务时读取
-  '/api/automation/bot-prefs'
+  '/api/automation/bot-prefs',
+  // 互动漏斗只读聚合：bot token 校验（checkBotToken），供实验/监控测量 like->follow->follow_back->dm
+  '/api/automation/funnel'
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -3578,6 +3581,98 @@ app.post('/api/automation/interaction', async (c) => {
       }
     }
     return c.json({ ok: true });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
+  }
+});
+
+// ===== Artist interaction timeline (READ, public) =====
+// 2026-08-09: 前台 InkFlowOutreach「互动时间线」读取每个 lead 的接触历史 + 分诊标签，
+// 把 bot 写进 artist_interactions 的数据反向指导 DM（谁回关→可发DM、谁沉睡→停放）。
+app.get('/api/automation/interaction-timeline', async (c) => {
+  const botId = (c.req.query('botId') || 'bot_ig_01').trim();
+  const days = Math.min(180, Math.max(1, Number(c.req.query('days') || 90)));
+  const since = Date.now() - days * 86400_000;
+  const DORMANT_DAYS = 30; // 未回关且超过此天数无互动 → 沉睡停放
+  try {
+    const rows = await c.env.DB.prepare(
+      `SELECT id, artist_handle, event_type, detail, created_at
+       FROM artist_interactions
+       WHERE bot_id = ? AND created_at >= ?
+       ORDER BY artist_handle, created_at DESC`
+    ).bind(botId, since).all();
+    const map: Record<string, any> = {};
+    for (const r of (rows.results || []) as any) {
+      const h = r.artist_handle;
+      if (!map[h]) map[h] = { handle: h, events: [], followedAt: null, followBackAt: null, dmSentAt: null, lastEventAt: 0 };
+      map[h].events.push({ eventType: r.event_type, detail: r.detail, createdAt: r.created_at });
+      map[h].lastEventAt = Math.max(map[h].lastEventAt, r.created_at);
+      if (r.event_type === 'follow' && !map[h].followedAt) map[h].followedAt = r.created_at;
+      if (r.event_type === 'follow_back' && !map[h].followBackAt) map[h].followBackAt = r.created_at;
+      if (r.event_type === 'dm' && !map[h].dmSentAt) map[h].dmSentAt = r.created_at;
+    }
+    const list = Object.values(map).map((a: any) => {
+      const hasFollowBack = !!a.followBackAt;
+      const ageDays = (Date.now() - a.lastEventAt) / 86400_000;
+      let triage: 'dm_ready' | 'active' | 'dormant';
+      if (hasFollowBack) triage = 'dm_ready';
+      else if (ageDays <= DORMANT_DAYS) triage = 'active';
+      else triage = 'dormant';
+      const counts: Record<string, number> = {};
+      for (const e of a.events) counts[e.eventType] = (counts[e.eventType] || 0) + 1;
+      return {
+        handle: a.handle,
+        triage,
+        followedAt: a.followedAt,
+        followBackAt: a.followBackAt,
+        dmSentAt: a.dmSentAt,
+        lastEventAt: a.lastEventAt,
+        eventCounts: counts,
+        events: a.events.slice(0, 50),
+      };
+    });
+    list.sort((x: any, y: any) => Number(y.followBackAt || y.lastEventAt) - Number(x.followBackAt || x.lastEventAt));
+    return c.json({ ok: true, botId, days, total: list.length, leads: list });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
+  }
+});
+
+// ===== Funnel 聚合（只读，供实验/监控测量 like->follow->follow_back->dm 转化） =====
+app.get('/api/automation/funnel', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
+  const botId = (c.req.query('botId') || 'bot_ig_01').trim();
+  const days = Math.min(120, Math.max(1, Number(c.req.query('days') || 30)));
+  const since = Date.now() - days * 86400_000;
+  try {
+    const rows = await c.env.DB.prepare(
+      `SELECT event_type, COUNT(*) as cnt FROM artist_interactions
+       WHERE bot_id = ? AND created_at >= ? GROUP BY event_type`
+    ).bind(botId, since).all();
+    const eventCounts: Record<string, number> = {};
+    for (const r of (rows.results || []) as any) eventCounts[r.event_type] = Number(r.cnt || 0);
+
+    const uniq = async (ev: string) => {
+      const r = await c.env.DB.prepare(
+        `SELECT COUNT(DISTINCT artist_handle) as c FROM artist_interactions
+         WHERE bot_id = ? AND event_type = ? AND created_at >= ?`
+      ).bind(botId, ev, since).all();
+      return Number(((r.results || []) as any)[0]?.c || 0);
+    };
+    const followedUnique = await uniq('follow');
+    const followBackUnique = await uniq('follow_back');
+    const dmUnique = await uniq('dm');
+
+    const pct = (a: number, b: number) => (b > 0 ? +((a / b) * 100).toFixed(1) : null);
+    return c.json({
+      ok: true, botId, days,
+      eventCounts,
+      followedUnique, followBackUnique, dmUnique,
+      conv: {
+        follow_to_followback: pct(followBackUnique, followedUnique),
+        followback_to_dm: pct(dmUnique, followBackUnique),
+      },
+    });
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
   }
