@@ -1868,6 +1868,14 @@
       "trigger": "\"搭SEO Agent\"",
       "section": "agent",
       "sort_order": 28
+    },
+    {
+      "id": "seo-canonical-fix",
+      "name": "Canonical/重复索引修复",
+      "description": "修复 GSC『duplicate without user-selected canonical』：www/非-www 归并(Cloudflare 301! 陷阱)+ canonical 兜底统一 site",
+      "trigger": "\"修复canonical\"",
+      "section": "technical",
+      "sort_order": 29
     }
   ],
   "subsystems": [
@@ -2066,6 +2074,13 @@
       "skillId": "seo-agent-builder",
       "phase": "agent",
       "sort_order": 28
+    },
+    {
+      "key": "canonical-fix",
+      "label": "Canonical/重复修复",
+      "skillId": "seo-canonical-fix",
+      "phase": "technical",
+      "sort_order": 29
     }
   ],
   "projects": [
@@ -2095,7 +2110,8 @@
         "outreach": "not-started",
         "image-seo": "doing",
         "digital-pr": "not-started",
-        "agent-automation": "doing"
+        "agent-automation": "doing",
+        "canonical-fix": "done"
       }
     }
   ]
