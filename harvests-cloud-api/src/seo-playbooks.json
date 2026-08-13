@@ -1548,6 +1548,100 @@
         }
       ],
       "subskills": []
+    },
+    {
+      "id": "seo-images",
+      "title": "图片 SEO 优化",
+      "icon": "Image",
+      "color": "violet",
+      "summary": "描述性文件名 · 独立ALT · ImageObject Schema · 原创实景图 · 压缩格式",
+      "sort_order": 7,
+      "chapters": [
+        {
+          "label": "图片 SEO 五大规则（HridoyReh）",
+          "items": [
+            "描述性文件名: wave-tattoo-forearm-fine-line.png 而非 IMG_0012.png",
+            "独立 ALT: 每张图唯一描述性 alt，不写通用 'image'/'photo'",
+            "ImageObject Schema: 嵌入 contentUrl+caption+alt 让 Google 图片包收录",
+            "原创实景图: AI 生成/实拍优先，避免图库雷同（AI 时代雷同≈不被引用）",
+            "压缩格式: WebP/AVIF + Lazy Loading，单图≤200KB"
+          ]
+        },
+        {
+          "label": "图片与 GEO / AI 引用",
+          "items": [
+            "原创图是 AI 引用护城河：图库雷同内容 AI 不引",
+            "描述性 alt 提升图片搜索流量 + 辅助页面主题实体信号",
+            "案例: ink-flows wave 页 3 张 AI 实景手臂纹身图（描述性名+独立alt+ImageObject）"
+          ]
+        }
+      ],
+      "subskills": []
+    },
+    {
+      "id": "seo-authority",
+      "title": "数字公关与权威分发",
+      "icon": "Megaphone",
+      "color": "orange",
+      "summary": "Digital PR · 媒体外联 · 品牌提及 · 可链接资产 · 联盟影响者 · YouTube",
+      "sort_order": 8,
+      "chapters": [
+        {
+          "label": "权威分发渠道（ZAC）",
+          "items": [
+            "Digital PR: 新闻稿/数据报告被媒体引用，获取高权威编辑链接",
+            "媒体外联: 记者/编辑关系维护，HARO 类平台回应",
+            "可链接资产: 原创研究/统计页/免费工具/信息图，让别人主动引",
+            "联盟/影响者: 行业 KOL 合作（纹身领域 tattoodo/inkedmag 等）",
+            "YouTube: 视频内容反链 + 品牌信号"
+          ]
+        },
+        {
+          "label": "品牌提及 → 链接转化",
+          "items": [
+            "Brand Mention Reclamation: 被提到无链接→联系补上",
+            "Perplexity/AI citations 反查: 问 AI 看引用了谁=外链+GEO 目标（HridoyReh hack）",
+            "权威≠外链数: 域名多样性 + 品牌搜索量 + 被 AI 引用次数"
+          ]
+        }
+      ],
+      "subskills": []
+    },
+    {
+      "id": "seo-agent",
+      "title": "AI Agent 与 SEO 自动化",
+      "icon": "Bot",
+      "color": "indigo",
+      "summary": "自建 SEO Agent · vault+doctrine · 私有数据 · 技能编排 · 循环回灌",
+      "sort_order": 9,
+      "chapters": [
+        {
+          "label": "自建 SEO Agent 架构（TimSEO 7 阶段）",
+          "items": [
+            "P1 vault + doctrine: markdown 知识库 + 原则文件（我们=.workbuddy/memory+kb-intake）",
+            "P2 私有数据硬前置: GSC/客服/评价（gsc-auto-reader 待接凭证）",
+            "P3 九个 skills 按 SEO 工作序编排（audit/keyword/content/link/tech...）",
+            "P4 走出默认腔: 品牌语气（SOUL.md + humanizer-zh）",
+            "P5/P6 工作流串联 + 自动循环: 吸收→应用→验证→回灌"
+          ]
+        },
+        {
+          "label": "双循环工作法（ink-flows 实践）",
+          "items": [
+            "吸收循环: 每条新知入 KB 先核对维度（缺→补/已有→深化）",
+            "应用循环: 以最新 KB 为标尺逐站审计→出整改单→落地→回灌",
+            "标准=知识库自身，单一真相源，不另建独立标准文件"
+          ]
+        },
+        {
+          "label": "可复用技能（本仓已装）",
+          "items": [
+            "seo-audit / seo-gsc-analyzer / seo-content-writing / seo-link-building / gsc-auto-reader",
+            "humanizer-zh（去 AI 痕迹）/ blog-seo-writer（ink-flows 内容生产）"
+          ]
+        }
+      ],
+      "subskills": []
     }
   ],
   "skills": [
@@ -1750,6 +1844,30 @@
       "trigger": "\"分析GSC\"",
       "section": "workflow",
       "sort_order": 25
+    },
+    {
+      "id": "seo-image-optimizer",
+      "name": "图片 SEO 优化",
+      "description": "描述性文件名+独立alt+ImageObject Schema+原创图+压缩，批量审计整改",
+      "trigger": "\"优化图片SEO\"",
+      "section": "images",
+      "sort_order": 26
+    },
+    {
+      "id": "seo-digital-pr",
+      "name": "数字公关与权威分发",
+      "description": "Digital PR/媒体外联/可链接资产/品牌提及转化，抬升域名权威与 GEO 可见性",
+      "trigger": "\"做数字公关\"",
+      "section": "authority",
+      "sort_order": 27
+    },
+    {
+      "id": "seo-agent-builder",
+      "name": "SEO Agent 搭建与编排",
+      "description": "用 vault+doctrine+私有数据+技能编排+循环，搭可自运转的 SEO Agent 系统",
+      "trigger": "\"搭SEO Agent\"",
+      "section": "agent",
+      "sort_order": 28
     }
   ],
   "subsystems": [
@@ -1927,13 +2045,34 @@
       "skillId": "seo-gsc-analyzer",
       "phase": "workflow",
       "sort_order": 25
+    },
+    {
+      "key": "image-seo",
+      "label": "图片SEO",
+      "skillId": "seo-image-optimizer",
+      "phase": "images",
+      "sort_order": 26
+    },
+    {
+      "key": "digital-pr",
+      "label": "数字公关",
+      "skillId": "seo-digital-pr",
+      "phase": "authority",
+      "sort_order": 27
+    },
+    {
+      "key": "agent-automation",
+      "label": "SEO Agent自动化",
+      "skillId": "seo-agent-builder",
+      "phase": "agent",
+      "sort_order": 28
     }
   ],
   "projects": [
     {
       "id": "ink-flows.com",
       "name": "InkFlow Marketing",
-      "site_type": "SaaS",
+      "site_type": "Content",
       "status": {
         "site-audit": "done",
         "competitor-gap": "done",
@@ -1953,7 +2092,10 @@
         "launch": "blocked",
         "gsc": "not-started",
         "backlink": "not-started",
-        "outreach": "not-started"
+        "outreach": "not-started",
+        "image-seo": "doing",
+        "digital-pr": "not-started",
+        "agent-automation": "doing"
       }
     }
   ]
