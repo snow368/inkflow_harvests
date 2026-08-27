@@ -195,7 +195,7 @@ function AccountSetupSection({ onViewLog }: { onViewLog?: (id: string) => void }
   const handleIgPause = async () => {
     setPauseBusy(true);
     try {
-      const res = await fetch('/api/bot/worker/pause', {
+      const res = await apiFetch('/api/bot/worker/pause', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ functionId: 'ig_outreach', botId: 'bot_ig_01' }),
@@ -215,7 +215,7 @@ function AccountSetupSection({ onViewLog }: { onViewLog?: (id: string) => void }
   const handleIgResume = async () => {
     setPauseBusy(true);
     try {
-      const res = await fetch('/api/bot/worker/resume', {
+      const res = await apiFetch('/api/bot/worker/resume', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ functionId: 'ig_outreach', botId: 'bot_ig_01' }),
@@ -265,10 +265,26 @@ function AccountSetupSection({ onViewLog }: { onViewLog?: (id: string) => void }
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
       className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6">
-      <div className="flex items-center gap-3 mb-5">
-        <User className="w-5 h-5 text-rose-500" />
-        <h4 className="font-black text-sm text-white">Bot 账号管理</h4>
-        <span className="text-[10px] font-bold text-zinc-500">{accounts.length} 个账号</span>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+        <div className="flex items-center gap-3">
+          <User className="w-5 h-5 text-rose-500" />
+          <h4 className="font-black text-sm text-white">Bot 账号管理</h4>
+          <span className="text-[10px] font-bold text-zinc-500">{accounts.length} 个账号</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {pausedSet.has('ig_outreach') ? (
+            <button onClick={handleIgResume} disabled={pauseBusy}
+              className="inline-flex items-center gap-1.5 text-[11px] font-black text-green-300 bg-green-500/15 hover:bg-green-500/25 border border-green-500/30 rounded-xl px-3 py-2 disabled:opacity-50">
+              {pauseBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />} 恢复IG
+            </button>
+          ) : (
+            <button onClick={handleIgPause} disabled={pauseBusy}
+              className="inline-flex items-center gap-1.5 text-[11px] font-black text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 rounded-xl px-3 py-2 disabled:opacity-50">
+              {pauseBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Pause className="w-3.5 h-3.5" />} 暂停IG
+            </button>
+          )}
+          <span className="text-[10px] font-bold text-zinc-600">这里暂停 Bot Worker</span>
+        </div>
       </div>
 
       {/* Edit form */}
@@ -1012,7 +1028,7 @@ export default function BotWorkerManager() {
       }
       const env: Record<string, string> = { ...cfg };
       if (extraEnv) Object.assign(env, extraEnv);
-      const res = await fetch('/api/bot/worker/start', {
+      const res = await apiFetch('/api/bot/worker/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ functionId: fn.id, botId, env }),
@@ -1031,7 +1047,7 @@ export default function BotWorkerManager() {
   const handleStop = async (botId: string, functionId?: string) => {
     setStopping(prev => new Set(prev).add(botId));
     try {
-      const res = await fetch('/api/bot/worker/stop', {
+      const res = await apiFetch('/api/bot/worker/stop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ functionId: functionId || botId }),
@@ -1052,7 +1068,7 @@ export default function BotWorkerManager() {
   const handlePause = async (botId: string, functionId?: string) => {
     setPauseBusy(prev => new Set(prev).add(botId));
     try {
-      const res = await fetch('/api/bot/worker/pause', {
+      const res = await apiFetch('/api/bot/worker/pause', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ functionId: functionId || botId, botId }),
@@ -1072,7 +1088,7 @@ export default function BotWorkerManager() {
   const handleResume = async (botId: string, functionId?: string) => {
     setPauseBusy(prev => new Set(prev).add(botId));
     try {
-      const res = await fetch('/api/bot/worker/resume', {
+      const res = await apiFetch('/api/bot/worker/resume', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ functionId: functionId || botId, botId }),
