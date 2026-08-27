@@ -48,8 +48,9 @@ import BotWorkerManager from './components/BotWorkerManager';
 import BacklinkManager from './components/BacklinkManager';
 import InkFlowOutreach from './components/InkFlowOutreach';
 import EmailAuthForm from './components/EmailAuthForm';
+import CommentDrafts from './components/CommentDrafts';
 
-type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'automation' | 'settings' | 'inventory' | 'orders' | 'tasks' | 'publish' | 'botworkers' | 'backlinks' | 'inkflow-outreach';
+type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'automation' | 'settings' | 'inventory' | 'orders' | 'tasks' | 'publish' | 'botworkers' | 'comment-drafts' | 'backlinks' | 'inkflow-outreach';
 
 const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (tab: Tab) => void }) => {
   const { artists, user, logout } = useCRM();
@@ -74,6 +75,7 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (t
     { id: 'automation' as Tab, label: 'Automation', icon: Zap },
     { id: 'publish' as Tab, label: 'Publish Calendar', icon: Calendar },
     { id: 'botworkers' as Tab, label: 'Bot Workers', icon: Bot },
+    { id: 'comment-drafts' as Tab, label: '生成评论', icon: MessageSquare },
     { id: 'backlinks' as Tab, label: 'Backlinks', icon: Database },
     { id: 'settings' as Tab, label: 'Settings', icon: Settings },
     { id: 'inkflow-outreach' as Tab, label: 'InkFlow 获客', icon: Target },
@@ -239,6 +241,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     automation: 'Automation Center',
     publish: 'Publish Calendar',
     botworkers: 'Bot Workers',
+    'comment-drafts': '生成评论审核',
     backlinks: 'Backlink Manager',
     settings: 'Settings',
     'inkflow-outreach': 'InkFlow 获客'
@@ -256,6 +259,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     automation: "AdsPower & Playwright multi-account orchestration command center.",
     publish: "Schedule and publish content across platforms.",
     botworkers: "Manage bot worker instances and configuration.",
+    'comment-drafts': "Review generated Instagram comments before any bot can publish them.",
     backlinks: "Track and manage backlink building campaigns.",
     settings: "Configure API keys and automation safety settings.",
     'inkflow-outreach': "Manage InkFlow outreach campaigns."
@@ -311,6 +315,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
           {activeTab === 'automation' && <><AutomationCommandCenter /><React.Suspense fallback={null}><DataDashboard /></React.Suspense></>}
           {activeTab === 'publish' && <PublishCalendar />}
           {activeTab === 'botworkers' && <BotWorkerManager />}
+          {activeTab === 'comment-drafts' && <CommentDrafts />}
           {activeTab === 'backlinks' && <BacklinkManager />}
           {activeTab === 'settings' && <AutomationSettings />}
           {activeTab === 'inkflow-outreach' && <InkFlowOutreach />}
@@ -322,7 +327,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
 
 export default function App() {
   const getTabFromHash = (): Tab => {
-    const valid: Tab[] = ['dashboard','outreach','analyzer','training','crm','inventory','orders','tasks','automation','publish','botworkers','backlinks','settings','inkflow-outreach'];
+    const valid: Tab[] = ['dashboard','outreach','analyzer','training','crm','inventory','orders','tasks','automation','publish','botworkers','comment-drafts','backlinks','settings','inkflow-outreach'];
     const hash = window.location.hash.replace('#/', '') || 'dashboard';
     return valid.includes(hash as Tab) ? hash as Tab : 'dashboard';
   };

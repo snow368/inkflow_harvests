@@ -28,7 +28,7 @@ import {
   Bot, Play, Square, Loader2, Instagram, ShoppingCart, Search,
   MessageSquare, Zap, Activity, Clock, Settings, Globe, Monitor,
   ChevronDown, ChevronRight, RefreshCw, Cpu, Plus, Trash2,
-  PlayCircle, StopCircle, User, Shield, Wifi,
+  PlayCircle, StopCircle, User, Shield, Wifi, Pause,
   Brain, Target, BarChart3, TrendingUp, MessageCircle, ListTodo,
   ExternalLink, PlusCircle, X
 } from 'lucide-react';
@@ -69,6 +69,7 @@ type BotWorker = {
   pid: number;
   startedAt: number;
   running: boolean;
+  paused?: boolean;
 };
 
 type AccountEntry = {
@@ -135,6 +136,9 @@ const saveAccounts = (accounts: AccountEntry[]) => {
 const STAGES = ['new', 'transition', 'growing', 'stable', 'mature'];
 function AccountSetupSection({ onViewLog }: { onViewLog?: (id: string) => void }) {
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [workers, setWorkers] = useState<BotWorker[]>([]);
+  const [pausedSet, setPausedSet] = useState<Set<string>>(new Set());
+  const [pauseBusy, setPauseBusy] = useState(false);
   const [botId, setBotId] = useState('bot_ig_01');
   const [igHandle, setIgHandle] = useState('');
   const [firstDate, setFirstDate] = useState('');
@@ -172,7 +176,61 @@ function AccountSetupSection({ onViewLog }: { onViewLog?: (id: string) => void }
     } catch {}
   }, []);
 
-  useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+  const fetchWorkers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/bot/workers');
+      const data = await res.json();
+      const list = Array.isArray(data?.workers) ? data.workers : [];
+      setWorkers(list.map((w: any) => ({ ...w, paused: !!(w.meta?.paused || w.paused) })));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    fetchAccounts();
+    fetchWorkers();
+    const interval = setInterval(fetchWorkers, 5000);
+    return () => clearInterval(interval);
+  }, [fetchAccounts, fetchWorkers]);
+
+  const handleIgPause = async () => {
+    setPauseBusy(true);
+    try {
+      const res = await fetch('/api/bot/worker/pause', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ functionId: 'ig_outreach', botId: 'bot_ig_01' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Pause failed');
+      toast.success('IG Outreach 已暂停（进程保持在线）');
+      setPausedSet(prev => new Set(prev).add('ig_outreach'));
+      fetchWorkers();
+    } catch (e: any) {
+      toast.error('暂停 IG Outreach 失败', { description: e.message });
+    } finally {
+      setPauseBusy(false);
+    }
+  };
+
+  const handleIgResume = async () => {
+    setPauseBusy(true);
+    try {
+      const res = await fetch('/api/bot/worker/resume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ functionId: 'ig_outreach', botId: 'bot_ig_01' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Resume failed');
+      toast.success('IG Outreach 已恢复');
+      setPausedSet(prev => { const next = new Set(prev); next.delete('ig_outreach'); return next; });
+      fetchWorkers();
+    } catch (e: any) {
+      toast.error('恢复 IG Outreach 失败', { description: e.message });
+    } finally {
+      setPauseBusy(false);
+    }
+  };
 
   const calcStage = (days: number) =>
     days < 7 ? 'new' : days < 14 ? 'transition' : days < 30 ? 'growing' : days < 60 ? 'stable' : 'mature';
@@ -261,6 +319,8 @@ function AccountSetupSection({ onViewLog }: { onViewLog?: (id: string) => void }
               <td className="pb-2 pr-3">天数</td>
               <td className="pb-2 pr-3">阶段</td>
               <td className="pb-2 pr-3">日限额</td>
+              <td className="pb-2 pr-3">运行</td>
+              <td className="pb-2 pr-3">操作</td>
             </tr>
           </thead>
           <tbody>
@@ -270,6 +330,8 @@ function AccountSetupSection({ onViewLog }: { onViewLog?: (id: string) => void }
               const autoLimit = calcLimit(days);
               const stage = a.stage || autoStage;
               const limit = autoLimit; // 永远按天数自动算，覆盖看 bot_accounts.daily_task_limit
+              const worker = workers.find(w => w.functionId === 'ig_outreach' && w.running);
+              const paused = !!worker?.paused || pausedSet.has('ig_outreach');
               return (
                 <tr key={a.accountId} className="border-t border-zinc-800/50 text-zinc-300 font-medium group">
                   <td className="py-2 pr-3">{a.accountId}</td>
@@ -287,7 +349,27 @@ function AccountSetupSection({ onViewLog }: { onViewLog?: (id: string) => void }
                       : 'bg-rose-500/10 text-rose-400')}>{stage}</span>
                   </td>
                   <td className="py-2 pr-3">{limit}/天</td>
-                  <td className="py-2 pr-3 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                  <td className="py-2 pr-3">
+                    <span className={cn("inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full",
+                      paused ? 'bg-amber-500/10 text-amber-400'
+                      : worker ? 'bg-green-500/10 text-green-400'
+                      : 'bg-zinc-800 text-zinc-500')}>
+                      <span className={cn("w-1.5 h-1.5 rounded-full", paused ? 'bg-amber-400' : worker ? 'bg-green-400' : 'bg-zinc-600')} />
+                      {paused ? '已暂停' : worker ? '运行中' : '未识别'}
+                    </span>
+                  </td>
+                  <td className="py-2 pr-3 whitespace-nowrap">
+                    {paused ? (
+                      <button onClick={handleIgResume} disabled={pauseBusy}
+                        className="inline-flex items-center gap-1 text-[10px] font-black text-green-400 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-lg px-2 py-1 mr-2 disabled:opacity-50">
+                        {pauseBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <PlayCircle className="w-3 h-3" />} 恢复IG
+                      </button>
+                    ) : (
+                      <button onClick={handleIgPause} disabled={pauseBusy}
+                        className="inline-flex items-center gap-1 text-[10px] font-black text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-lg px-2 py-1 mr-2 disabled:opacity-50">
+                        {pauseBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Pause className="w-3 h-3" />} 暂停IG
+                      </button>
+                    )}
                     <button onClick={() => onViewLog?.(a.accountId)} className="text-[10px] font-bold text-cyan-500 hover:text-cyan-400 mr-2">历程</button>
                     <button onClick={() => startEdit(a)} className="text-[10px] font-bold text-zinc-500 hover:text-white mr-2">编辑</button>
                     <button onClick={() => handleDelete(a.accountId)} className="text-[10px] font-bold text-red-500 hover:text-red-400">删除</button>
@@ -459,6 +541,152 @@ function BehaviorLogSection({ searchBotId, onSearchDone }: { searchBotId?: strin
           </button>
         </div>
       )}
+    </motion.div>
+  );
+}
+
+function BotDailyStatsSection() {
+  const [stats, setStats] = useState<any>({ bots: [], totals: {}, trend: [] });
+  const [botIds, setBotIds] = useState<string[]>([]);
+  const [selectedBot, setSelectedBot] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  const fetchStats = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ days: '7' });
+      if (selectedBot) params.set('botId', selectedBot);
+      const res = await apiFetch('/api/automation/bot-daily-stats?' + params.toString());
+      const data = await res.json();
+      if (data?.ok) {
+        setStats(data);
+        setBotIds((prev) => Array.from(new Set([
+          ...prev,
+          ...(Array.isArray(data.bots) ? data.bots.map((b: any) => String(b.botId || '')).filter(Boolean) : []),
+          ...(Array.isArray(data.trend) ? data.trend.map((b: any) => String(b.bot_id || '')).filter(Boolean) : []),
+        ])).sort());
+      }
+    } catch {}
+    setLoading(false);
+  }, [selectedBot]);
+
+  useEffect(() => {
+    apiFetch('/api/automation/behavior-bots')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (Array.isArray(data?.bots)) setBotIds(data.bots.map((id: string) => String(id)).filter(Boolean).sort());
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetchStats();
+    const interval = setInterval(fetchStats, 30000);
+    return () => clearInterval(interval);
+  }, [fetchStats]);
+
+  const bots = Array.isArray(stats.bots) ? stats.bots : [];
+  const totals = stats.totals || {};
+  const weakest = ['likeRate', 'followRate', 'commentRate']
+    .map((key) => ({ key, value: Number(totals[key] || 0) }))
+    .filter((x) => Number.isFinite(x.value))
+    .sort((a, b) => a.value - b.value)[0];
+  const weakestLabel: Record<string, string> = {
+    likeRate: '点赞互动最低',
+    followRate: '关注互动最低',
+    commentRate: '评论互动最低',
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+      className="bg-[#111] border border-zinc-800/50 rounded-[2rem] p-6">
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <BarChart3 className="w-5 h-5 text-emerald-500" />
+          <div>
+            <h4 className="font-black text-sm text-white">Bot 每日数据看板</h4>
+            <p className="text-[10px] text-zinc-500 mt-1">按今天 UTC 日志统计 · 每 30 秒自动刷新</p>
+          </div>
+          {weakest && (
+            <span className="text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-full">
+              {weakestLabel[weakest.key]} {weakest.value}%
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            value={selectedBot}
+            onChange={(e) => setSelectedBot(e.target.value)}
+            className="px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-xl text-xs text-zinc-300 font-bold outline-none"
+          >
+            <option value="">全部 Bot</option>
+            {botIds.map((id) => <option key={id} value={id}>{id}</option>)}
+          </select>
+          <button onClick={fetchStats} disabled={loading}
+            className="flex items-center gap-2 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs font-bold rounded-xl transition-colors disabled:opacity-50">
+            <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} /> 刷新
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-5">
+        {[
+          ['完成任务', totals.tasksDone || 0, 'text-emerald-400'],
+          ['失败', totals.tasksFailed || 0, 'text-red-400'],
+          ['点赞', totals.likes || 0, 'text-rose-400'],
+          ['关注', totals.follows || 0, 'text-cyan-400'],
+          ['评论', totals.comments || 0, 'text-purple-400'],
+          ['点赞率', `${totals.likeRate || 0}%`, 'text-amber-400'],
+          ['关注率', `${totals.followRate || 0}%`, 'text-blue-400'],
+          ['点赞成功', `${totals.likeSuccessRate || 0}%`, 'text-green-400'],
+        ].map(([label, value, color]) => (
+          <div key={String(label)} className="p-3 bg-zinc-900/60 border border-zinc-800 rounded-2xl">
+            <p className={cn("text-xl font-black", String(color))}>{value}</p>
+            <p className="text-[10px] text-zinc-500 mt-1 font-bold">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-zinc-600 font-bold text-[10px] uppercase tracking-wider">
+              <td className="pb-2 pr-3">Bot</td>
+              <td className="pb-2 pr-3 text-right">完成</td>
+              <td className="pb-2 pr-3 text-right">失败</td>
+              <td className="pb-2 pr-3 text-right">点赞</td>
+              <td className="pb-2 pr-3 text-right">关注</td>
+              <td className="pb-2 pr-3 text-right">评论</td>
+              <td className="pb-2 pr-3 text-right">点赞尝试</td>
+              <td className="pb-2 pr-3 text-right">点赞率</td>
+              <td className="pb-2 pr-3 text-right">点赞成功</td>
+              <td className="pb-2 pr-3 text-right">评审挡下</td>
+            </tr>
+          </thead>
+          <tbody>
+            {bots.map((row: any) => (
+              <tr key={row.botId} className="border-t border-zinc-800/50 text-zinc-300 font-medium">
+                <td className="py-2 pr-3 font-black text-white">{row.botId}</td>
+                <td className="py-2 pr-3 text-right text-emerald-400">{row.tasksDone}</td>
+                <td className="py-2 pr-3 text-right text-red-400">{row.tasksFailed}</td>
+                <td className="py-2 pr-3 text-right text-rose-400">{row.likes}</td>
+                <td className="py-2 pr-3 text-right text-cyan-400">{row.follows}</td>
+                <td className="py-2 pr-3 text-right text-purple-400">{row.comments}</td>
+                <td className="py-2 pr-3 text-right text-zinc-400">{row.likeReported}/{row.likeAttempted}</td>
+                <td className={cn("py-2 pr-3 text-right", row.likeRate < 50 ? "text-amber-400 font-black" : "text-zinc-300")}>{row.likeRate}%</td>
+                <td className={cn("py-2 pr-3 text-right", row.likeSuccessRate < 70 ? "text-amber-400 font-black" : "text-zinc-300")}>{row.likeSuccessRate}%</td>
+                <td className="py-2 pr-3 text-right text-zinc-500">{row.commentBlocked}</td>
+              </tr>
+            ))}
+            {!loading && bots.length === 0 && (
+              <tr><td colSpan={10} className="py-6 text-center text-zinc-600">今天还没有 bot 行为数据</td></tr>
+            )}
+            {loading && bots.length === 0 && (
+              <tr><td colSpan={10} className="py-6 text-center text-zinc-500">加载中...</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </motion.div>
   );
 }
@@ -671,6 +899,8 @@ export default function BotWorkerManager() {
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState<Set<string>>(new Set());
   const [stopping, setStopping] = useState<Set<string>>(new Set());
+  const [pausedSet, setPausedSet] = useState<Set<string>>(new Set());
+  const [pauseBusy, setPauseBusy] = useState<Set<string>>(new Set());
   const [expandedFn, setExpandedFn] = useState<string | null>(null);
   const [configs, setConfigs] = useState<Record<string, Record<string, string>>>({});
   const [accounts, setAccounts] = useState<AccountEntry[]>(() => loadAccounts());
@@ -707,7 +937,7 @@ export default function BotWorkerManager() {
       }
       if (wRes?.ok) {
         const wData = await wRes.json();
-        setWorkers(wData.workers || []);
+        setWorkers((wData.workers || []).map((w: any) => ({ ...w, paused: !!(w.meta && w.meta.paused) })));
       }
       if (learnRes?.ok) {
         const l = await learnRes.json();
@@ -817,6 +1047,48 @@ export default function BotWorkerManager() {
     }
   };
 
+  // ── 暖暂停 / 恢复：写 bot_commands(pause/resume)，VPS listener 写/删本地 flag，
+  //    worker 每个循环读 flag —— Chrome 不退出、进程不重启、秒级恢复。 ──
+  const handlePause = async (botId: string, functionId?: string) => {
+    setPauseBusy(prev => new Set(prev).add(botId));
+    try {
+      const res = await fetch('/api/bot/worker/pause', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ functionId: functionId || botId, botId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Pause failed');
+      toast.success(`${functionId || botId} 已暂停（进程保持在线）`);
+      setPausedSet(prev => new Set(prev).add(botId));
+      fetchData();
+    } catch (e: any) {
+      toast.error(`暂停 ${functionId || botId} 失败`, { description: e.message });
+    } finally {
+      setPauseBusy(prev => { const n = new Set(prev); n.delete(botId); return n; });
+    }
+  };
+
+  const handleResume = async (botId: string, functionId?: string) => {
+    setPauseBusy(prev => new Set(prev).add(botId));
+    try {
+      const res = await fetch('/api/bot/worker/resume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ functionId: functionId || botId, botId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Resume failed');
+      toast.success(`${functionId || botId} 已恢复`);
+      setPausedSet(prev => { const n = new Set(prev); n.delete(botId); return n; });
+      fetchData();
+    } catch (e: any) {
+      toast.error(`恢复 ${functionId || botId} 失败`, { description: e.message });
+    } finally {
+      setPauseBusy(prev => { const n = new Set(prev); n.delete(botId); return n; });
+    }
+  };
+
   // 置顶任务（立即执行）
   const prioritizeTask = async (taskId: string | number) => {
     try {
@@ -905,6 +1177,12 @@ export default function BotWorkerManager() {
     );
   }
 
+  const igFunction = functions.find(fn => fn.id === 'ig_outreach');
+  const igWorker = workers.find(w => w.functionId === 'ig_outreach' && w.running);
+  const igPaused = !!igWorker && (igWorker.paused || pausedSet.has(igWorker.botId));
+  const igBotId = igWorker?.botId || igFunction?.defaultBotId || 'bot_ig_01';
+  const igStartKey = `ig_outreach:${igBotId}`;
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -940,6 +1218,65 @@ export default function BotWorkerManager() {
           </div>
         ))}
       </div>
+
+      {/* Clear top-level IG controls; the detailed cards below still show per-worker controls. */}
+      <div className="bg-rose-500/10 border border-rose-500/30 rounded-[2rem] p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-rose-600/20 border border-rose-500/30 flex items-center justify-center">
+            <Instagram className="w-5 h-5 text-rose-400" />
+          </div>
+          <div>
+            <h4 className="text-sm font-black text-white">IG Outreach 控制台</h4>
+            <p className="text-xs text-zinc-400 mt-1">
+              状态：{igWorker ? (igPaused ? '已暂停' : `运行中 ${uptime(igWorker.startedAt)}`) : '未运行'} · Bot：{igBotId}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {igWorker ? (
+            <>
+              {igPaused ? (
+                <button
+                  disabled={pauseBusy.has(igBotId)}
+                  onClick={() => handleResume(igBotId, 'ig_outreach')}
+                  className="px-4 py-2 rounded-xl text-xs font-black bg-green-600/20 text-green-400 border border-green-500/30 hover:bg-green-600/30 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {pauseBusy.has(igBotId) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
+                  恢复
+                </button>
+              ) : (
+                <button
+                  disabled={pauseBusy.has(igBotId)}
+                  onClick={() => handlePause(igBotId, 'ig_outreach')}
+                  className="px-4 py-2 rounded-xl text-xs font-black bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {pauseBusy.has(igBotId) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Pause className="w-3.5 h-3.5" />}
+                  暂停
+                </button>
+              )}
+              <button
+                disabled={stopping.has(igBotId)}
+                onClick={() => handleStop(igBotId, 'ig_outreach')}
+                className="px-4 py-2 rounded-xl text-xs font-black bg-red-600/20 text-red-400 border border-red-500/30 hover:bg-red-600/30 disabled:opacity-50 flex items-center gap-2"
+              >
+                {stopping.has(igBotId) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Square className="w-3.5 h-3.5" />}
+                停止
+              </button>
+            </>
+          ) : (
+            <button
+              disabled={!igFunction || starting.has(igStartKey)}
+              onClick={() => igFunction && handleStart(igFunction, igBotId)}
+              className="px-5 py-2 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-50 flex items-center gap-2"
+            >
+              {starting.has(igStartKey) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+              开跑 IG
+            </button>
+          )}
+        </div>
+      </div>
+
+      <BotDailyStatsSection />
 
       {/* Bot Accounts */}
       <AccountSetupSection onViewLog={(id) => {
@@ -1255,13 +1592,30 @@ export default function BotWorkerManager() {
                   </motion.div>
                 )}
 
-                {/* Single-instance: Start/Stop button */}
+                {/* Single-instance: Start / Pause-Resume / Stop */}
                 {!fn.multiAccount && (
                   <div className="flex gap-2">
                     {runningCount > 0 ? (
-                      <button disabled={stopping.has(fn.id)} onClick={() => { const w = workers.find(w => w.functionId === fn.id && w.running); if (w) handleStop(w.botId, fn.id); }} className={cn("flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2", "bg-red-600/20 text-red-500 border border-red-500/30 hover:bg-red-600/30")}>
-                        {stopping.has(fn.id) ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Stopping...</> : <><Square className="w-3.5 h-3.5" /> Stop</>}
-                      </button>
+                      (() => {
+                        const sw = workers.find(w => w.functionId === fn.id && w.running);
+                        const sp = !!sw && (sw.paused || pausedSet.has(sw.botId));
+                        return (
+                          <>
+                            {sp ? (
+                              <button disabled={pauseBusy.has(fn.id)} onClick={() => handleResume(fn.defaultBotId || fn.id, fn.id)} className={cn("flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2", "bg-green-600/20 text-green-500 border border-green-500/30 hover:bg-green-600/30")}>
+                                {pauseBusy.has(fn.id) ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Resuming...</> : <><PlayCircle className="w-3.5 h-3.5" /> Resume</>}
+                              </button>
+                            ) : (
+                              <button disabled={pauseBusy.has(fn.id)} onClick={() => handlePause(fn.defaultBotId || fn.id, fn.id)} className={cn("flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2", "bg-amber-500/20 text-amber-500 border border-amber-500/30 hover:bg-amber-500/30")}>
+                                {pauseBusy.has(fn.id) ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Pausing...</> : <><Pause className="w-3.5 h-3.5" /> Pause</>}
+                              </button>
+                            )}
+                            <button disabled={stopping.has(fn.id)} onClick={() => { if (sw) handleStop(sw.botId, fn.id); }} className={cn("flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2", "bg-red-600/20 text-red-500 border border-red-500/30 hover:bg-red-600/30")}>
+                              {stopping.has(fn.id) ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Stopping...</> : <><Square className="w-3.5 h-3.5" /> Stop</>}
+                            </button>
+                          </>
+                        );
+                      })()
                     ) : (
                       <button disabled={starting.has(`${fn.id}:${fn.defaultBotId || fn.id}`)} onClick={() => handleStart(fn, fn.defaultBotId || fn.id)} className={cn("flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2", c.btn, "text-white")}>
                         {starting.has(`${fn.id}:${fn.defaultBotId || fn.id}`) ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Starting...</> : <><Play className="w-3.5 h-3.5 fill-current" /> Start</>}
@@ -1379,21 +1733,41 @@ export default function BotWorkerManager() {
                                     </span>
                                   )}
 
-                                  {/* Start / Stop */}
-                                  <button
-                                    disabled={isStarting || isStopping}
-                                    onClick={() => running ? handleStop(acc.botId, fn.id) : handleStart(fn, acc.botId, { BOT_EXEC_MODE: acc.execMode, BOT_SPEED_FACTOR: String(acc.speedFactor), ...(acc.proxy ? { BOT_PROXY_SERVER: acc.proxy } : {}), ...configs[fn.id] })}
-                                    className={cn(
-                                      "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 flex-shrink-0",
-                                      running ? "bg-red-600/20 text-red-500 hover:bg-red-600/30" : "bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
+                                  {/* Start / Pause-Resume / Stop + paused badge */}
+                                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                                    {running && (
+                                      (worker?.paused || pausedSet.has(acc.botId)) ? (
+                                        <button disabled={pauseBusy.has(acc.botId)} onClick={() => handleResume(acc.botId, fn.id)}
+                                          className="px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 bg-green-600/20 text-green-500 hover:bg-green-600/30">
+                                          {pauseBusy.has(acc.botId) ? <Loader2 className="w-3 h-3 animate-spin" /> : <PlayCircle className="w-3 h-3" />} Resume
+                                        </button>
+                                      ) : (
+                                        <button disabled={pauseBusy.has(acc.botId)} onClick={() => handlePause(acc.botId, fn.id)}
+                                          className="px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 bg-amber-500/20 text-amber-500 hover:bg-amber-500/30">
+                                          {pauseBusy.has(acc.botId) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Pause className="w-3 h-3" />} Pause
+                                        </button>
+                                      )
                                     )}
-                                  >
-                                    {isStarting ? <Loader2 className="w-3 h-3 animate-spin" />
-                                      : isStopping ? <Loader2 className="w-3 h-3 animate-spin" />
-                                      : running ? <Square className="w-3 h-3" />
-                                      : <Play className="w-3 h-3 fill-current" />}
-                                    {isStarting ? '' : isStopping ? '' : running ? 'Stop' : 'Start'}
-                                  </button>
+                                    <button
+                                      disabled={isStarting || isStopping}
+                                      onClick={() => running ? handleStop(acc.botId, fn.id) : handleStart(fn, acc.botId, { BOT_EXEC_MODE: acc.execMode, BOT_SPEED_FACTOR: String(acc.speedFactor), ...(acc.proxy ? { BOT_PROXY_SERVER: acc.proxy } : {}), ...configs[fn.id] })}
+                                      className={cn(
+                                        "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1",
+                                        running ? "bg-red-600/20 text-red-500 hover:bg-red-600/30" : "bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
+                                      )}
+                                    >
+                                      {isStarting ? <Loader2 className="w-3 h-3 animate-spin" />
+                                        : isStopping ? <Loader2 className="w-3 h-3 animate-spin" />
+                                        : running ? <Square className="w-3 h-3" />
+                                        : <Play className="w-3 h-3 fill-current" />}
+                                      {isStarting ? '' : isStopping ? '' : running ? 'Stop' : 'Start'}
+                                    </button>
+                                    {running && (worker?.paused || pausedSet.has(acc.botId)) && (
+                                      <span className="flex items-center gap-1 text-[9px] font-bold text-amber-400">
+                                        <Pause className="w-3 h-3" />已暂停
+                                      </span>
+                                    )}
+                                  </div>
 
                                   {/* Remove */}
                                   <button onClick={() => removeAccount(acc.botId)} disabled={running} className="p-1.5 rounded-lg text-zinc-600 hover:text-red-500 hover:bg-red-500/10 disabled:opacity-30 transition-colors">

@@ -63,9 +63,13 @@ async function ensureD1Tables(db: D1Database): Promise<void> {
         full_name TEXT, address TEXT, profile_pic TEXT, conversion_score REAL, country TEXT
       )`).run().catch(() => {});
       // 幂等补列：stage(接触阶段, bot 回写) / last_updated(最近接触时间) / location / username / social_signals
+      // 归属账号：每张抓取数据必须标明属于哪个系统账号(A 纹身 / B 衣服...)，防止多号数据混在一起。
+      // 带 DEFAULT 的 ADD COLUMN 会把存量行自动回填为默认号，避免"无主"数据。
+      await db.prepare(`ALTER TABLE artists ADD COLUMN owner_account TEXT DEFAULT 'raiha8833'`).run().catch(() => {});
       for (const col of ['stage TEXT', 'last_updated INTEGER', 'location TEXT', 'username TEXT', 'full_name TEXT', 'social_signals TEXT']) {
         await db.prepare(`ALTER TABLE artists ADD COLUMN ${col}`).run().catch(() => {});
       }
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_artists_owner_account ON artists(owner_account)`).run().catch(() => {});
       await db.prepare(`CREATE INDEX IF NOT EXISTS idx_artists_ig_handle ON artists(ig_handle)`).run().catch(() => {});
       await db.prepare(`CREATE INDEX IF NOT EXISTS idx_artists_shop_name ON artists(shop_name)`).run().catch(() => {});
 
@@ -128,6 +132,7 @@ const ensureBehaviorLogsTable = (db: any): Promise<void> => {
 type Bindings = {
   DB: D1Database
   NEON_DATABASE_URL: string
+  BOT_API_TOKEN?: string
   FIREBASE_PROJECT_ID?: string
   FIREBASE_API_KEY?: string
 }
@@ -168,6 +173,7 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/bot-account',
   '/api/automation/bot-account/delete',
   '/api/automation/behavior-logs',
+  '/api/automation/bot-daily-stats',
   '/api/automation/bot-config',
   '/api/bot/register',
   '/api/bot/heartbeat',
@@ -195,10 +201,9 @@ const PUBLIC_PATHS = new Set([
   '/api/bot/functions',
   '/api/bot/workers',
   '/api/bot/learn/status',
-  '/api/bot/worker/start',
-  '/api/bot/worker/stop',
   '/api/bot/commands',
   '/api/bot/commands/report',
+  '/api/bot/control/heartbeat',
   '/api/tasks/create',
   '/api/tasks/count',
   '/api/amazon/pending',
@@ -269,7 +274,12 @@ const PUBLIC_PATHS = new Set([
   // 用户 bot 动作偏好（点赞/评论/关注次数）：前台保存/读取，ig-scheduler 生成任务时读取
   '/api/automation/bot-prefs',
   // 互动漏斗只读聚合：bot token 校验（checkBotToken），供实验/监控测量 like->follow->follow_back->dm
-  '/api/automation/funnel'
+  '/api/automation/funnel',
+  // 评论语料库（2026-08-21）：bot 上报用 bot-token（ingest handler 校验）；
+  // 前台读/审核接口 handler 内部 requireTab('inkflow-outreach') 门禁，故绕过全局 Firebase 放行。
+  '/api/corpus',
+  // 评论草稿（2026-08-21）：bot 上报生成评论草稿，前台查看/审核，鉴权同 corpus。
+  '/api/drafts'
 ])
 
 app.use('/api/*', async (c, next) => {
@@ -2125,6 +2135,16 @@ app.post('/api/maps-scrape/jobs', async (c) => {
   let citiesArr: string[] = [];
   if (Array.isArray(body.cities)) citiesArr = body.cities.map((x: any) => String(x).trim()).filter(Boolean);
   else if (body.cities) citiesArr = String(body.cities).split(',').map((x: string) => x.trim()).filter(Boolean);
+  const existing = await c.env.DB.prepare('SELECT * FROM maps_scrape_jobs WHERE country = ? AND state = ?')
+    .bind(country, state).first() as any;
+  // Re-queueing an existing state is a resume by default. A destructive reset
+  // must be explicit so UI retries cannot silently erase city progress/counts.
+  if (existing && body.reset !== true) {
+    await c.env.DB.prepare(`UPDATE maps_scrape_jobs SET status='pending', error_text=NULL, updated_at=? WHERE id=?`)
+      .bind(now, existing.id).run();
+    const resumed = await c.env.DB.prepare('SELECT * FROM maps_scrape_jobs WHERE id=?').bind(existing.id).first();
+    return c.json({ ok: true, job: resumed, resumed: true });
+  }
   await c.env.DB.prepare(`
     INSERT INTO maps_scrape_jobs (country, state, cities, status, cities_total, cities_done, artists_found, error_text, created_by, created_at, updated_at)
     VALUES (?, ?, ?, 'pending', ?, 0, 0, NULL, ?, ?, ?)
@@ -2740,40 +2760,36 @@ app.get('/api/automation/dashboard', async (c) => {
   });
 });
 
-// Frontend DataDashboard: task counts summary (Neon tasks + D1 daily stats)
+// Current task queue counts. When state is supplied, only tasks whose payload
+// belongs to that state are counted. Historical daily totals are intentionally
+// not mixed in: doing so made the live queue look much larger than it was.
 app.get('/api/automation/task-counts', async (c) => {
-  let counts: Record<string, number> = { pending: 0, leased: 0, done: 0, failed: 0 };
-  // D1 daily_task_stats (historical sync from VPS)
+  const counts: Record<string, number> = { pending: 0, leased: 0, done: 0, failed: 0 };
+  const state = String(c.req.query('state') || '').trim().toUpperCase();
   try {
-    const stats = await c.env.DB.prepare(
-      `SELECT status, SUM(cnt) as total FROM daily_task_stats GROUP BY status`
-    ).all();
-    for (const r of (stats.results || []) as any) {
-      const total = Number(r.total || 0);
-      if (r.status === 'pending') counts.pending += total;
-      else if (r.status === 'leased' || r.status === 'running') counts.leased += total;
-      else if (r.status === 'done') counts.done += total;
-      else if (r.status === 'failed') counts.failed += total;
+    await ensureD1Tables(c.env.DB);
+    const where = state
+      ? `WHERE UPPER(COALESCE(
+          json_extract(payload, '$.state'),
+          json_extract(payload, '$.artistState'),
+          (SELECT COALESCE(a.import_region, a.state) FROM artists a
+           WHERE LOWER(a.ig_handle) = LOWER(json_extract(automation_tasks.payload, '$.artistHandle')) LIMIT 1),
+          ''
+        )) = ?`
+      : '';
+    const query = `SELECT status, COUNT(*) AS cnt FROM automation_tasks ${where} GROUP BY status`;
+    const rows = state
+      ? await c.env.DB.prepare(query).bind(state).all()
+      : await c.env.DB.prepare(query).all();
+    for (const r of (rows.results || []) as any) {
+      const count = Number(r.cnt || 0);
+      if (r.status === 'pending') counts.pending += count;
+      else if (r.status === 'leased' || r.status === 'running') counts.leased += count;
+      else if (r.status === 'done') counts.done += count;
+      else if (r.status === 'failed' || r.status === 'error') counts.failed += count;
     }
   } catch {}
-  // 历史数据现取自 D1 daily_task_stats（原 VPS :3000 已于 2026-06 迁云废弃，不再回源）
-  // Neon automation_tasks (use neon WebSQL, not HTTP API)
-  try {
-    const connStr = c.env.NEON_DATABASE_URL;
-    if (connStr) {
-      const sql = d1Sql(c.env.DB);
-      const rows = await sql`SELECT status, COUNT(*)::int as cnt FROM automation_tasks GROUP BY status`;
-      const results = rows?.rows || (Array.isArray(rows) ? rows : []);
-      for (const r of results) {
-        const cnt = Number(r.cnt || 0);
-        if (r.status === 'pending') counts.pending += cnt;
-        else if (r.status === 'leased' || r.status === 'running') counts.leased += cnt;
-        else if (r.status === 'done') counts.done += cnt;
-        else if (r.status === 'failed') counts.failed += cnt;
-      }
-    }
-  } catch {}
-  return c.json({ ok: true, counts });
+  return c.json({ ok: true, counts, state: state || null, source: 'automation_tasks' });
 });
 
 // Debug: check VPS + Neon + D1 raw data
@@ -2847,6 +2863,89 @@ app.get('/api/automation/behavior-logs', async (c) => {
   }
 });
 
+app.get('/api/automation/bot-daily-stats', async (c) => {
+  const date = c.req.query('date') || new Date().toISOString().slice(0, 10);
+  const days = Math.min(30, Math.max(1, Number(c.req.query('days')) || 7));
+  const botId = String(c.req.query('botId') || '').trim();
+  try {
+    await ensureBehaviorLogsTable(c.env.DB);
+    const botWhere = botId ? ' AND bot_id = ?' : '';
+    const botParams = botId ? [botId] : [];
+    const dayRows = await c.env.DB.prepare(`
+      SELECT
+        bot_id,
+        SUM(CASE WHEN event = 'task_done' THEN 1 ELSE 0 END) AS tasks_done,
+        SUM(CASE WHEN event = 'task_failed' THEN 1 ELSE 0 END) AS tasks_failed,
+        SUM(CASE WHEN event = 'like_post' THEN 1 ELSE 0 END) AS likes,
+        SUM(CASE WHEN event = 'follow_done' THEN 1 ELSE 0 END) AS follows,
+        SUM(CASE WHEN event = 'comment_posted' THEN 1 ELSE 0 END) AS comments,
+        SUM(CASE WHEN event = 'comment_review_queued' THEN 1 ELSE 0 END) AS comment_candidates,
+        SUM(CASE WHEN event IN ('comment_vision_blocked','comment_grounding_blocked','comment_capture_blocked','comment_post_failed') THEN 1 ELSE 0 END) AS comment_blocked,
+        SUM(CASE WHEN event = 'like_session_done' THEN CAST(COALESCE(json_extract(data, '$.attempted'), 0) AS INTEGER) ELSE 0 END) AS like_attempted,
+        SUM(CASE WHEN event = 'like_session_done' THEN CAST(COALESCE(json_extract(data, '$.liked'), 0) AS INTEGER) ELSE 0 END) AS like_reported
+      FROM bot_behavior_logs
+      WHERE substr(ts, 1, 10) = ?${botWhere}
+      GROUP BY bot_id
+      ORDER BY bot_id
+    `).bind(date, ...botParams).all();
+
+    const trendRows = await c.env.DB.prepare(`
+      SELECT
+        substr(ts, 1, 10) AS day,
+        bot_id,
+        SUM(CASE WHEN event = 'task_done' THEN 1 ELSE 0 END) AS tasks_done,
+        SUM(CASE WHEN event = 'task_failed' THEN 1 ELSE 0 END) AS tasks_failed,
+        SUM(CASE WHEN event = 'like_post' THEN 1 ELSE 0 END) AS likes,
+        SUM(CASE WHEN event = 'follow_done' THEN 1 ELSE 0 END) AS follows,
+        SUM(CASE WHEN event = 'comment_posted' THEN 1 ELSE 0 END) AS comments
+      FROM bot_behavior_logs
+      WHERE ts >= datetime(?, '-' || ? || ' days')${botWhere}
+      GROUP BY day, bot_id
+      ORDER BY day DESC, bot_id
+    `).bind(`${date}T23:59:59Z`, days - 1, ...botParams).all();
+
+    const bots = (dayRows.results || []).map((row: any) => {
+      const tasksDone = Number(row.tasks_done || 0);
+      const likes = Number(row.likes || 0);
+      const follows = Number(row.follows || 0);
+      const comments = Number(row.comments || 0);
+      const likeAttempted = Number(row.like_attempted || 0);
+      const likeReported = Number(row.like_reported || 0);
+      return {
+        botId: row.bot_id,
+        tasksDone,
+        tasksFailed: Number(row.tasks_failed || 0),
+        likes,
+        follows,
+        comments,
+        commentCandidates: Number(row.comment_candidates || 0),
+        commentBlocked: Number(row.comment_blocked || 0),
+        likeAttempted,
+        likeReported,
+        likeRate: tasksDone ? Math.round((likes / tasksDone) * 100) : 0,
+        followRate: tasksDone ? Math.round((follows / tasksDone) * 100) : 0,
+        commentRate: tasksDone ? Math.round((comments / tasksDone) * 100) : 0,
+        likeSuccessRate: likeAttempted ? Math.round((likeReported / likeAttempted) * 100) : 0,
+      };
+    });
+
+    const totals = bots.reduce((acc: any, row: any) => {
+      for (const key of ['tasksDone','tasksFailed','likes','follows','comments','commentCandidates','commentBlocked','likeAttempted','likeReported']) {
+        acc[key] = Number(acc[key] || 0) + Number(row[key] || 0);
+      }
+      return acc;
+    }, {});
+    totals.likeRate = totals.tasksDone ? Math.round((totals.likes / totals.tasksDone) * 100) : 0;
+    totals.followRate = totals.tasksDone ? Math.round((totals.follows / totals.tasksDone) * 100) : 0;
+    totals.commentRate = totals.tasksDone ? Math.round((totals.comments / totals.tasksDone) * 100) : 0;
+    totals.likeSuccessRate = totals.likeAttempted ? Math.round((totals.likeReported / totals.likeAttempted) * 100) : 0;
+
+    return c.json({ ok: true, date, days, botId: botId || null, bots, totals, trend: trendRows.results || [] });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e), bots: [], totals: {}, trend: [] }, 500);
+  }
+});
+
 // Return unique bot IDs for frontend dropdown
 app.get('/api/automation/behavior-bots', async (c) => {
   try {
@@ -2882,13 +2981,13 @@ app.post('/api/bot/register', async (c) => {
 
 app.post('/api/bot/heartbeat', async (c) => {
   if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
-  const { botId, host, version } = await c.req.json();
+  const { botId, host, version, meta } = await c.req.json();
   if (!botId) return c.json({ error: 'botId required' }, 400);
   const now = Date.now();
-  await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,host,version,status,registered_at,last_heartbeat)
-    VALUES (?,?,?,'online',?,?) ON CONFLICT(bot_id) DO UPDATE SET
-    status='online', last_heartbeat=excluded.last_heartbeat, host=excluded.host, version=excluded.version
-  `).bind(botId, host||'', version||'', now, now).run();
+  await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,host,version,status,registered_at,last_heartbeat,meta)
+    VALUES (?,?,?,'online',?,?,?) ON CONFLICT(bot_id) DO UPDATE SET
+    status='online', last_heartbeat=excluded.last_heartbeat, host=excluded.host, version=excluded.version, meta=excluded.meta
+  `).bind(botId, host||'', version||'', now, now, meta ? JSON.stringify(meta) : null).run();
   return c.json({ ok: true, botId, ts: now });
 });
 
@@ -3075,10 +3174,14 @@ app.get('/api/bot/learn/status', async (c) => {
   }
 });
 
-// ── Bot control plane (B layer): frontend → cloud-api → VPS pm2 ──────────
-// Map a frontend functionId to the pm2 process name on the VPS.
+// ── Host-aware process control plane ─────────────────────────────────────
+// Commands are addressed to one listener host. This prevents a VPS listener
+// from accidentally claiming a command intended for the local headed browser.
 const FUNCTION_TO_PM2: Record<string, string> = {
   ig_outreach: 'bot-worker',
+  ig_scheduler: 'ig-scheduler',
+  maps_scraper: 'maps-scrape-scheduler',
+  maps_bridge: 'maps-d1-bridge',
   competitor_ig: 'competitor-ig-monitor',
   supply_analysis: 'backlink-worker',
   reddit_intel: 'backlink-worker',
@@ -3086,45 +3189,78 @@ const FUNCTION_TO_PM2: Record<string, string> = {
   general_intel: 'general-intel',
 };
 
+const DEFAULT_FUNCTION_HOST: Record<string, string> = {
+  maps_scraper: 'local-windows',
+  maps_bridge: 'vps-windows',
+  ig_scheduler: 'vps-windows',
+  ig_outreach: 'vps-windows',
+};
+
+type ControlAction = 'start' | 'stop' | 'pause' | 'resume' | 'restart';
+
+async function enqueueProcessCommand(c: any, action: ControlAction, suppliedBody?: any) {
+  await ensureBotTables(c.env.DB);
+  const body = suppliedBody ?? await c.req.json().catch(() => ({}));
+  const functionId = String(body.functionId || body.botId || '').trim();
+  if (!functionId) return c.json({ ok: false, error: 'functionId required' }, 400);
+  if (!FUNCTION_TO_PM2[functionId]) {
+    return c.json({ ok: false, error: `no runnable process for function ${functionId}` }, 400);
+  }
+  const targetHost = String(body.targetHost || DEFAULT_FUNCTION_HOST[functionId] || '').trim();
+  if (!targetHost) return c.json({ ok: false, error: 'targetHost required' }, 400);
+  const id = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const now = Date.now();
+  const envJson = body.env ? JSON.stringify(body.env) : null;
+  await c.env.DB.prepare(
+    `INSERT INTO bot_commands (id, function_id, action, status, env, target_host, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?)`
+  ).bind(id, functionId, action, 'pending', envJson, targetHost, now, now).run();
+  return c.json({
+    ok: true,
+    commandId: id,
+    functionId,
+    action,
+    targetHost,
+    pm2: FUNCTION_TO_PM2[functionId],
+    status: 'pending',
+  });
+}
+
 // Enqueue a start command for a function.
 app.post('/api/bot/worker/start', async (c) => {
-  try {
-    await ensureBotTables(c.env.DB);
-    const body = await c.req.json().catch(() => ({}));
-    const functionId = body.functionId || body.botId;
-    if (!functionId) return c.json({ ok: false, error: 'functionId required' }, 400);
-    if (!FUNCTION_TO_PM2[functionId]) {
-      return c.json({ ok: false, error: `no runnable process for function ${functionId}` }, 400);
-    }
-    const id = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const now = Date.now();
-    const envJson = body.env ? JSON.stringify(body.env) : null;
-    await c.env.DB.prepare(
-      `INSERT INTO bot_commands (id, function_id, action, status, env, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`
-    ).bind(id, functionId, 'start', 'pending', envJson, now, now).run();
-    return c.json({ ok: true, commandId: id, functionId, pm2: FUNCTION_TO_PM2[functionId] });
-  } catch (e: any) {
-    return c.json({ ok: false, error: String(e?.message || e) }, 500);
-  }
+  try { return await enqueueProcessCommand(c, 'start'); }
+  catch (e: any) { return c.json({ ok: false, error: String(e?.message || e) }, 500); }
 });
 
 // Enqueue a stop command for a function.
 app.post('/api/bot/worker/stop', async (c) => {
+  try { return await enqueueProcessCommand(c, 'stop'); }
+  catch (e: any) { return c.json({ ok: false, error: String(e?.message || e) }, 500); }
+});
+
+// Enqueue a pause command (warm pause): VPS listener writes a local flag file;
+// the worker reads it each loop and skips new actions WITHOUT stopping the
+// process or closing Chrome — second-level recovery, no restart needed.
+app.post('/api/bot/worker/pause', async (c) => {
+  try { return await enqueueProcessCommand(c, 'pause'); }
+  catch (e: any) { return c.json({ ok: false, error: String(e?.message || e) }, 500); }
+});
+
+// Enqueue a resume command: VPS listener removes the local flag; worker resumes
+// on its next loop iteration.
+app.post('/api/bot/worker/resume', async (c) => {
+  try { return await enqueueProcessCommand(c, 'resume'); }
+  catch (e: any) { return c.json({ ok: false, error: String(e?.message || e) }, 500); }
+});
+
+app.post('/api/bot/process/control', async (c) => {
   try {
-    await ensureBotTables(c.env.DB);
     const body = await c.req.json().catch(() => ({}));
-    const functionId = body.functionId || body.botId;
-    if (!functionId) return c.json({ ok: false, error: 'functionId required' }, 400);
-    if (!FUNCTION_TO_PM2[functionId]) {
-      return c.json({ ok: false, error: `no runnable process for function ${functionId}` }, 400);
+    const action = String(body.action || '') as ControlAction;
+    if (!['start', 'stop', 'pause', 'resume', 'restart'].includes(action)) {
+      return c.json({ ok: false, error: 'invalid action' }, 400);
     }
-    const id = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const now = Date.now();
-    const envJson = body.env ? JSON.stringify(body.env) : null;
-    await c.env.DB.prepare(
-      `INSERT INTO bot_commands (id, function_id, action, status, env, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`
-    ).bind(id, functionId, 'stop', 'pending', envJson, now, now).run();
-    return c.json({ ok: true, commandId: id, functionId, pm2: FUNCTION_TO_PM2[functionId] });
+    return await enqueueProcessCommand(c, action, body);
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e) }, 500);
   }
@@ -3138,21 +3274,94 @@ app.get('/api/bot/commands', async (c) => {
     const token = c.req.query('token');
     const expected = c.env.BOT_API_TOKEN || 'vps-bot-secret-2024';
     if (token !== expected) return c.json({ ok: false, error: 'invalid token' }, 401);
+    const hostId = String(c.req.query('hostId') || '').trim();
+    if (!hostId) return c.json({ ok: false, error: 'hostId required' }, 400);
     const rows = await c.env.DB.prepare(
-      `SELECT * FROM bot_commands WHERE status = 'pending' ORDER BY created_at ASC`
-    ).all();
+      `SELECT * FROM bot_commands
+       WHERE status = 'pending' AND (target_host = ? OR (target_host IS NULL AND ? = 'vps-windows'))
+       ORDER BY created_at ASC LIMIT 20`
+    ).bind(hostId, hostId).all();
     const cmds = (rows.results || []).map((r: any) => ({
       id: r.id, functionId: r.function_id, action: r.action,
       pm2: FUNCTION_TO_PM2[r.function_id] || null,
       env: r.env ? (() => { try { return JSON.parse(r.env); } catch { return {}; } })() : {},
     }));
     for (const r of (rows.results || [])) {
-      await c.env.DB.prepare(`UPDATE bot_commands SET status='claimed', claimed_by=?, updated_at=? WHERE id=?`)
-        .bind('listener', Date.now(), r.id).run();
+      await c.env.DB.prepare(`UPDATE bot_commands SET status='claimed', claimed_by=?, updated_at=? WHERE id=? AND status='pending'`)
+        .bind(hostId, Date.now(), r.id).run();
     }
     return c.json({ ok: true, commands: cmds });
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e) }, 500);
+  }
+});
+
+app.post('/api/bot/control/heartbeat', async (c) => {
+  try {
+    await ensureBotTables(c.env.DB);
+    const body = await c.req.json().catch(() => ({}));
+    const token = c.req.query('token') || body.token;
+    const expected = c.env.BOT_API_TOKEN || 'vps-bot-secret-2024';
+    if (token !== expected) return c.json({ ok: false, error: 'invalid token' }, 401);
+    const hostId = String(body.hostId || '').trim();
+    if (!hostId) return c.json({ ok: false, error: 'hostId required' }, 400);
+    const now = Date.now();
+    await c.env.DB.prepare(`
+      INSERT INTO control_agents (host_id, label, status, processes, meta, last_heartbeat)
+      VALUES (?, ?, 'online', ?, ?, ?)
+      ON CONFLICT(host_id) DO UPDATE SET label=excluded.label, status='online',
+        processes=excluded.processes, meta=excluded.meta, last_heartbeat=excluded.last_heartbeat
+    `).bind(
+      hostId,
+      String(body.label || hostId),
+      JSON.stringify(body.processes || {}),
+      JSON.stringify(body.meta || {}),
+      now,
+    ).run();
+    return c.json({ ok: true, hostId, lastHeartbeat: now });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e) }, 500);
+  }
+});
+
+app.get('/api/bot/control/status', async (c) => {
+  try {
+    await ensureBotTables(c.env.DB);
+    const [agentRows, commandRows] = await Promise.all([
+      c.env.DB.prepare(`SELECT host_id, label, status, processes, meta, last_heartbeat FROM control_agents ORDER BY host_id`).all(),
+      c.env.DB.prepare(`SELECT id, function_id, action, target_host, status, claimed_by, error_reason, created_at, updated_at
+        FROM bot_commands ORDER BY created_at DESC LIMIT 30`).all(),
+    ]);
+    const now = Date.now();
+    const agents = (agentRows.results || []).map((row: any) => {
+      let processes: any = {};
+      let meta: any = {};
+      try { processes = JSON.parse(row.processes || '{}'); } catch {}
+      try { meta = JSON.parse(row.meta || '{}'); } catch {}
+      const lastHeartbeat = Number(row.last_heartbeat || 0);
+      return {
+        hostId: row.host_id,
+        label: row.label || row.host_id,
+        online: now - lastHeartbeat < 60_000,
+        lastHeartbeat,
+        processes,
+        meta,
+      };
+    });
+    const commands = (commandRows.results || []).map((row: any) => ({
+      id: row.id,
+      functionId: row.function_id,
+      action: row.action,
+      targetHost: row.target_host,
+      status: row.status,
+      claimedBy: row.claimed_by,
+      error: row.error_reason,
+      createdAt: Number(row.created_at || 0),
+      updatedAt: Number(row.updated_at || 0),
+    }));
+    return c.json({ ok: true, agents, commands });
+  } catch (e: any) {
+    return c.json({ ok: false, agents: [], commands: [], error: String(e?.message || e) }, 500);
   }
 });
 
@@ -3214,6 +3423,11 @@ async function ensureBotTables(db: D1Database) {
     created_at INTEGER, updated_at INTEGER
   )`).run(); } catch {}
   try { await db.prepare(`ALTER TABLE bot_commands ADD COLUMN env TEXT`).run(); } catch {}
+  try { await db.prepare(`ALTER TABLE bot_commands ADD COLUMN target_host TEXT`).run(); } catch {}
+  try { await db.prepare(`CREATE TABLE IF NOT EXISTS control_agents (
+    host_id TEXT PRIMARY KEY, label TEXT, status TEXT DEFAULT 'online',
+    processes TEXT, meta TEXT, last_heartbeat INTEGER
+  )`).run(); } catch {}
 }
 
 app.get('/api/automation/neon-tasks', async (c) => {
@@ -3419,14 +3633,34 @@ app.get('/api/automation/bot-prefs/by-bot', async (c) => {
       follows_per_session INTEGER DEFAULT 0, bot_id TEXT DEFAULT 'bot_ig_01', ig_handle TEXT DEFAULT '',
       updated_at INTEGER
     )`).run().catch(() => {});
-    const row = await c.env.DB.prepare('SELECT * FROM bot_action_prefs WHERE bot_id = ? ORDER BY updated_at DESC LIMIT 1').bind(botId).first() as any;
+    await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_accounts (
+      account_id TEXT PRIMARY KEY, ig_handle TEXT, created_at TEXT, stage TEXT DEFAULT 'new',
+      daily_task_limit INTEGER DEFAULT 5, speed_factor REAL DEFAULT 2.5,
+      first_used_at TEXT, vps_name TEXT, proxy TEXT
+    )`).run().catch(() => {});
+    const row = await c.env.DB.prepare(`
+      SELECT p.*, a.first_used_at, a.stage AS account_stage, a.daily_task_limit, a.speed_factor
+      FROM bot_action_prefs p
+      LEFT JOIN bot_accounts a ON a.account_id = p.bot_id
+      WHERE p.bot_id = ?
+      ORDER BY p.updated_at DESC
+      LIMIT 1
+    `).bind(botId).first() as any;
     if (!row) return c.json({ ok: true, prefs: null });
+    const firstUsedAt = row.first_used_at || null;
+    const firstTs = firstUsedAt ? Date.parse(firstUsedAt) : NaN;
+    const accountAgeDays = Number.isFinite(firstTs) ? Math.max(0, Math.floor((Date.now() - firstTs) / 86400000)) : 0;
     return c.json({ ok: true, prefs: {
       likesPerSession: Number(row.likes_per_session || 0),
       commentsPerSession: Number(row.comments_per_session || 0),
       followsPerSession: Number(row.follows_per_session || 0),
       botId: row.bot_id || 'bot_ig_01',
       igHandle: row.ig_handle || '',
+      accountStage: row.account_stage || 'new',
+      accountAgeDays,
+      dailyTaskLimit: Number(row.daily_task_limit || 0),
+      speedFactor: Number(row.speed_factor || 0),
+      firstUsedAt,
     }});
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e).slice(0, 200) }, 500);
@@ -3915,28 +4149,36 @@ app.get('/api/automation/artists', async (c) => {
   try {
     const state = (c.req.query('state') || '').toUpperCase();
     const search = c.req.query('search') || '';
+    const ownerAccount = (c.req.query('ownerAccount') || '').trim();
     const page = Math.max(1, parseInt(c.req.query('page') || '1'));
     const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '50')));
     const offset = (page - 1) * limit;
+    // 2026-08-22 scheduler 选号：排除 7 天内已有任务的账号（避免造任务被去重跳过）。
+    const excludeRecentlyTasked = c.req.query('excludeRecentlyTasked') === '1';
 
     // Build filter WHERE clause (shared between count + data queries)
     const wheres: string[] = [`ig_handle IS NOT NULL AND ig_handle != ''`];
     if (state) wheres.push(`import_region = '${state.replace(/'/g, "''")}'`);
+    if (ownerAccount) wheres.push(`owner_account = '${ownerAccount.replace(/'/g, "''")}'`);
     if (search) {
       const s = search.replace(/'/g, "''");
       wheres.push(`(LOWER(shop_name) LIKE LOWER('%${s}%') OR LOWER(ig_handle) LIKE LOWER('%${s}%') OR LOWER(city) LIKE LOWER('%${s}%'))`);
     }
     const whereClause = wheres.join(' AND ');
+    // 排除 7 天窗口内已在 automation_tasks 出现过的 handle（与 tasks/inject 去重一致）
+    const dedupJoin = excludeRecentlyTasked
+      ? ` AND LOWER(ig_handle) NOT IN (SELECT LOWER(json_extract(payload, '$.artistHandle')) FROM automation_tasks WHERE created_at > ${Date.now() - 7 * 24 * 60 * 60 * 1000} AND json_extract(payload, '$.artistHandle') IS NOT NULL)`
+      : '';
 
-    // Count: unique ig_handle only
-    const countRows = await d1All(c.env.DB, `SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ${whereClause}) sub`);
+    // Count: unique ig_handle only（dedupJoin 排除 7 天内已跑过的）
+    const countRows = await d1All(c.env.DB, `SELECT COUNT(*) as cnt FROM (SELECT DISTINCT ig_handle FROM artists WHERE ${whereClause}${dedupJoin}) sub`);
     const total = Number(countRows?.[0]?.cnt || 0);
 
     // Data: dedup via GROUP BY, then paginate on deduped rows
-    const cols = `id, shop_name, ig_handle, city, state, import_region, phone, website, rating, followers, reviews, "following", post_count, category`;
+    const cols = `id, shop_name, ig_handle, city, state, import_region, owner_account, phone, website, rating, followers, reviews, "following", post_count, category`;
     const dataRows = await d1All(c.env.DB,
       `SELECT ${cols} FROM artists WHERE id IN (
-        SELECT MIN(id) FROM artists WHERE ${whereClause} GROUP BY ig_handle
+        SELECT MIN(id) FROM artists WHERE ${whereClause}${dedupJoin} GROUP BY ig_handle
         ORDER BY MIN(shop_name) ASC LIMIT ${limit} OFFSET ${offset}
       ) ORDER BY shop_name ASC`
     );
@@ -3944,17 +4186,19 @@ app.get('/api/automation/artists', async (c) => {
 
     // ��???���䨬? ?a �䨮 D1 o�� Neon o?2��
     let taskStatusMap: Record<string, string> = {};
+    let executingIgMap: Record<string, string> = {};
     try {
       const handles = items.map((r: any) => r.ig_handle).filter(Boolean);
       if (handles.length > 0) {
         // D1 (?����y?Y)
         const tasks = await c.env.DB.prepare(
-          `SELECT DISTINCT json_extract(payload, '$.artistHandle') as handle, status FROM automation_tasks
+          `SELECT DISTINCT json_extract(payload, '$.artistHandle') as handle, status, json_extract(payload, '$.targetBotId') as targetBotId FROM automation_tasks
            WHERE json_extract(payload, '$.artistHandle') IN (${handles.map(() => '?').join(',')})
            AND status IN ('pending','leased','done','failed')`
         ).bind(...handles).all();
         for (const t of (tasks.results || []) as any) {
           if (t.handle && !taskStatusMap[t.handle]) taskStatusMap[t.handle] = t.status;
+          if (t.handle && !executingIgMap[t.handle] && t.targetBotId) executingIgMap[t.handle] = t.targetBotId;
         }
         // Neon (D?��y?Y��??2?? D1 ?D1y������? pending ���䨬?)
         try {
@@ -3963,12 +4207,13 @@ app.get('/api/automation/artists', async (c) => {
             const sql = d1Sql(c.env.DB);
             const handleList = handles.map(h => `'${h.replace(/'/g, "''")}'`).join(',');
             const neoRows = await d1All(c.env.DB,
-              `SELECT DISTINCT json_extract(payload, '$.artistHandle') as handle, status FROM automation_tasks
+              `SELECT DISTINCT json_extract(payload, '$.artistHandle') as handle, status, json_extract(payload, '$.targetBotId') as targetBotId FROM automation_tasks
                WHERE json_extract(payload, '$.artistHandle') IN (${handleList})
                AND status IN ('pending','leased','done','failed')`
             );
             for (const r of (neoRows || [])) {
               if (r.handle) taskStatusMap[r.handle] = r.status;
+              if (r.handle && !executingIgMap[r.handle] && (r as any).targetBotId) executingIgMap[r.handle] = (r as any).targetBotId;
             }
           }
         } catch {}
@@ -3977,7 +4222,7 @@ app.get('/api/automation/artists', async (c) => {
 
     return c.json({
       ok: true,
-      items: items.map((r: any) => ({ ...r, taskStatus: taskStatusMap[r.ig_handle] || null })),
+      items: items.map((r: any) => ({ ...r, taskStatus: taskStatusMap[r.ig_handle] || null, executingIg: executingIgMap[r.ig_handle] || null })),
       total, page, limit,
       pages: Math.max(1, Math.ceil(total / limit)),
       hasMore: items.length >= limit,
@@ -3988,6 +4233,44 @@ app.get('/api/automation/artists', async (c) => {
 });
 
 // ===== �䨮 artists ���?����???�ꡧ?����?2��?������?a subrequest ��??T��? =====
+// ===== DELETE /api/artists/delete — 人工删选：从 artists 池移除指定 artist =====
+// 按 ig_handle（推荐，与列表去重键一致，会清掉该 handle 全部重复行）或 id 删除。
+// 鉴权：不在 PUBLIC_PATHS，走全局 Firebase Bearer 中间件。
+app.post('/api/artists/delete', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({})) as any;
+    const ownerAccount = (body?.ownerAccount || '').trim();
+    const handles: string[] = Array.isArray(body?.handles)
+      ? body.handles.map((h: any) => String(h ?? '').replace(/^@/, '').trim().toLowerCase()).filter(Boolean)
+      : [];
+    const ids: number[] = Array.isArray(body?.ids)
+      ? body.ids.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n > 0)
+      : [];
+    if (!handles.length && !ids.length) {
+      return c.json({ error: 'handles or ids required' }, 400);
+    }
+    let deleted = 0;
+    if (handles.length) {
+      let sql = `DELETE FROM artists WHERE LOWER(ig_handle) IN (${handles.map(() => '?').join(',')})`;
+      const binds: any[] = [...handles];
+      if (ownerAccount) { sql += ` AND owner_account = ?`; binds.push(ownerAccount); }
+      const res: any = await c.env.DB.prepare(sql).bind(...binds).run();
+      deleted += (res?.meta?.changes ?? res?.changes ?? 0);
+    }
+    if (ids.length) {
+      let sql = `DELETE FROM artists WHERE id IN (${ids.map(() => '?').join(',')})`;
+      const binds: any[] = [...ids];
+      if (ownerAccount) { sql += ` AND owner_account = ?`; binds.push(ownerAccount); }
+      const res: any = await c.env.DB.prepare(sql).bind(...binds).run();
+      deleted += (res?.meta?.changes ?? res?.changes ?? 0);
+    }
+    return c.json({ ok: true, deleted, handles: handles.length, ids: ids.length });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e) }, 500);
+  }
+});
+
+// ===== 用于 artists 批量建任务（create-from-artists）subrequest =====
 app.post('/api/automation/tasks/create-from-artists', async (c) => {
   try {
     const { artistIds, taskType = 'ig_browse' } = await c.req.json();
@@ -4022,7 +4305,14 @@ app.post('/api/automation/tasks/create-from-artists', async (c) => {
       const h = a.ig_handle || a.shop_name || '';
       if (existingSet.has(h)) { skipped++; continue; }
       taskIds.push('task_' + h + '_' + ts);
-      payloads.push(JSON.stringify({ artistHandle: h, shopName: a.shop_name, taskType, country: a.country || null, city: a.city || null }));
+      payloads.push(JSON.stringify({
+        artistHandle: h,
+        shopName: a.shop_name,
+        taskType,
+        country: a.country || null,
+        state: a.state || null,
+        city: a.city || null,
+      }));
       runAts.push(ts);
       created++;
     }
@@ -4837,6 +5127,13 @@ async function ensureOppTables(db: D1Database) {
     format TEXT, platform TEXT, score INTEGER, source TEXT,
     status TEXT DEFAULT 'draft', created_at INTEGER
   )```).run(); } catch {}
+  try { await db.prepare(```CREATE TABLE IF NOT EXISTS content_packages (
+    id TEXT PRIMARY KEY, idea_id TEXT, title TEXT NOT NULL,
+    platform TEXT DEFAULT 'Instagram', content_type TEXT DEFAULT 'Reel',
+    product TEXT, caption TEXT, hashtags TEXT,
+    media_type TEXT, media_blob TEXT,
+    status TEXT DEFAULT 'draft', created_at INTEGER, updated_at INTEGER
+  )```).run(); } catch {}
 }
 
 
@@ -4948,6 +5245,82 @@ app.post('/api/content/scan-opportunities', async (c) => {
   return c.json({ ok: true, signals: results });
 });
 
+// ============ CONTENT PACKAGES (选题 → Package → 审核 → 队列 → 发布) ============
+
+// GET /api/content/packages — list all packages
+app.get('/api/content/packages', async (c) => {
+  await ensureOppTables(c.env.DB);
+  const { results } = await c.env.DB.prepare('SELECT * FROM content_packages ORDER BY created_at DESC LIMIT 100').all();
+  return c.json({ packages: results });
+});
+
+// POST /api/content/packages — create a package (optionally from a brief via idea_id)
+app.post('/api/content/packages', async (c) => {
+  await ensureOppTables(c.env.DB);
+  const body: any = await c.req.json();
+  const id = 'pkg-' + Date.now().toString(36);
+  const now = Date.now();
+  await c.env.DB.prepare(```INSERT INTO content_packages (id,idea_id,title,platform,content_type,product,caption,hashtags,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)```)
+    .bind(id, body.idea_id || '', body.title, body.platform || 'Instagram',
+      body.content_type || 'Reel', body.product || '', body.caption || '',
+      body.hashtags || '', body.status || 'draft', now, now).run();
+  return c.json({ ok: true, id });
+});
+
+// PUT /api/content/packages/:id — update status or fields (draft→review→approved→queued→published)
+app.put('/api/content/packages/:id', async (c) => {
+  await ensureOppTables(c.env.DB);
+  const { id } = c.req.param();
+  const body: any = await c.req.json();
+  const fields = ['title','platform','content_type','product','caption','hashtags','media_type','media_blob','status'];
+  const sets = fields.filter(f => body[f] !== undefined).map(f => f + ' = ?');
+  sets.push('updated_at = ?');
+  if (sets.length === 1) return c.json({ ok: false });
+  const vals = fields.filter(f => body[f] !== undefined).map(f => body[f]);
+  await c.env.DB.prepare(`UPDATE content_packages SET ` + sets.join(',') + ' WHERE id = ?').bind(...vals, Date.now(), id).run();
+  return c.json({ ok: true });
+});
+
+// DELETE /api/content/packages/:id
+app.delete('/api/content/packages/:id', async (c) => {
+  await ensureOppTables(c.env.DB);
+  const { id } = c.req.param();
+  await c.env.DB.prepare(`DELETE FROM content_packages WHERE id = ?`).bind(id).run();
+  return c.json({ ok: true });
+});
+
+// POST /api/content/packages/:id/media — upload media (base64) for a package
+app.post('/api/content/packages/:id/media', async (c) => {
+  await ensureOppTables(c.env.DB);
+  const { id } = c.req.param();
+  const body: any = await c.req.json();
+  await c.env.DB.prepare(`UPDATE content_packages SET media_type = ?, media_blob = ?, updated_at = ? WHERE id = ?`)
+    .bind(body.media_type || 'image/png', body.media_blob || '', Date.now(), id).run();
+  return c.json({ ok: true });
+});
+
+// POST /api/content/packages/:id/generate-caption — AI caption from title/product (template-based; DeepSeek-ready)
+app.post('/api/content/packages/:id/generate-caption', async (c) => {
+  await ensureOppTables(c.env.DB);
+  const { id } = c.req.param();
+  const pkg = await c.env.DB.prepare('SELECT * FROM content_packages WHERE id = ?').bind(id).first() as any;
+  if (!pkg) return c.json({ error: 'not_found' }, 404);
+  const product = pkg.product || pkg.title || 'our premium PMU cartridge';
+  const title = pkg.title || product;
+  // Template-based caption (DeepSeek API can replace this later; Worker has no AI key yet)
+  const caption = `${title}.\n\nPrecision matters when it's permanent. Our ${product} is individually sterilized and sealed — consistent performance, zero compromise. Trust your work to tools that don't let you down.\n\nDM for details / wholesale pricing.`;
+  await c.env.DB.prepare(`UPDATE content_packages SET caption = ?, updated_at = ? WHERE id = ?`).bind(caption, Date.now(), id).run();
+  return c.json({ ok: true, caption });
+});
+
+// DELETE /api/content/briefs/:id — delete a brief (was missing)
+app.delete('/api/content/briefs/:id', async (c) => {
+  await ensureOppTables(c.env.DB);
+  const { id } = c.req.param();
+  await c.env.DB.prepare(`DELETE FROM content_briefs WHERE id = ?`).bind(id).run();
+  return c.json({ ok: true });
+});
+
 // ============ CRM ARTISTS (Neon primary source, proxied via Pages Function) ============
 // Called same-origin from the browser (harvests.pages.dev/api/artists) WITHOUT a Firebase
 // token, so both paths are whitelisted in PUBLIC_PATHS. The Pages Function proxies
@@ -4965,10 +5338,10 @@ app.get('/api/artists', async (c) => {
 });
 
 // POST /api/artists/bulk-import — upsert artists from a CSV import (best-effort, per-row safe)
-const ARTIST_WHITELIST = ['shop_name','ig_handle','city','state','import_region','phone','website','email','rating','followers','reviews','category','full_name','address','profile_pic','conversion_score','country'];
+const ARTIST_WHITELIST = ['shop_name','ig_handle','city','state','import_region','phone','website','email','rating','followers','reviews','category','full_name','address','profile_pic','conversion_score','country','owner_account'];
 app.post('/api/artists/bulk-import', async (c) => {
   try {
-    const { rows, importRegion, defaultCountry = 'USA' } = await c.req.json();
+    const { rows, importRegion, defaultCountry = 'USA', ownerAccount } = await c.req.json();
     if (!Array.isArray(rows) || rows.length === 0) return c.json({ ok: true, inserted: 0, updated: 0 });
     let inserted = 0, updated = 0;
     for (const r of rows) {
@@ -4986,6 +5359,7 @@ app.post('/api/artists/bulk-import', async (c) => {
         const norm: any = { ...r };
         norm.import_region = r.import_region || importRegion;
         norm.country = r.country || defaultCountry;
+        norm.owner_account = r.owner_account || ownerAccount || 'raiha8833';
         for (const k of ARTIST_WHITELIST) {
           if (norm[k] === undefined || norm[k] === null || norm[k] === '') continue;
           cols.push(k); vals.push(norm[k]);
@@ -5740,7 +6114,308 @@ app.delete('/api/kb/:id', async (c) => {
   return c.json({ ok: true, id });
 });
 
-// ============ SEO 技能图谱（替代 AI Core /seo/playbooks）============
+// ============ COMMENT CORPUS（IG 公开评论语料库：采集上报 + 前台审核）============
+// 链路：VPS bot 采集公开评论 → POST /api/corpus/ingest 上报 → 前台 #/corpus 审核
+//       (pending→approved/rejected) → 已 approved 语料供评论生成检索增强。
+// 匿名化：只存文本/语言/标签，不存用户名/主页 URL/DM。
+
+let _corpusTableReady: Promise<void> | null = null;
+const ensureCorpusTable = (db: any): Promise<void> => {
+  if (!_corpusTableReady) {
+    _corpusTableReady = db.prepare(`CREATE TABLE IF NOT EXISTS comment_corpus (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      text TEXT NOT NULL,
+      source_hash TEXT,
+      handle TEXT,
+      lang TEXT DEFAULT 'en',
+      image_tags TEXT,
+      comment_tags TEXT,
+      quality TEXT DEFAULT 'pending',
+      created_at TEXT DEFAULT (datetime('now'))
+    )`).run().then(() => {}).catch(() => {});
+  }
+  return _corpusTableReady;
+};
+
+// bot 上报新采集的评论（token 鉴权，幂等：同 source_hash+同文本哈希跳过）。
+// 2026-08-21 增强：过滤咨询/问价类噪音（用户反馈：采集的评论很多不能用）。
+const CORPUS_BLOCK: RegExp[] = [
+  /\bhttps?:\/\//i,
+  /(^|\s)@[A-Za-z0-9_.]+\b/i,
+  /\b(dm me|send me a dm|check (?:my|our) (?:bio|link)|buy|order|shop now|discount|promo|wholesale|supplier|supplies|appointment|booking|available slot|price|pricing|how much|cost|for sale|quoted|quote|rates?)\b/i,
+  /\$\s?\d+/i, // "$10" 问价
+  /^(how|what|where|when|which|who|why|can|do|does|is|are|will|would|did|have|has|should|could|any)\b/i, // 疑问句开头（咨询类）
+  /^[ \t]*[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]+[ \t]*$/u, // 纯表情
+];
+const corpusIsBlocked = (t: string): boolean => CORPUS_BLOCK.some((re) => re.test(t.trim()));
+
+app.post('/api/corpus/ingest', async (c) => {
+  const auth = c.req.header('Authorization') || '';
+  const tokenParam = c.req.query('token') || '';
+  const okAuth = auth === 'Bearer vps-bot-secret-2024' || tokenParam === 'vps-bot-secret-2024';
+  if (!okAuth) return c.json({ error: 'unauthorized' }, 401);
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'bad_json' }, 400); }
+  const comments: any[] = Array.isArray(body?.comments) ? body.comments : [];
+  if (!comments.length) return c.json({ ok: true, added: 0, skipped: 0 });
+  await ensureCorpusTable(c.env.DB);
+  let added = 0; let skipped = 0;
+  // 已入库文本哈希集合（幂等去重）
+  const existing = await c.env.DB.prepare('SELECT text FROM comment_corpus').all();
+  const seen = new Set<string>();
+  for (const r of (existing as any).results || []) seen.add(String((r as any).text || '').trim().toLowerCase());
+  for (const cm of comments) {
+    const text = String(cm?.text || '').replace(/\s+/g, ' ').trim();
+    if (text.length < 4) { skipped++; continue; }
+    if (corpusIsBlocked(text)) { skipped++; continue; }
+    const key = text.toLowerCase();
+    if (seen.has(key)) { skipped++; continue; }
+    seen.add(key);
+    const lang = String(cm?.lang || 'en').slice(0, 8);
+    const imageTags = JSON.stringify(Array.isArray(cm?.imageTags) ? cm.imageTags : []);
+    const commentTags = JSON.stringify(Array.isArray(cm?.commentTags) ? cm.commentTags : []);
+    const handle = String(cm?.handle || '').slice(0, 120);
+    const sourceHash = String(cm?.sourceHash || '').slice(0, 40);
+    await c.env.DB.prepare(
+      `INSERT INTO comment_corpus (text, source_hash, handle, lang, image_tags, comment_tags, quality, created_at)
+       VALUES (?,?,?,?,?,?,'pending', datetime('now'))`
+    ).bind(text, sourceHash, handle, lang, imageTags, commentTags).run();
+    added++;
+  }
+  return c.json({ ok: true, added, skipped });
+});
+
+// 前台列表：按 quality 筛 + 语言/标签统计。登录用户即可读（板块公开，数据按账号/行业隔离后续加）；
+// bot-token 也可读（VPS 侧核对）。
+app.get('/api/corpus', async (c) => {
+  const quality = c.req.query('quality') || null;
+  const limit = Math.min(parseInt(c.req.query('limit') || '200', 10) || 200, 500);
+  await ensureCorpusTable(c.env.DB);
+  const where: string[] = []; const params: any[] = [];
+  if (quality) { where.push('quality = ?'); params.push(quality); }
+  const sql = `SELECT id, text, source_hash, handle, lang, image_tags, comment_tags, quality, created_at FROM comment_corpus`
+    + (where.length ? ' WHERE ' + where.join(' AND ') : '')
+    + ' ORDER BY id DESC LIMIT ?';
+  params.push(limit);
+  const rows = await c.env.DB.prepare(sql).bind(...params).all();
+  const counts = await c.env.DB.prepare('SELECT quality, COUNT(*) as n FROM comment_corpus GROUP BY quality').all();
+  const langs = await c.env.DB.prepare('SELECT lang, COUNT(*) as n FROM comment_corpus GROUP BY lang ORDER BY n DESC LIMIT 20').all();
+  return c.json({ ok: true, items: (rows as any).results || [], counts: (counts as any).results || [], langs: (langs as any).results || [] });
+});
+
+// 前台审核：approve（pending→approved，进入正式语料）或 reject（丢弃）。
+// 板块公开，审核操作靠前端登录态保护（PUBLIC_PATHS 放行后无 user 上下文，故不 requireTab）。
+app.post('/api/corpus/:id/:action', async (c) => {
+  const id = parseInt(c.req.param('id') || '', 10);
+  const action = c.req.param('action') || '';
+  if (!Number.isFinite(id) || id <= 0) return c.json({ error: 'bad_id' }, 400);
+  if (action !== 'approve' && action !== 'reject') return c.json({ error: 'bad_action' }, 400);
+  await ensureCorpusTable(c.env.DB);
+  const quality = action === 'approve' ? 'approved' : 'rejected';
+  const res = await c.env.DB.prepare('UPDATE comment_corpus SET quality = ? WHERE id = ?').bind(quality, id).run();
+  if (!(res as any).meta?.changes) return c.json({ error: 'not_found' }, 404);
+  return c.json({ ok: true, id, quality });
+});
+
+// 统计：approved 语料按标签分布（供评论生成检索增强评估）。bot-token 也可读（总览板用）。
+app.get('/api/corpus/stats', async (c) => {
+  await ensureCorpusTable(c.env.DB);
+  const total = await c.env.DB.prepare('SELECT COUNT(*) as n FROM comment_corpus').first() as any;
+  const approved = await c.env.DB.prepare("SELECT COUNT(*) as n FROM comment_corpus WHERE quality='approved'").first() as any;
+  const tagRows = await c.env.DB.prepare("SELECT image_tags, comment_tags FROM comment_corpus WHERE quality='approved'").all();
+  const tagCount: Record<string, number> = {};
+  for (const r of (tagRows as any).results || []) {
+    for (const t of [...JSON.parse((r as any).image_tags || '[]'), ...JSON.parse((r as any).comment_tags || '[]')]) {
+      tagCount[t] = (tagCount[t] || 0) + 1;
+    }
+  }
+  return c.json({ ok: true, total: (total as any)?.n || 0, approved: (approved as any)?.n || 0, tagCount });
+});
+
+// 前台删除单条语料（硬删除，彻底移除）。板块公开，删除靠前端登录态保护。
+app.delete('/api/corpus/:id', async (c) => {
+  const id = parseInt(c.req.param('id') || '', 10);
+  if (!Number.isFinite(id) || id <= 0) return c.json({ error: 'bad_id' }, 400);
+  await ensureCorpusTable(c.env.DB);
+  const res = await c.env.DB.prepare('DELETE FROM comment_corpus WHERE id = ?').bind(id).run();
+  if (!(res as any).meta?.changes) return c.json({ error: 'not_found' }, 404);
+  return c.json({ ok: true, id });
+});
+
+// ============ COMMENT DRAFTS（生成的评论草稿：bot 上报 + 前台审核/查看）============
+// 链路：bot 生成评论 → POST /api/drafts/ingest 上报 → 前台 #/comment-drafts 查看/审核
+//       （approve→posted 候选；reject/delete 丢弃）。草稿含帖子上下文+生成评论+风险标签。
+
+let _draftsTableReady: Promise<void> | null = null;
+const ensureDraftsTable = (db: any): Promise<void> => {
+  if (!_draftsTableReady) {
+    _draftsTableReady = db.prepare(`CREATE TABLE IF NOT EXISTS comment_drafts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      draft_id TEXT,
+      bot_id TEXT,
+      handle TEXT,
+      post_url TEXT,
+      post_key TEXT,
+      proposed_comment TEXT,
+      status TEXT DEFAULT 'pending',
+      grounding_risks TEXT,
+      safe_facts TEXT,
+      lang TEXT DEFAULT 'en',
+      created_at TEXT DEFAULT (datetime('now'))
+    )`).run()
+      .then(() => db.prepare('ALTER TABLE comment_drafts ADD COLUMN bot_id TEXT').run().catch(() => {}))
+      .then(() => db.prepare('CREATE INDEX IF NOT EXISTS idx_comment_drafts_status_bot ON comment_drafts(status, bot_id)').run().catch(() => {}))
+      .then(() => {})
+      .catch(() => {});
+  }
+  return _draftsTableReady;
+};
+
+async function requireDraftReviewer(c: any): Promise<any | null> {
+  if (!c.get('user')) {
+    const auth = c.req.header('Authorization') || '';
+    if (auth.startsWith('Bearer ') && auth !== `Bearer ${BOT_SECRET}`) {
+      const user = await verifyToken(auth.slice(7));
+      if (user) c.set('user', user);
+    }
+  }
+  return requireTab(c, 'inkflow-outreach');
+}
+
+// bot 上报新生成的评论草稿（token 鉴权，draft_id 幂等）。
+app.post('/api/drafts/ingest', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'unauthorized' }, 401);
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'bad_json' }, 400); }
+  const drafts: any[] = Array.isArray(body?.drafts) ? body.drafts : [];
+  if (!drafts.length) return c.json({ ok: true, added: 0, skipped: 0 });
+  await ensureDraftsTable(c.env.DB);
+  let added = 0; let skipped = 0;
+  for (const d of drafts) {
+    const draftId = String(d?.id || '');
+    const comment = String(d?.proposedComment || '').trim();
+    if (!draftId || comment.length < 3) { skipped++; continue; }
+    const existing = await c.env.DB.prepare('SELECT id FROM comment_drafts WHERE draft_id = ?').bind(draftId).first();
+    if (existing) { skipped++; continue; }
+    const handle = String(d?.handle || '').slice(0, 120);
+    const botId = String(d?.botId || body?.botId || '').slice(0, 120);
+    const postUrl = String(d?.postUrl || '').slice(0, 300);
+    const postKey = String(d?.postKey || '').slice(0, 100);
+    const risks = JSON.stringify(Array.isArray(d?.groundingRisks) ? d.groundingRisks : []);
+    const facts = JSON.stringify(Array.isArray(d?.safeFacts) ? d.safeFacts : []);
+    const lang = String(d?.lang || 'en').slice(0, 8);
+    await c.env.DB.prepare(
+      `INSERT INTO comment_drafts (draft_id, bot_id, handle, post_url, post_key, proposed_comment, status, grounding_risks, safe_facts, lang, created_at)
+       VALUES (?,?,?,?,?,?,'pending',?,?,?, datetime('now'))`
+    ).bind(draftId, botId, handle, postUrl, postKey, comment, risks, facts, lang).run();
+    added++;
+  }
+  return c.json({ ok: true, added, skipped });
+});
+
+// 前台列表：按 status 筛。读接口需授权 tab（与 corpus 一致）。
+app.get('/api/drafts', async (c) => {
+  if (!(await requireDraftReviewer(c))) return c.json({ error: 'not_authorized' }, 403);
+  const status = c.req.query('status') || null;
+  const limit = Math.min(parseInt(c.req.query('limit') || '200', 10) || 200, 500);
+  await ensureDraftsTable(c.env.DB);
+  const where: string[] = []; const params: any[] = [];
+  if (status) { where.push('status = ?'); params.push(status); }
+  const sql = `SELECT id, draft_id, bot_id, handle, post_url, post_key, proposed_comment, status, grounding_risks, safe_facts, lang, created_at FROM comment_drafts`
+    + (where.length ? ' WHERE ' + where.join(' AND ') : '')
+    + ' ORDER BY id DESC LIMIT ?';
+  params.push(limit);
+  const rows = await c.env.DB.prepare(sql).bind(...params).all();
+  const counts = await c.env.DB.prepare('SELECT status, COUNT(*) as n FROM comment_drafts GROUP BY status').all();
+  return c.json({ ok: true, items: (rows as any).results || [], counts: (counts as any).results || [] });
+});
+
+// 前台操作草稿：approve（标记可发布）/ reject / delete。板块公开，靠前端登录态保护。
+// 注：前端 delete 用 DELETE 方法，故同时注册 DELETE 路由。
+app.delete('/api/drafts/:id', async (c) => {
+  if (!(await requireDraftReviewer(c))) return c.json({ error: 'not_authorized' }, 403);
+  const id = parseInt(c.req.param('id') || '', 10);
+  if (!Number.isFinite(id) || id <= 0) return c.json({ error: 'bad_id' }, 400);
+  await ensureDraftsTable(c.env.DB);
+  const res = await c.env.DB.prepare('DELETE FROM comment_drafts WHERE id = ?').bind(id).run();
+  if (!(res as any).meta?.changes) return c.json({ error: 'not_found' }, 404);
+  return c.json({ ok: true, id, action: 'delete' });
+});
+app.put('/api/drafts/:id', async (c) => {
+  if (!(await requireDraftReviewer(c))) return c.json({ error: 'not_authorized' }, 403);
+  const id = parseInt(c.req.param('id') || '', 10);
+  if (!Number.isFinite(id) || id <= 0) return c.json({ error: 'bad_id' }, 400);
+  let body: any = {};
+  try { body = await c.req.json(); } catch {}
+  const comment = String(body?.proposedComment || '').trim();
+  if (comment.length < 3) return c.json({ error: 'comment_too_short' }, 400);
+  await ensureDraftsTable(c.env.DB);
+  const res = await c.env.DB.prepare('UPDATE comment_drafts SET proposed_comment = ? WHERE id = ? AND status IN (\'pending\', \'approved\')')
+    .bind(comment, id).run();
+  if (!(res as any).meta?.changes) return c.json({ error: 'not_found_or_locked' }, 404);
+  return c.json({ ok: true, id, action: 'edit', proposedComment: comment });
+});
+
+// Bot-only claim: atomically reserve one human-approved draft so multiple bot
+// workers cannot publish the same comment.
+app.post('/api/drafts/claim-approved', async (c) => {
+  if (!checkBotToken(c)) return c.json({ error: 'unauthorized' }, 401);
+  const body = await c.req.json().catch(() => ({})) as any;
+  const botId = String(body?.botId || '').trim();
+  await ensureDraftsTable(c.env.DB);
+  const row = await c.env.DB.prepare(`
+    UPDATE comment_drafts
+       SET status = 'publishing'
+     WHERE id = (
+       SELECT id FROM comment_drafts
+        WHERE status = 'approved'
+          AND bot_id = ?
+        ORDER BY id ASC
+        LIMIT 1
+     )
+     RETURNING id, draft_id, bot_id, handle, post_url, post_key, proposed_comment, status, grounding_risks, safe_facts, lang, created_at
+  `).bind(botId).first() as any;
+  return c.json({ ok: true, item: row || null });
+});
+
+app.post('/api/drafts/:id/:action', async (c) => {
+  const rawId = c.req.param('id') || '';
+  const action = c.req.param('action') || '';
+  if (action !== 'approve' && action !== 'reject' && action !== 'delete' && action !== 'posted' && action !== 'release') return c.json({ error: 'bad_action' }, 400);
+  await ensureDraftsTable(c.env.DB);
+  if ((action === 'posted' || action === 'release') && !checkBotToken(c)) return c.json({ error: 'unauthorized' }, 401);
+  // bot 回写 posted 时用 draft_id 匹配（bot 只知本地 id 而非 D1 数字 id）。
+  if (action === 'posted' || action === 'release') {
+    const row = await c.env.DB.prepare('SELECT id FROM comment_drafts WHERE draft_id = ? OR id = ?').bind(rawId, rawId).first() as any;
+    if (!row) return c.json({ error: 'not_found' }, 404);
+    const nextStatus = action === 'posted' ? 'posted' : 'approved';
+    const res = await c.env.DB.prepare('UPDATE comment_drafts SET status = ? WHERE id = ? AND status = \'publishing\'')
+      .bind(nextStatus, row.id).run();
+    if (!(res as any).meta?.changes) return c.json({ error: 'not_in_publishing_state' }, 409);
+    return c.json({ ok: true, id: row.id, action, status: nextStatus });
+  }
+  if (!(await requireDraftReviewer(c))) return c.json({ error: 'not_authorized' }, 403);
+  const id = parseInt(rawId, 10);
+  if (!Number.isFinite(id) || id <= 0) return c.json({ error: 'bad_id' }, 400);
+  if (action === 'delete') {
+    const res = await c.env.DB.prepare('DELETE FROM comment_drafts WHERE id = ?').bind(id).run();
+    if (!(res as any).meta?.changes) return c.json({ error: 'not_found' }, 404);
+    return c.json({ ok: true, id, action });
+  }
+  const quality = action === 'approve' ? 'approved' : action === 'posted' ? 'posted' : 'rejected';
+  let body: any = {};
+  try { body = await c.req.json(); } catch {}
+  const editedComment = String(body?.proposedComment || '').trim();
+  const res = action === 'approve' && editedComment.length >= 3
+    ? await c.env.DB.prepare('UPDATE comment_drafts SET proposed_comment = ?, status = ? WHERE id = ?')
+      .bind(editedComment, quality, id).run()
+    : await c.env.DB.prepare('UPDATE comment_drafts SET status = ? WHERE id = ?').bind(quality, id).run();
+  if (!(res as any).meta?.changes) return c.json({ error: 'not_found' }, 404);
+  return c.json({ ok: true, id, action, status: quality });
+});
+
+
+
 // 前端「InkFlow 获客 → SEO 工具 → 📚 技能知识库 → 技能图谱」读取此端点。
 // 数据来自打包进 worker 的 seo-playbooks.json（与 AI Core seo_playbooks 同源）。
 // 组件期望 { items: Section[] }，而 JSON 顶层为 { sections, skills, ... }，故映射为 items。
@@ -5862,4 +6537,3 @@ export default {
     } catch (e: any) { console.log('[scheduled] error:', e?.message || e); }
   }
 };
-
