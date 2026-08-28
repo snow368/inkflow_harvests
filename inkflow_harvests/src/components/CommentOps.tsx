@@ -1,10 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '../lib/api-auth';
 
-type BotWorker = { id: string; name: string; status: string; memory?: number; cpu?: number; restarts?: number; updatedAt?: number };
+type BotWorker = { botId?: string; id?: string; name?: string; status?: string; running?: boolean; lastHeartbeat?: number; memory?: number; cpu?: number; restarts?: number; updatedAt?: number };
 type TaskCounts = { pending?: number; total?: number; doneToday?: number; failed?: number };
 type CorpusStats = { total: number; approved: number; pending: number; rejected: number };
 type DraftCounts = { pending: number; approved: number; rejected: number; posted: number };
+type ChainHealth = {
+  ok: boolean;
+  botId: string;
+  breaks: string[];
+  worker?: { running?: boolean; status?: string; heartbeatAgeSec?: number | null; lastHeartbeat?: number };
+  prefs?: { likesPerSession: number; commentsPerSession: number; followsPerSession: number; botId: string; igHandle?: string; updatedAt?: number } | null;
+  recentTasks?: Array<{ id: string; status: string; handle: string; likesPerSession: number; commentsPerSession: number; followsPerSession: number; createdAt: number }>;
+  recentTasksWithComments?: number;
+  draftCounts?: Record<string, number>;
+  events?: Record<string, { count: number; lastTs?: string | null }>;
+};
 
 export default function CommentOps() {
   const [bots, setBots] = useState<BotWorker[]>([]);
@@ -12,6 +23,8 @@ export default function CommentOps() {
   const [corpus, setCorpus] = useState<CorpusStats>({ total: 0, approved: 0, pending: 0, rejected: 0 });
   const [drafts, setDrafts] = useState<DraftCounts>({ pending: 0, approved: 0, rejected: 0, posted: 0 });
   const [recent, setRecent] = useState<any[]>([]);
+  const [selectedBotId, setSelectedBotId] = useState('bot_ig_01');
+  const [health, setHealth] = useState<ChainHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -23,7 +36,12 @@ export default function CommentOps() {
       if (br.ok) {
         const bd = await br.json();
         const arr = Array.isArray(bd?.workers) ? bd.workers : Array.isArray(bd?.items) ? bd.items : [];
-        setBots(arr.filter((b: any) => /bot-worker|ig-scheduler/i.test(String(b?.name || b?.id || ''))));
+        setBots(arr);
+      }
+      const hr = await apiFetch(`/api/automation/comment-chain-health?botId=${encodeURIComponent(selectedBotId)}`);
+      if (hr.ok) {
+        const hd = await hr.json();
+        setHealth(hd);
       }
       // 任务计数
       const tr = await apiFetch('/api/automation/task-counts');
@@ -57,12 +75,13 @@ export default function CommentOps() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedBotId]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  const bot = bots.find((b) => /bot-worker/i.test(String(b.name || b.id))) || null;
-  const sched = bots.find((b) => /ig-scheduler/i.test(String(b.name || b.id))) || null;
+  const bot = bots.find((b) => String(b.botId || b.id || b.name) === selectedBotId) || null;
+  const sched = bots.find((b) => /ig-scheduler/i.test(String(b.name || b.id || b.botId))) || null;
+  const workerRunning = Boolean(bot?.running || bot?.status === 'online' || health?.worker?.running);
 
   const StatusCard = ({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'green' | 'amber' | 'red' | 'blue' }) => {
     const tones = {
@@ -79,6 +98,16 @@ export default function CommentOps() {
       </div>
     );
   };
+  const breakText: Record<string, string> = {
+    worker_not_running_or_stale: 'worker 没在线或心跳过期',
+    prefs_not_saved_for_bot: '这个 bot 没有云端动作偏好',
+    prefs_comments_zero: '云端动作偏好 commentsPerSession = 0',
+    recent_tasks_comments_zero: '最近任务 payload 里的 comments 都是 0',
+    draft_queue_errors_last_24h: '最近 24 小时草稿入队有报错',
+    no_drafts_queued_last_24h: '最近 24 小时没有生成过待审草稿',
+    no_pending_or_approved_drafts: '草稿表里没有待审或待发布评论',
+  };
+  const eventCount = (event: string) => Number(health?.events?.[event]?.count || 0);
 
   return (
     <div className="space-y-6">
@@ -88,6 +117,15 @@ export default function CommentOps() {
           <p className="text-sm text-zinc-400 mt-1">一屏看全：bot 状态 / 任务 / 采集语料 / 生成评论 / 最近动态</p>
         </div>
         <div className="flex gap-2">
+          <select
+            value={selectedBotId}
+            onChange={(e) => setSelectedBotId(e.target.value || 'bot_ig_01')}
+            className="px-3 py-2 rounded-lg bg-zinc-900 text-sm text-zinc-200 border border-zinc-700 outline-none"
+          >
+            {Array.from(new Set(['bot_ig_01', ...bots.map((b) => String(b.botId || b.id || b.name || '')).filter(Boolean)])).map((id) => (
+              <option key={id} value={id}>{id}</option>
+            ))}
+          </select>
           <button onClick={loadAll} className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm text-zinc-200 border border-zinc-700">
             刷新
           </button>
@@ -102,15 +140,15 @@ export default function CommentOps() {
         <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-zinc-300">bot-worker</span>
-            <span className={`flex items-center gap-1.5 text-xs ${bot?.status === 'online' ? 'text-emerald-400' : 'text-red-400'}`}>
-              <span className={`w-2 h-2 rounded-full ${bot?.status === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-              {bot?.status || '未知'}
+            <span className={`flex items-center gap-1.5 text-xs ${workerRunning ? 'text-emerald-400' : 'text-red-400'}`}>
+              <span className={`w-2 h-2 rounded-full ${workerRunning ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+              {workerRunning ? 'online' : '离线/过期'}
             </span>
           </div>
-          {bot && (
+          {(bot || health?.worker) && (
             <div className="text-[11px] text-zinc-500 mt-2">
-              {bot.memory ? `内存 ${(Number(bot.memory) / 1024 / 1024).toFixed(0)}MB` : ''}
-              {bot.restarts ? ` · 重启 ${bot.restarts} 次` : ''}
+              {health?.worker?.heartbeatAgeSec != null ? `心跳 ${health.worker.heartbeatAgeSec}s 前` : ''}
+              {bot?.memory ? ` · 内存 ${(Number(bot.memory) / 1024 / 1024).toFixed(0)}MB` : ''}
             </div>
           )}
         </div>
@@ -123,6 +161,73 @@ export default function CommentOps() {
             </span>
           </div>
         </div>
+      </div>
+
+      <div className="rounded-xl bg-zinc-900/60 border border-zinc-800 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div className="text-sm font-medium text-zinc-300">评论闭环检查</div>
+            <div className="text-[11px] text-zinc-500 mt-0.5">配置 → 新任务 → worker → 待审草稿 → 人工通过 → 发布回写</div>
+          </div>
+          <span className={`px-2 py-1 rounded-full text-[10px] border ${
+            health && health.breaks?.length === 0
+              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+              : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+          }`}>
+            {health && health.breaks?.length === 0 ? '闭环正常' : `断点 ${health?.breaks?.length || 0}`}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatusCard
+            label="云端评论配置"
+            value={String(health?.prefs?.commentsPerSession ?? '-')}
+            sub={health?.prefs ? `赞 ${health.prefs.likesPerSession} · 关 ${health.prefs.followsPerSession}` : '未保存'}
+            tone={(health?.prefs?.commentsPerSession || 0) > 0 ? 'green' : 'amber'}
+          />
+          <StatusCard
+            label="最近任务带评论"
+            value={String(health?.recentTasksWithComments ?? '-')}
+            sub={`最近 ${health?.recentTasks?.length || 0} 个任务`}
+            tone={(health?.recentTasksWithComments || 0) > 0 ? 'green' : 'amber'}
+          />
+          <StatusCard
+            label="24h 生成草稿"
+            value={String(eventCount('comment_review_queued'))}
+            sub={`入队失败 ${eventCount('comment_review_queue_failed')}`}
+            tone={eventCount('comment_review_queued') > 0 ? 'green' : 'amber'}
+          />
+          <StatusCard
+            label="可发布草稿"
+            value={String((health?.draftCounts?.pending || 0) + (health?.draftCounts?.approved || 0))}
+            sub={`待审 ${health?.draftCounts?.pending || 0} · 待发布 ${health?.draftCounts?.approved || 0}`}
+            tone={(health?.draftCounts?.pending || 0) + (health?.draftCounts?.approved || 0) > 0 ? 'green' : 'amber'}
+          />
+        </div>
+
+        {health?.breaks?.length ? (
+          <div className="mt-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <div className="text-[11px] font-bold text-amber-300 mb-1">当前断点</div>
+            <div className="flex flex-wrap gap-1.5">
+              {health.breaks.map((b) => (
+                <span key={b} className="px-2 py-1 rounded bg-zinc-950/60 text-[11px] text-amber-200 border border-amber-500/20">
+                  {breakText[b] || b}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {health?.recentTasks?.length ? (
+          <div className="mt-3 text-[11px] text-zinc-500">
+            最近任务：
+            {health.recentTasks.slice(0, 4).map((t) => (
+              <span key={t.id} className="ml-2 text-zinc-400">
+                @{t.handle || '-'} c={t.commentsPerSession}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {/* 第二排：产量指标 */}

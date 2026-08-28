@@ -3152,6 +3152,132 @@ app.get('/api/bot/workers', async (c) => {
   }
 });
 
+app.get('/api/automation/comment-chain-health', async (c) => {
+  if (!checkBotToken(c) && !(await requireTab(c, 'inkflow-outreach'))) {
+    return c.json({ error: 'not_authorized' }, 403);
+  }
+  const botId = String(c.req.query('botId') || 'bot_ig_01').trim() || 'bot_ig_01';
+  const now = Date.now();
+  const since24 = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+  try {
+    await ensureBotTables(c.env.DB);
+    await ensureBehaviorLogsTable(c.env.DB);
+    await ensureDraftsTable(c.env.DB);
+    await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_action_prefs (
+      uid TEXT PRIMARY KEY, likes_per_session INTEGER DEFAULT 2, comments_per_session INTEGER DEFAULT 1,
+      follows_per_session INTEGER DEFAULT 0, bot_id TEXT DEFAULT 'bot_ig_01', ig_handle TEXT DEFAULT '',
+      updated_at INTEGER
+    )`).run().catch(() => {});
+
+    const worker = await c.env.DB.prepare(
+      'SELECT bot_id, host, version, status, last_heartbeat, registered_at FROM bot_instances WHERE bot_id = ?'
+    ).bind(botId).first() as any;
+    const lastHeartbeat = Number(worker?.last_heartbeat || 0);
+    const workerRunning = !!worker && worker.status === 'online' && (now - lastHeartbeat) < 3 * 60 * 1000;
+
+    const prefsRow = await c.env.DB.prepare(`
+      SELECT * FROM bot_action_prefs
+       WHERE bot_id = ?
+       ORDER BY updated_at DESC
+       LIMIT 1
+    `).bind(botId).first() as any;
+    const prefs = prefsRow ? {
+      likesPerSession: Number(prefsRow.likes_per_session || 0),
+      commentsPerSession: Number(prefsRow.comments_per_session || 0),
+      followsPerSession: Number(prefsRow.follows_per_session || 0),
+      botId: prefsRow.bot_id || botId,
+      igHandle: prefsRow.ig_handle || '',
+      updatedAt: Number(prefsRow.updated_at || 0),
+    } : null;
+
+    const taskRows = await c.env.DB.prepare(`
+      SELECT id, status, created_at, updated_at,
+             json_extract(payload, '$.artistHandle') AS handle,
+             json_extract(payload, '$.targetBotId') AS target_bot_id,
+             CAST(COALESCE(json_extract(payload, '$.likesPerSession'), 0) AS INTEGER) AS likes_per_session,
+             CAST(COALESCE(json_extract(payload, '$.commentsPerSession'), 0) AS INTEGER) AS comments_per_session,
+             CAST(COALESCE(json_extract(payload, '$.followsPerSession'), 0) AS INTEGER) AS follows_per_session
+        FROM automation_tasks
+       WHERE json_extract(payload, '$.targetBotId') = ?
+          OR leased_by = ?
+       ORDER BY created_at DESC
+       LIMIT 12
+    `).bind(botId, botId).all();
+    const recentTasks = (taskRows.results || []).map((r: any) => ({
+      id: r.id,
+      status: r.status,
+      handle: r.handle || '',
+      targetBotId: r.target_bot_id || '',
+      likesPerSession: Number(r.likes_per_session || 0),
+      commentsPerSession: Number(r.comments_per_session || 0),
+      followsPerSession: Number(r.follows_per_session || 0),
+      createdAt: Number(r.created_at || 0),
+      updatedAt: Number(r.updated_at || 0),
+    }));
+    const recentTasksWithComments = recentTasks.filter((t: any) => t.commentsPerSession > 0).length;
+
+    const draftCountsRows = await c.env.DB.prepare(`
+      SELECT status, COUNT(*) AS n
+        FROM comment_drafts
+       WHERE bot_id = ?
+       GROUP BY status
+    `).bind(botId).all();
+    const draftCounts: Record<string, number> = {};
+    for (const r of (draftCountsRows.results || []) as any[]) draftCounts[String(r.status)] = Number(r.n || 0);
+
+    const eventRows = await c.env.DB.prepare(`
+      SELECT event, COUNT(*) AS n, MAX(ts) AS last_ts
+        FROM bot_behavior_logs
+       WHERE bot_id = ?
+         AND ts >= ?
+         AND event IN (
+          'task_start','task_done','task_failed','like_post','like_session_done',
+          'comment_review_queued','comment_review_queue_failed',
+          'comment_skip_no_tattoo_intent','comment_skip_blacklist','comment_skip_unknown',
+          'comment_waiting_human_review','comment_approved_publish_start',
+          'comment_approved_publish_failed','comment_approved_publish_error','comment_posted'
+         )
+       GROUP BY event
+    `).bind(botId, since24).all();
+    const events: Record<string, { count: number; lastTs: string | null }> = {};
+    for (const r of (eventRows.results || []) as any[]) {
+      events[String(r.event)] = { count: Number(r.n || 0), lastTs: r.last_ts || null };
+    }
+
+    const breaks: string[] = [];
+    if (!workerRunning) breaks.push('worker_not_running_or_stale');
+    if (!prefs) breaks.push('prefs_not_saved_for_bot');
+    if (prefs && prefs.commentsPerSession <= 0) breaks.push('prefs_comments_zero');
+    if (recentTasks.length > 0 && recentTasksWithComments === 0) breaks.push('recent_tasks_comments_zero');
+    if ((events.comment_review_queue_failed?.count || 0) > 0) breaks.push('draft_queue_errors_last_24h');
+    if ((events.comment_review_queued?.count || 0) === 0) breaks.push('no_drafts_queued_last_24h');
+    if ((draftCounts.pending || 0) === 0 && (draftCounts.approved || 0) === 0) breaks.push('no_pending_or_approved_drafts');
+
+    return c.json({
+      ok: true,
+      botId,
+      checkedAt: now,
+      breaks,
+      worker: worker ? {
+        botId,
+        host: worker.host || '',
+        version: worker.version || '',
+        status: worker.status || '',
+        running: workerRunning,
+        lastHeartbeat,
+        heartbeatAgeSec: lastHeartbeat ? Math.round((now - lastHeartbeat) / 1000) : null,
+      } : null,
+      prefs,
+      recentTasks,
+      recentTasksWithComments,
+      draftCounts,
+      events,
+    });
+  } catch (e: any) {
+    return c.json({ ok: false, botId, error: String(e?.message || e).slice(0, 300) }, 500);
+  }
+});
+
 app.get('/api/bot/learn/status', async (c) => {
   try {
     await ensureBotTables(c.env.DB);
