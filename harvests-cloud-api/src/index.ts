@@ -273,6 +273,7 @@ const PUBLIC_PATHS = new Set([
   '/api/deep-scan/failed',
   // 用户 bot 动作偏好（点赞/评论/关注次数）：前台保存/读取，ig-scheduler 生成任务时读取
   '/api/automation/bot-prefs',
+  '/api/automation/comment-chain-health',
   // 互动漏斗只读聚合：bot token 校验（checkBotToken），供实验/监控测量 like->follow->follow_back->dm
   '/api/automation/funnel',
   // 评论语料库（2026-08-21）：bot 上报用 bot-token（ingest handler 校验）；
@@ -3153,8 +3154,17 @@ app.get('/api/bot/workers', async (c) => {
 });
 
 app.get('/api/automation/comment-chain-health', async (c) => {
-  if (!checkBotToken(c) && !(await requireTab(c, 'inkflow-outreach'))) {
-    return c.json({ error: 'not_authorized' }, 403);
+  if (!checkBotToken(c)) {
+    if (!c.get('user')) {
+      const auth = c.req.header('Authorization') || '';
+      if (auth.startsWith('Bearer ')) {
+        const user = await verifyToken(auth.slice(7));
+        if (user) c.set('user', user);
+      }
+    }
+    if (!(await requireTab(c, 'inkflow-outreach'))) {
+      return c.json({ error: 'not_authorized' }, 403);
+    }
   }
   const botId = String(c.req.query('botId') || 'bot_ig_01').trim() || 'bot_ig_01';
   const now = Date.now();
