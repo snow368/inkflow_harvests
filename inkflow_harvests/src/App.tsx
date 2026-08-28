@@ -103,7 +103,7 @@ const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab
   const inkflowTab = { id: 'inkflow-outreach', label: 'InkFlow 获客', icon: Target };
   const adminTab = { id: 'admin', label: 'Admin', icon: Users };
   const hasTabAccess = (id: string) =>
-    userTabs?.includes(id) || (id === 'comment-drafts' && userTabs?.includes('botworkers'));
+    id === 'comment-drafts' || userTabs?.includes(id) || (id === 'comment-drafts' && userTabs?.includes('botworkers'));
   const allowedTabs = userTabs === null ? tabs : tabs.filter(t => hasTabAccess(t.id));
   const showAdmin = isSnow368 || (userTabs !== null && userTabs.includes('admin'));
   const showInkflow = isSnow368 || (userTabs !== null && userTabs.includes('inkflow-outreach'));
@@ -176,7 +176,7 @@ const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab
 
           <div className="space-y-1">
             <p className="px-4 text-[10px] font-black text-zinc-600 uppercase tracking-widest mb-2">System</p>
-            {allTabs.filter(t => ['inventory','orders','tasks','automation','publish','botworkers','scrape','settings','product-catalog','new-arrivals','sales-chat'].includes(t.id)).map(renderTab)}
+            {allTabs.filter(t => ['inventory','orders','tasks','automation','publish','botworkers','comment-drafts','scrape','settings','product-catalog','new-arrivals','sales-chat'].includes(t.id)).map(renderTab)}
           </div>
 
           {isSnow368 && (
