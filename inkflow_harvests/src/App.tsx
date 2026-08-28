@@ -54,6 +54,7 @@ import BotTaskStatus from './components/BotTaskStatus';
 import PublishCalendar from './components/PublishCalendar';
 import MarketIntelligence from './components/MarketIntelligence';
 import ContentOperations from './components/ContentOperations';
+import CommentDrafts from './components/CommentDrafts';
 
 import InkFlowOutreach from './components/InkFlowOutreach';
 import EmailAuthForm from './components/EmailAuthForm';
@@ -61,7 +62,7 @@ import ScrapeConfig from './components/ScrapeConfig';
 import AdminUsers from './components/AdminUsers';
 
 
-type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'market-intelligence' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'settings' | 'publish' | 'scrape' | 'product-catalog' | 'new-arrivals' | 'sales-chat' | 'admin' | 'inkflow-outreach';
+type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'market-intelligence' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'comment-drafts' | 'settings' | 'publish' | 'scrape' | 'product-catalog' | 'new-arrivals' | 'sales-chat' | 'admin' | 'inkflow-outreach';
 
 const DynamicLoad = ({ component: load, fallback }: { component: () => Promise<any>, fallback?: any }) => {
   const [Comp, setComp] = useState<any>(null);
@@ -92,6 +93,7 @@ const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab
     { id: 'automation', label: 'Automation', icon: Zap },
     { id: 'publish', label: 'Content Operations', icon: Calendar },
     { id: 'botworkers', label: 'Bot Workers', icon: Bot },
+    { id: 'comment-drafts', label: '生成评论', icon: MessageSquare },
     { id: 'scrape', label: 'Scrape', icon: Search },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
@@ -336,6 +338,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     tasks: 'Task Manager',
     automation: 'Automation Center',
     botworkers: 'Bot Workers',
+    'comment-drafts': '生成评论审核',
     settings: 'Settings',
     publish: 'Publish Calendar',
     'inkflow-outreach': 'InkFlow 获客',
@@ -356,6 +359,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     tasks: "View automation tasks, dispatch supply analysis, and track bot progress.",
     automation: "AdsPower & Playwright multi-account orchestration command center.",
     botworkers: "Start, stop, and manage bot worker processes...",
+    'comment-drafts': 'Review and edit generated Instagram comment drafts before publishing.',
     settings: "Configure API keys and automation safety settings.",
     publish: "Schedule and publish content to social platforms.",
     'inkflow-outreach': "Shared resource pool for InkFlow customer outreach. Only visible to dev users.",
@@ -424,6 +428,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
               <BotWorkerManager />
             </div>
           )}
+          {activeTab === 'comment-drafts' && <CommentDrafts />}
           {activeTab === 'publish' && <ContentOperations />}
           {activeTab === 'settings' && <AutomationSettings />}
           {activeTab === 'scrape' && <ScrapeConfig />}
@@ -440,7 +445,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const hash = window.location.hash.replace(/^#\/?/, '');
-    const validTabs: Tab[] = ['dashboard','outreach','analyzer','training','crm','inventory','orders','tasks','automation','botworkers','settings','publish','scrape','product-catalog','new-arrivals','sales-chat','admin','inkflow-outreach'];
+    const validTabs: Tab[] = ['dashboard','outreach','analyzer','training','crm','inventory','orders','tasks','automation','botworkers','comment-drafts','settings','publish','scrape','product-catalog','new-arrivals','sales-chat','admin','inkflow-outreach'];
     return validTabs.includes(hash as Tab) ? (hash as Tab) : 'dashboard';
   });
   const [userTabs, setUserTabs] = useState<string[] | null>(null);
@@ -490,7 +495,7 @@ export default function App() {
   useEffect(() => {
     const onHashChange = () => {
       const hash = window.location.hash.replace(/^#\/?/, '');
-      const validTabs: Tab[] = ['dashboard','outreach','analyzer','training','crm','inventory','orders','tasks','automation','botworkers','settings','publish','scrape','product-catalog','new-arrivals','sales-chat','admin','inkflow-outreach'];
+      const validTabs: Tab[] = ['dashboard','outreach','analyzer','training','crm','inventory','orders','tasks','automation','botworkers','comment-drafts','settings','publish','scrape','product-catalog','new-arrivals','sales-chat','admin','inkflow-outreach'];
       if (validTabs.includes(hash as Tab)) setActiveTab(hash as Tab);
     };
     window.addEventListener('hashchange', onHashChange);
