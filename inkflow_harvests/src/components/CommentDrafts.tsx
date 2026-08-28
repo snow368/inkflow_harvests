@@ -13,6 +13,8 @@ type DraftItem = {
   grounding_risks: string;
   safe_facts: string;
   lang: string;
+  approved_at?: string;
+  approved_by?: string;
   created_at: string;
 };
 
@@ -213,7 +215,7 @@ export default function CommentDrafts() {
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
                 {/* 生成评论 */}
-                {it.status === 'pending' || it.status === 'approved' ? (
+                {it.status === 'pending' ? (
                   <textarea
                     value={draftText[it.id] ?? it.proposed_comment}
                     onChange={(e) => setDraftText((prev) => ({ ...prev, [it.id]: e.target.value }))}
@@ -240,6 +242,9 @@ export default function CommentDrafts() {
                   {it.created_at && (
                     <span className="text-[11px] text-zinc-600">{new Date(it.created_at).toLocaleString()}</span>
                   )}
+                  {it.approved_by && (
+                    <span className="text-[11px] text-emerald-500">审核：{it.approved_by}</span>
+                  )}
                 </div>
                 {/* 风险标签 */}
                 {parseArr(it.grounding_risks).length > 0 && (
@@ -263,7 +268,7 @@ export default function CommentDrafts() {
                 )}
               </div>
               <div className="flex gap-2 shrink-0">
-                {(it.status === 'pending' || it.status === 'approved') && (
+                {it.status === 'pending' && (
                   <button
                     onClick={() => saveEdit(it.id)}
                     disabled={busyId === it.id}
@@ -272,7 +277,7 @@ export default function CommentDrafts() {
                     保存
                   </button>
                 )}
-                {it.status !== 'approved' && it.status !== 'posted' && (
+                {it.status === 'pending' && (
                   <button
                     onClick={() => handleAction(it.id, 'approve')}
                     disabled={busyId === it.id}

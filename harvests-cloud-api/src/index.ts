@@ -3234,6 +3234,14 @@ app.get('/api/automation/comment-chain-health', async (c) => {
     `).bind(botId).all();
     const draftCounts: Record<string, number> = {};
     for (const r of (draftCountsRows.results || []) as any[]) draftCounts[String(r.status)] = Number(r.n || 0);
+    const unverifiedApprovedRow = await c.env.DB.prepare(`
+      SELECT COUNT(*) AS n
+        FROM comment_drafts
+       WHERE bot_id = ?
+         AND status = 'approved'
+         AND (approved_at IS NULL OR approved_by IS NULL OR approved_by = '')
+    `).bind(botId).first() as any;
+    const unverifiedApprovedCount = Number(unverifiedApprovedRow?.n || 0);
 
     const eventRows = await c.env.DB.prepare(`
       SELECT event, COUNT(*) AS n, MAX(ts) AS last_ts
@@ -3245,7 +3253,8 @@ app.get('/api/automation/comment-chain-health', async (c) => {
           'comment_review_queued','comment_review_queue_failed',
           'comment_skip_no_tattoo_intent','comment_skip_blacklist','comment_skip_unknown',
           'comment_waiting_human_review','comment_approved_publish_start',
-          'comment_approved_publish_failed','comment_approved_publish_error','comment_posted'
+          'comment_approved_publish_failed','comment_approved_publish_error',
+          'comment_publish_blocked_missing_approval','comment_posted'
          )
        GROUP BY event
     `).bind(botId, since24).all();
@@ -3260,6 +3269,7 @@ app.get('/api/automation/comment-chain-health', async (c) => {
     if (prefs && prefs.commentsPerSession <= 0) breaks.push('prefs_comments_zero');
     if (recentTasks.length > 0 && recentTasksWithComments === 0) breaks.push('recent_tasks_comments_zero');
     if ((events.comment_review_queue_failed?.count || 0) > 0) breaks.push('draft_queue_errors_last_24h');
+    if (unverifiedApprovedCount > 0) breaks.push('unverified_approved_drafts_blocked');
     if ((events.comment_review_queued?.count || 0) === 0) breaks.push('no_drafts_queued_last_24h');
     if ((draftCounts.pending || 0) === 0 && (draftCounts.approved || 0) === 0) breaks.push('no_pending_or_approved_drafts');
 
@@ -3281,6 +3291,7 @@ app.get('/api/automation/comment-chain-health', async (c) => {
       recentTasks,
       recentTasksWithComments,
       draftCounts,
+      unverifiedApprovedCount,
       events,
     });
   } catch (e: any) {
@@ -6397,9 +6408,13 @@ const ensureDraftsTable = (db: any): Promise<void> => {
       grounding_risks TEXT,
       safe_facts TEXT,
       lang TEXT DEFAULT 'en',
+      approved_at TEXT,
+      approved_by TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     )`).run()
       .then(() => db.prepare('ALTER TABLE comment_drafts ADD COLUMN bot_id TEXT').run().catch(() => {}))
+      .then(() => db.prepare('ALTER TABLE comment_drafts ADD COLUMN approved_at TEXT').run().catch(() => {}))
+      .then(() => db.prepare('ALTER TABLE comment_drafts ADD COLUMN approved_by TEXT').run().catch(() => {}))
       .then(() => db.prepare('CREATE INDEX IF NOT EXISTS idx_comment_drafts_status_bot ON comment_drafts(status, bot_id)').run().catch(() => {}))
       .then(() => {})
       .catch(() => {});
@@ -6457,7 +6472,7 @@ app.get('/api/drafts', async (c) => {
   await ensureDraftsTable(c.env.DB);
   const where: string[] = []; const params: any[] = [];
   if (status) { where.push('status = ?'); params.push(status); }
-  const sql = `SELECT id, draft_id, bot_id, handle, post_url, post_key, proposed_comment, status, grounding_risks, safe_facts, lang, created_at FROM comment_drafts`
+  const sql = `SELECT id, draft_id, bot_id, handle, post_url, post_key, proposed_comment, status, grounding_risks, safe_facts, lang, approved_at, approved_by, created_at FROM comment_drafts`
     + (where.length ? ' WHERE ' + where.join(' AND ') : '')
     + ' ORDER BY id DESC LIMIT ?';
   params.push(limit);
@@ -6486,7 +6501,7 @@ app.put('/api/drafts/:id', async (c) => {
   const comment = String(body?.proposedComment || '').trim();
   if (comment.length < 3) return c.json({ error: 'comment_too_short' }, 400);
   await ensureDraftsTable(c.env.DB);
-  const res = await c.env.DB.prepare('UPDATE comment_drafts SET proposed_comment = ? WHERE id = ? AND status IN (\'pending\', \'approved\')')
+  const res = await c.env.DB.prepare('UPDATE comment_drafts SET proposed_comment = ? WHERE id = ? AND status = \'pending\'')
     .bind(comment, id).run();
   if (!(res as any).meta?.changes) return c.json({ error: 'not_found_or_locked' }, 404);
   return c.json({ ok: true, id, action: 'edit', proposedComment: comment });
@@ -6506,10 +6521,13 @@ app.post('/api/drafts/claim-approved', async (c) => {
        SELECT id FROM comment_drafts
         WHERE status = 'approved'
           AND bot_id = ?
+          AND approved_at IS NOT NULL
+          AND approved_by IS NOT NULL
+          AND approved_by <> ''
         ORDER BY id ASC
         LIMIT 1
      )
-     RETURNING id, draft_id, bot_id, handle, post_url, post_key, proposed_comment, status, grounding_risks, safe_facts, lang, created_at
+     RETURNING id, draft_id, bot_id, handle, post_url, post_key, proposed_comment, status, grounding_risks, safe_facts, lang, approved_at, approved_by, created_at
   `).bind(botId).first() as any;
   return c.json({ ok: true, item: row || null });
 });
@@ -6538,16 +6556,29 @@ app.post('/api/drafts/:id/:action', async (c) => {
     if (!(res as any).meta?.changes) return c.json({ error: 'not_found' }, 404);
     return c.json({ ok: true, id, action });
   }
-  const quality = action === 'approve' ? 'approved' : action === 'posted' ? 'posted' : 'rejected';
+  const quality = action === 'approve' ? 'approved' : 'rejected';
   let body: any = {};
   try { body = await c.req.json(); } catch {}
   const editedComment = String(body?.proposedComment || '').trim();
-  const res = action === 'approve' && editedComment.length >= 3
-    ? await c.env.DB.prepare('UPDATE comment_drafts SET proposed_comment = ?, status = ? WHERE id = ?')
-      .bind(editedComment, quality, id).run()
-    : await c.env.DB.prepare('UPDATE comment_drafts SET status = ? WHERE id = ?').bind(quality, id).run();
+  const reviewer = c.get('user') as any;
+  const reviewerId = String(reviewer?.email || reviewer?.uid || '').trim();
+  if (action === 'approve' && !reviewerId) return c.json({ error: 'reviewer_identity_missing' }, 403);
+  const res = action === 'approve'
+    ? editedComment.length >= 3
+      ? await c.env.DB.prepare(`UPDATE comment_drafts
+          SET proposed_comment = ?, status = 'approved', approved_at = datetime('now'), approved_by = ?
+          WHERE id = ? AND status = 'pending'`)
+        .bind(editedComment, reviewerId, id).run()
+      : await c.env.DB.prepare(`UPDATE comment_drafts
+          SET status = 'approved', approved_at = datetime('now'), approved_by = ?
+          WHERE id = ? AND status = 'pending'`)
+        .bind(reviewerId, id).run()
+    : await c.env.DB.prepare(`UPDATE comment_drafts
+        SET status = ?, approved_at = NULL, approved_by = NULL
+        WHERE id = ? AND status IN ('pending', 'approved')`)
+      .bind(quality, id).run();
   if (!(res as any).meta?.changes) return c.json({ error: 'not_found' }, 404);
-  return c.json({ ok: true, id, action, status: quality });
+  return c.json({ ok: true, id, action, status: quality, approvedBy: action === 'approve' ? reviewerId : null });
 });
 
 
