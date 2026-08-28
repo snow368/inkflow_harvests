@@ -2616,12 +2616,14 @@ app.post('/api/automation/bot-account', async (c) => {
     try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN created_at TEXT').run(); } catch {}
     const now = new Date().toISOString();
     // D???o?�������?������??��?��?��D??o?2??2??
-    const existing = await c.env.DB.prepare('SELECT created_at FROM bot_accounts WHERE account_id=?').bind(account_id).first() as any;
-    if (existing?.created_at) {
+    const existing = await c.env.DB.prepare('SELECT account_id FROM bot_accounts WHERE account_id=?').bind(account_id).first() as any;
+    if (existing?.account_id) {
       await c.env.DB.prepare('UPDATE bot_accounts SET ig_handle=? WHERE account_id=?').bind(ig_handle || '', account_id).run();
     } else {
       await c.env.DB.prepare('INSERT INTO bot_accounts (account_id, ig_handle, created_at) VALUES (?, ?, ?)').bind(account_id, ig_handle || '', now).run();
     }
+    await c.env.DB.prepare('UPDATE bot_action_prefs SET ig_handle=?, updated_at=? WHERE bot_id=?')
+      .bind(ig_handle || '', Date.now(), account_id).run().catch(() => {});
     return c.json({ ok: true });
   } catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
 });
@@ -2639,10 +2641,26 @@ app.get('/api/automation/bot-account', async (c) => {
     try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN vps_name TEXT').run(); } catch {}
     try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN proxy TEXT').run(); } catch {}
     try { await c.env.DB.prepare('ALTER TABLE bot_accounts ADD COLUMN first_used_at TEXT').run(); } catch {}
-    await c.env.DB.prepare('DELETE FROM bot_accounts WHERE account_id=?').bind(botId).run();
-    await c.env.DB.prepare(`INSERT INTO bot_accounts (account_id, ig_handle, first_used_at, vps_name, proxy) VALUES (?, ?, ?, ?, ?)`)
-      .bind(botId, c.req.query('igHandle') || null, c.req.query('firstUsedAt') || null,
-            c.req.query('vpsName') || null, c.req.query('proxyIp') || null).run();
+    if (botId === 'all') {
+      // Older versions accidentally created a fake "all" account while listing.
+      await c.env.DB.prepare("DELETE FROM bot_accounts WHERE account_id='all'").run();
+    } else {
+      const igHandle = c.req.query('igHandle') || '';
+      const firstUsedAt = c.req.query('firstUsedAt') || null;
+      const vpsName = c.req.query('vpsName') || null;
+      const proxyIp = c.req.query('proxyIp') || null;
+      const existing = await c.env.DB.prepare('SELECT account_id FROM bot_accounts WHERE account_id=?').bind(botId).first();
+      if (existing) {
+        await c.env.DB.prepare(`UPDATE bot_accounts
+          SET ig_handle=?, first_used_at=COALESCE(?, first_used_at), vps_name=COALESCE(?, vps_name), proxy=COALESCE(?, proxy)
+          WHERE account_id=?`).bind(igHandle, firstUsedAt, vpsName, proxyIp, botId).run();
+      } else {
+        await c.env.DB.prepare(`INSERT INTO bot_accounts (account_id, ig_handle, first_used_at, vps_name, proxy) VALUES (?, ?, ?, ?, ?)`)
+          .bind(botId, igHandle, firstUsedAt, vpsName, proxyIp).run();
+      }
+      await c.env.DB.prepare('UPDATE bot_action_prefs SET ig_handle=?, updated_at=? WHERE bot_id=?')
+        .bind(igHandle, Date.now(), botId).run().catch(() => {});
+    }
     // Return all accounts so frontend can update table directly
     const all = await c.env.DB.prepare('SELECT account_id, ig_handle, stage, daily_task_limit, speed_factor, first_used_at, vps_name, proxy FROM bot_accounts').all();
     return c.json({
