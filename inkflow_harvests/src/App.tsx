@@ -102,7 +102,9 @@ const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab
   const isSnow368 = user?.email === 'snow368@gmail.com';
   const inkflowTab = { id: 'inkflow-outreach', label: 'InkFlow 获客', icon: Target };
   const adminTab = { id: 'admin', label: 'Admin', icon: Users };
-  const allowedTabs = userTabs === null ? tabs : tabs.filter(t => userTabs.includes(t.id));
+  const hasTabAccess = (id: string) =>
+    userTabs?.includes(id) || (id === 'comment-drafts' && userTabs?.includes('botworkers'));
+  const allowedTabs = userTabs === null ? tabs : tabs.filter(t => hasTabAccess(t.id));
   const showAdmin = isSnow368 || (userTabs !== null && userTabs.includes('admin'));
   const showInkflow = isSnow368 || (userTabs !== null && userTabs.includes('inkflow-outreach'));
   let allTabs = [...allowedTabs];

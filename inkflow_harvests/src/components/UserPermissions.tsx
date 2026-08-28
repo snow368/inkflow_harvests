@@ -13,6 +13,7 @@ const ALL_TABS = [
   { id: 'automation', label: 'Automation' },
   { id: 'publish', label: 'Publish Calendar' },
   { id: 'botworkers', label: 'Bot Workers' },
+  { id: 'comment-drafts', label: '生成评论' },
   { id: 'scrape', label: 'Scrape' },
   { id: 'settings', label: 'Settings' },
   { id: 'inkflow-outreach', label: 'InkFlow 获客' },
