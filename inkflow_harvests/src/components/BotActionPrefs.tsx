@@ -1,13 +1,38 @@
 import { useEffect, useState } from 'react';
-import { getUserBotPrefs, setUserBotPrefs, BotActionPrefs } from '../lib/botPrefs';
+import {
+  getUserBotPrefs,
+  setUserBotPrefs,
+  fetchUserBotPrefsFromServer,
+  saveUserBotPrefsToServer,
+  BotActionPrefs,
+} from '../lib/botPrefs';
 
 // 每用户「动作偏好」面板：决定该用户派发的任务里，bot 每会话执行的点赞/评论/关注次数
 export default function BotActionPrefs({ uid, username }: { uid?: string; username?: string }) {
   const [prefs, setPrefs] = useState<BotActionPrefs>({ likesPerSession: 2, commentsPerSession: 1, followsPerSession: 0, botId: 'bot_ig_01', igHandle: '' });
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
 
   useEffect(() => {
-    if (uid) setPrefs(getUserBotPrefs(uid));
+    let cancelled = false;
+    const load = async () => {
+      if (!uid) return;
+      const localPrefs = getUserBotPrefs(uid);
+      setPrefs(localPrefs);
+      try {
+        const remote = await fetchUserBotPrefsFromServer(uid);
+        if (!cancelled && remote) {
+          setPrefs(remote);
+          setSaved(true);
+          setMsg('已读取云端配置');
+        }
+      } catch {
+        // Local cache is enough for rendering; save will surface sync failures.
+      }
+    };
+    load();
+    return () => { cancelled = true; };
   }, [uid]);
 
   const update = (k: keyof BotActionPrefs, v: number) => {
@@ -20,10 +45,20 @@ export default function BotActionPrefs({ uid, username }: { uid?: string; userna
     setSaved(false);
   };
 
-  const save = () => {
+  const save = async () => {
     if (uid) {
+      setSaving(true);
+      setMsg('');
       setUserBotPrefs(uid, prefs);
-      setSaved(true);
+      try {
+        await saveUserBotPrefsToServer(uid, prefs);
+        setSaved(true);
+        setMsg('已同步到云端，后续新任务会按这个配置派发');
+      } catch (e: any) {
+        setMsg(`本地已保存，云端同步失败：${e?.message || e}`);
+      } finally {
+        setSaving(false);
+      }
     }
   };
 
@@ -80,15 +115,20 @@ export default function BotActionPrefs({ uid, username }: { uid?: string; userna
           />
         </div>
         <p className="text-[10px] text-zinc-600 leading-relaxed">
-          Bot ID 必须与你 VPS 上运行的 bot 实例一致，任务只会派发给这个 ID。IG 账号名仅作标识。
+          Bot ID 必须与你 VPS 上运行的 bot 实例一致。保存后会同步到云端，VPS scheduler 会按这里的点赞/评论/关注次数生成后续任务。
         </p>
       </div>
+      {msg && (
+        <div className={`mt-3 text-[10px] ${msg.includes('失败') ? 'text-amber-400' : 'text-emerald-400'}`}>
+          {msg}
+        </div>
+      )}
       <button
         onClick={save}
-        disabled={!uid}
+        disabled={!uid || saving}
         className="w-full mt-3 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all"
       >
-        保存我的偏好
+        {saving ? '保存中...' : '保存我的偏好'}
       </button>
     </div>
   );
