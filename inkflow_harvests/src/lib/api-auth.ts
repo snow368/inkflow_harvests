@@ -5,16 +5,41 @@ import { auth, getStoredEmailAuth } from './firebase';
 // `*.workers.dev` directly. Direct workers.dev URLs are DNS-poisoned / blocked
 // behind the GFW in China, which made every apiFetch call fail there.
 const API_BASE = '';
-const API_TIMEOUT = 20000; // 20s — Worker can be slow under GFW
+const API_TIMEOUT = 45000; // Firebase JWKS cold starts can exceed 20s through the Pages proxy.
+
+class ApiTimeoutError extends Error {
+  constructor(timeout: number) {
+    super(`请求超时（${Math.round(timeout / 1000)} 秒），正在重试或请稍后刷新`);
+    this.name = 'ApiTimeoutError';
+  }
+}
 
 /** fetch with timeout wrapper */
 async function fetchWithTimeout(url: string, options: RequestInit, timeout = API_TIMEOUT): Promise<Response> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeout);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    ctrl.abort();
+  }, timeout);
   try {
     return await fetch(url, { ...options, signal: ctrl.signal });
+  } catch (error) {
+    if (timedOut) throw new ApiTimeoutError(timeout);
+    throw error;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function fetchWithReadRetry(url: string, options: RequestInit): Promise<Response> {
+  const method = String(options.method || 'GET').toUpperCase();
+  const canRetry = method === 'GET' || method === 'HEAD';
+  try {
+    return await fetchWithTimeout(url, options);
+  } catch (error) {
+    if (!canRetry || !(error instanceof ApiTimeoutError)) throw error;
+    return fetchWithTimeout(url, options, 60000);
   }
 }
 
@@ -97,7 +122,7 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetchWithTimeout(`${API_BASE}${path}`, { ...options, headers });
+  const res = await fetchWithReadRetry(`${API_BASE}${path}`, { ...options, headers });
 
   // If 401, token might be expired — refresh via Worker proxy and retry once
   if (res.status === 401) {
@@ -105,7 +130,7 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
     const newToken = await refreshTokenViaWorker();
     if (newToken) {
       headers['Authorization'] = `Bearer ${newToken}`;
-      return fetchWithTimeout(`${API_BASE}${path}`, { ...options, headers });
+      return fetchWithReadRetry(`${API_BASE}${path}`, { ...options, headers });
     }
   }
 

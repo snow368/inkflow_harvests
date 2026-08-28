@@ -31,6 +31,7 @@ export default function CommentDrafts() {
 
   const loadList = useCallback(async () => {
     setLoading(true);
+    setMsg(null);
     try {
       const q = filter !== 'all' ? `?status=${filter}` : '';
       const res = await apiFetch('/api/drafts' + q);
@@ -205,7 +206,7 @@ export default function CommentDrafts() {
       {/* 列表 */}
       <div className="space-y-3">
         {loading && <div className="text-zinc-500 text-sm p-4">加载中…</div>}
-        {!loading && items.length === 0 && (
+        {!loading && !msg && items.length === 0 && (
           <div className="text-zinc-500 text-sm p-8 text-center border border-dashed border-zinc-800 rounded-xl">
             暂无草稿。bot 生成评论后会同步到这里。
           </div>
