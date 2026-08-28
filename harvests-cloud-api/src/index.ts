@@ -2622,8 +2622,9 @@ app.post('/api/automation/bot-account', async (c) => {
     } else {
       await c.env.DB.prepare('INSERT INTO bot_accounts (account_id, ig_handle, created_at) VALUES (?, ?, ?)').bind(account_id, ig_handle || '', now).run();
     }
-    await c.env.DB.prepare('UPDATE bot_action_prefs SET ig_handle=?, updated_at=? WHERE bot_id=?')
-      .bind(ig_handle || '', Date.now(), account_id).run().catch(() => {});
+    // Renaming an account must not change which user's action preferences are newest.
+    await c.env.DB.prepare('UPDATE bot_action_prefs SET ig_handle=? WHERE bot_id=?')
+      .bind(ig_handle || '', account_id).run().catch(() => {});
     return c.json({ ok: true });
   } catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
 });
@@ -2658,8 +2659,8 @@ app.get('/api/automation/bot-account', async (c) => {
         await c.env.DB.prepare(`INSERT INTO bot_accounts (account_id, ig_handle, first_used_at, vps_name, proxy) VALUES (?, ?, ?, ?, ?)`)
           .bind(botId, igHandle, firstUsedAt, vpsName, proxyIp).run();
       }
-      await c.env.DB.prepare('UPDATE bot_action_prefs SET ig_handle=?, updated_at=? WHERE bot_id=?')
-        .bind(igHandle, Date.now(), botId).run().catch(() => {});
+      await c.env.DB.prepare('UPDATE bot_action_prefs SET ig_handle=? WHERE bot_id=?')
+        .bind(igHandle, botId).run().catch(() => {});
     }
     // Return all accounts so frontend can update table directly
     const all = await c.env.DB.prepare('SELECT account_id, ig_handle, stage, daily_task_limit, speed_factor, first_used_at, vps_name, proxy FROM bot_accounts').all();
