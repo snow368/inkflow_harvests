@@ -13,6 +13,8 @@ const ALL_TABS = [
   { id: 'automation', label: 'Automation' },
   { id: 'publish', label: 'Publish Calendar' },
   { id: 'botworkers', label: 'Bot Workers' },
+  { id: 'comment-ops', label: '评论生产中心' },
+  { id: 'corpus', label: '评论语料库' },
   { id: 'comment-drafts', label: '生成评论' },
   { id: 'scrape', label: 'Scrape' },
   { id: 'settings', label: 'Settings' },
