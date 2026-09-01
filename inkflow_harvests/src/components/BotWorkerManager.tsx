@@ -693,7 +693,7 @@ function BotDailyStatsSection() {
 
                 <div className="grid grid-cols-4 gap-2 mb-3">
                   {[
-                    ['待跑', plan.pending || 0, 'text-amber-300'],
+                    ['剩余', plan.remaining || 0, 'text-amber-300'],
                     ['运行中', plan.running || 0, 'text-blue-300'],
                     ['完成', done, 'text-emerald-300'],
                     ['失败', failed, 'text-red-300'],

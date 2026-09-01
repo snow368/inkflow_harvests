@@ -3027,6 +3027,7 @@ app.get('/api/automation/bot-daily-stats', async (c) => {
       if (meta.dailyPlan && typeof meta.dailyPlan === 'object') plan.dailyPlan = meta.dailyPlan;
       if (meta.dailyProgress && typeof meta.dailyProgress === 'object') plan.dailyProgress = meta.dailyProgress;
       if (Array.isArray(meta.accountIds)) plan.accountIds = meta.accountIds;
+      plan.taskTarget = Math.max(plan.taskTarget, Number(meta.dailyPlan?.taskTarget || 0));
     }
 
     const plans = Array.from(planMap.values()).map((plan: any) => ({
