@@ -566,6 +566,8 @@ function BotDailyStatsSection() {
   const [botIds, setBotIds] = useState<string[]>([]);
   const [selectedBot, setSelectedBot] = useState('');
   const [loading, setLoading] = useState(true);
+  const [itemFilter, setItemFilter] = useState('all');
+  const [excludingHandle, setExcludingHandle] = useState('');
 
   const fetchStats = useCallback(async () => {
     setLoading(true);
@@ -601,6 +603,30 @@ function BotDailyStatsSection() {
     const interval = setInterval(fetchStats, 30000);
     return () => clearInterval(interval);
   }, [fetchStats]);
+
+  const excludeItem = async (item: any) => {
+    const handle = String(item?.handle || '').trim();
+    if (!handle) return;
+    if (!window.confirm(`确认排除 @${handle}？\n\n将删除数据池记录、取消未执行任务，并删除尚未发布的评论草稿；已完成和已发布历史会保留。`)) return;
+    setExcludingHandle(handle);
+    try {
+      const res = await apiFetch('/api/automation/bot-daily-items/exclude', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle, reason: item.classification || 'manual_exclusion' }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.ok) throw new Error(data?.error || '排除失败');
+      toast.success(`@${handle} 已排除`, {
+        description: `取消任务 ${data.cancelledTasks || 0} · 删除待发评论 ${data.deletedUnpublishedDrafts || 0}`,
+      });
+      await fetchStats();
+    } catch (error: any) {
+      toast.error(`@${handle} 排除失败`, { description: error?.message || String(error) });
+    } finally {
+      setExcludingHandle('');
+    }
+  };
 
   const bots = Array.isArray(stats.bots) ? stats.bots : [];
   const plans = Array.isArray(stats.plans) ? stats.plans : [];
@@ -727,6 +753,101 @@ function BotDailyStatsSection() {
                     <p className="text-zinc-600 mt-0.5">间隔 8-20 分钟</p>
                   </div>
                 </div>
+
+                <details className="mt-3 border-t border-zinc-800 pt-3 group">
+                  <summary className="cursor-pointer list-none flex items-center justify-between text-[10px] font-black text-zinc-400 hover:text-white">
+                    <span>查看今日 IG 明细（{plan.items?.length || 0}）</span>
+                    <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <div className="flex gap-2 mt-3 mb-2 overflow-x-auto">
+                    {[
+                      ['all', '全部'], ['pending', '没跑'], ['done', '已完成'],
+                      ['commented', '有评论'], ['uncommented', '没评论'], ['review', 'PMU/待核'],
+                    ].map(([value, label]) => (
+                      <button key={value} onClick={() => setItemFilter(value)}
+                        className={cn(
+                          "px-2.5 py-1 rounded-lg text-[9px] font-black whitespace-nowrap border",
+                          itemFilter === value ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-300" : "bg-zinc-900 border-zinc-800 text-zinc-500"
+                        )}>{label}</button>
+                    ))}
+                  </div>
+                  <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+                    <table className="w-full min-w-[900px] text-[10px]">
+                      <thead className="sticky top-0 bg-zinc-950 text-zinc-600">
+                        <tr>
+                          <th className="text-left p-2">IG / 店铺</th>
+                          <th className="text-left p-2">分类</th>
+                          <th className="text-left p-2">任务</th>
+                          <th className="text-left p-2">互动</th>
+                          <th className="text-left p-2">评论内容与状态</th>
+                          <th className="text-right p-2">处理</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(plan.items || []).filter((item: any) => {
+                          const comments = Array.isArray(item.comments) ? item.comments : [];
+                          if (itemFilter === 'pending') return ['pending', 'leased', 'running'].includes(item.status);
+                          if (itemFilter === 'done') return item.status === 'done';
+                          if (itemFilter === 'commented') return comments.length > 0;
+                          if (itemFilter === 'uncommented') return comments.length === 0;
+                          if (itemFilter === 'review') return ['pmu', 'non_tattoo', 'unknown'].includes(item.classification);
+                          return true;
+                        }).map((item: any) => {
+                          const comments = Array.isArray(item.comments) ? item.comments : [];
+                          const classificationLabel: Record<string, string> = {
+                            tattoo: 'Tattoo', pmu: 'PMU', non_tattoo: '非 Tattoo', unknown: '待核实',
+                          };
+                          const commentStatusLabel: Record<string, string> = {
+                            pending: '待审核', approved: '待发布', publishing: '发布中', posted: '已发布', rejected: '已拒绝',
+                          };
+                          return (
+                            <tr key={item.taskId || item.handle} className="border-t border-zinc-800/70 align-top">
+                              <td className="p-2">
+                                <a href={`https://www.instagram.com/${item.handle}/`} target="_blank" rel="noreferrer" className="font-black text-cyan-300 hover:underline">@{item.handle}</a>
+                                <p className="text-zinc-500 mt-1 max-w-[180px] truncate">{item.shopName || '-'}</p>
+                                <p className="text-zinc-700">{[item.city, item.state].filter(Boolean).join(', ')}</p>
+                              </td>
+                              <td className="p-2">
+                                <span className={cn(
+                                  "inline-flex px-2 py-0.5 rounded-full font-black",
+                                  item.classification === 'tattoo' ? 'bg-emerald-500/10 text-emerald-400'
+                                    : item.classification === 'pmu' ? 'bg-amber-500/10 text-amber-300'
+                                    : 'bg-red-500/10 text-red-300'
+                                )}>{classificationLabel[item.classification] || '待核实'}</span>
+                                <p className="text-zinc-600 mt-1 max-w-[130px] truncate">{item.category || item.classificationReason || '-'}</p>
+                              </td>
+                              <td className="p-2">
+                                <span className={cn("font-black", item.status === 'done' ? 'text-emerald-400' : item.status === 'failed' ? 'text-red-400' : item.status === 'cancelled' ? 'text-zinc-600' : 'text-amber-300')}>{item.status}</span>
+                              </td>
+                              <td className="p-2 text-zinc-400 whitespace-nowrap">
+                                赞 {item.activity?.likes || 0} · 关注 {item.activity?.followed ? '是' : '否'}
+                              </td>
+                              <td className="p-2 min-w-[300px]">
+                                {comments.length ? comments.map((comment: any) => (
+                                  <div key={comment.id} className="mb-2 last:mb-0">
+                                    <span className={cn(
+                                      "mr-2 font-black",
+                                      comment.status === 'posted' ? 'text-emerald-400' : comment.status === 'approved' ? 'text-blue-300' : comment.status === 'rejected' ? 'text-red-400' : 'text-amber-300'
+                                    )}>{commentStatusLabel[comment.status] || comment.status}</span>
+                                    <span className="text-zinc-300">{comment.proposed_comment}</span>
+                                  </div>
+                                )) : <span className="text-zinc-600">尚未生成评论</span>}
+                              </td>
+                              <td className="p-2 text-right">
+                                {item.status !== 'cancelled' && (
+                                  <button onClick={() => excludeItem(item)} disabled={excludingHandle === item.handle}
+                                    className="px-2 py-1 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 font-black disabled:opacity-50">
+                                    {excludingHandle === item.handle ? '处理中' : '排除并删除'}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
               </div>
             );
           })}

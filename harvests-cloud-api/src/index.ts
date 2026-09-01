@@ -85,6 +85,9 @@ async function ensureD1Tables(db: D1Database): Promise<void> {
       await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON automation_tasks(status)`).run().catch(() => {});
       await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON automation_tasks(created_at)`).run().catch(() => {});
       await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_payload ON automation_tasks(payload)`).run().catch(() => {});
+      await db.prepare(`CREATE TABLE IF NOT EXISTS bot_exclusions (
+        handle TEXT PRIMARY KEY, reason TEXT, excluded_by TEXT, created_at INTEGER
+      )`).run().catch(() => {});
 
       await db.prepare(`CREATE TABLE IF NOT EXISTS bot_observations (
         id INTEGER PRIMARY KEY AUTOINCREMENT, bot_id TEXT NOT NULL, artist_handle TEXT,
@@ -173,7 +176,6 @@ const PUBLIC_PATHS = new Set([
   '/api/automation/bot-account',
   '/api/automation/bot-account/delete',
   '/api/automation/behavior-logs',
-  '/api/automation/bot-daily-stats',
   '/api/automation/bot-config',
   '/api/bot/register',
   '/api/bot/heartbeat',
@@ -2965,7 +2967,7 @@ app.get('/api/automation/bot-daily-stats', async (c) => {
     const dayStart = Date.parse(`${date}T00:00:00.000Z`);
     const dayEnd = dayStart + 24 * 60 * 60 * 1000;
     const taskPlanRows = await c.env.DB.prepare(`
-      SELECT status, payload, leased_by, created_at
+      SELECT id, status, payload, leased_by, created_at
         FROM automation_tasks
        WHERE created_at >= ? AND created_at < ?
        ORDER BY created_at DESC
@@ -2985,11 +2987,13 @@ app.get('/api/automation/bot-daily-stats', async (c) => {
           running: 0,
           done: 0,
           failed: 0,
+          cancelled: 0,
           likesPerSession: 0,
           commentsPerSession: 0,
           followsPerSession: 0,
           taskTypes: new Set<string>(),
           states: new Set<string>(),
+          items: [],
         });
       }
       const plan = planMap.get(assignedBot);
@@ -2997,6 +3001,7 @@ app.get('/api/automation/bot-daily-stats', async (c) => {
       const status = String(row.status || 'pending').toLowerCase();
       if (status === 'done') plan.done += 1;
       else if (status === 'failed') plan.failed += 1;
+      else if (status === 'cancelled') plan.cancelled += 1;
       else if (status === 'leased' || status === 'running') plan.running += 1;
       else plan.pending += 1;
       plan.taskTarget = Math.max(plan.taskTarget, Number(payload.dailyTaskLimit || 0));
@@ -3005,6 +3010,16 @@ app.get('/api/automation/bot-daily-stats', async (c) => {
       plan.followsPerSession = Number(payload.followsPerSession ?? plan.followsPerSession ?? 0);
       if (payload.taskType) plan.taskTypes.add(String(payload.taskType));
       if (payload.state) plan.states.add(String(payload.state));
+      plan.items.push({
+        taskId: String(row.id || payload.id || ''),
+        handle: String(payload.artistHandle || '').replace(/^@/, '').trim().toLowerCase(),
+        shopName: String(payload.shopName || ''),
+        city: String(payload.city || ''),
+        state: String(payload.state || ''),
+        category: String(payload.category || ''),
+        status,
+        createdAt: Number(row.created_at || 0),
+      });
     }
 
     const workerMetaRows = await c.env.DB.prepare('SELECT bot_id, meta, status, last_heartbeat FROM bot_instances').all();
@@ -3016,9 +3031,9 @@ app.get('/api/automation/bot-daily-stats', async (c) => {
       try { meta = row.meta ? JSON.parse(row.meta) : {}; } catch {}
       if (!planMap.has(workerBotId)) {
         planMap.set(workerBotId, {
-          botId: workerBotId, taskTarget: 0, scheduled: 0, pending: 0, running: 0, done: 0, failed: 0,
+          botId: workerBotId, taskTarget: 0, scheduled: 0, pending: 0, running: 0, done: 0, failed: 0, cancelled: 0,
           likesPerSession: 0, commentsPerSession: 0, followsPerSession: 0,
-          taskTypes: new Set<string>(), states: new Set<string>(),
+          taskTypes: new Set<string>(), states: new Set<string>(), items: [],
         });
       }
       const plan = planMap.get(workerBotId);
@@ -3030,12 +3045,97 @@ app.get('/api/automation/bot-daily-stats', async (c) => {
       plan.taskTarget = Math.max(plan.taskTarget, Number(meta.dailyPlan?.taskTarget || 0));
     }
 
+    const itemHandles = Array.from(new Set(Array.from(planMap.values()).flatMap((plan: any) =>
+      (plan.items || []).map((item: any) => item.handle).filter(Boolean)
+    ))) as string[];
+    const artistByHandle = new Map<string, any>();
+    const draftsByHandle = new Map<string, any[]>();
+    const activityByBotHandle = new Map<string, any>();
+    for (let offset = 0; offset < itemHandles.length; offset += 80) {
+      const chunk = itemHandles.slice(offset, offset + 80);
+      if (!chunk.length) continue;
+      const placeholders = chunk.map(() => '?').join(',');
+      const artistRows = await c.env.DB.prepare(`
+        SELECT ig_handle, shop_name, city, state, import_region, category, website
+          FROM artists
+         WHERE LOWER(ig_handle) IN (${placeholders})
+         ORDER BY id DESC
+      `).bind(...chunk).all();
+      for (const artist of (artistRows.results || []) as any[]) {
+        const handle = String(artist.ig_handle || '').toLowerCase();
+        if (handle && !artistByHandle.has(handle)) artistByHandle.set(handle, artist);
+      }
+      await ensureDraftsTable(c.env.DB);
+      const draftRows = await c.env.DB.prepare(`
+        SELECT id, bot_id, handle, post_url, proposed_comment, status, approved_at, approved_by,
+               last_publish_error, created_at
+          FROM comment_drafts
+         WHERE LOWER(handle) IN (${placeholders})
+         ORDER BY id DESC
+      `).bind(...chunk).all();
+      for (const draft of (draftRows.results || []) as any[]) {
+        const handle = String(draft.handle || '').toLowerCase();
+        const list = draftsByHandle.get(handle) || [];
+        if (list.length < 10) list.push(draft);
+        draftsByHandle.set(handle, list);
+      }
+    }
+    const activityRows = await c.env.DB.prepare(`
+      SELECT bot_id, event, data, ts
+        FROM bot_behavior_logs
+       WHERE substr(ts, 1, 10) = ?
+         AND event IN ('task_start','task_done','task_failed','like_post','follow_done','comment_review_queued','comment_posted')
+       ORDER BY id DESC
+    `).bind(date).all();
+    for (const row of (activityRows.results || []) as any[]) {
+      let data: any = {};
+      try { data = row.data ? JSON.parse(row.data) : {}; } catch {}
+      const handle = String(data.handle || '').replace(/^@/, '').trim().toLowerCase();
+      if (!handle) continue;
+      const key = `${row.bot_id}|${handle}`;
+      const activity = activityByBotHandle.get(key) || { likes: 0, followed: false, started: false, done: false, failed: false };
+      if (row.event === 'like_post') activity.likes += 1;
+      if (row.event === 'follow_done') activity.followed = true;
+      if (row.event === 'task_start') activity.started = true;
+      if (row.event === 'task_done') activity.done = true;
+      if (row.event === 'task_failed') activity.failed = true;
+      activityByBotHandle.set(key, activity);
+    }
+
+    const classifyItem = (item: any) => {
+      const text = `${item.shopName || ''} ${item.category || ''} ${item.website || ''}`.toLowerCase();
+      const pmuHits = ['permanent makeup', 'permanent cosmetics', 'microblading', 'microblade', 'powder brows', 'ombre brows', 'brow studio', 'lip blush', 'pmu'];
+      const tattooHits = ['tattoo', 'ink ', 'inked', 'tattoos'];
+      const nonTattooHits = ['nail salon', 'hair salon', 'barber', 'waxing', 'eyelash', 'lash studio', 'day spa', 'med spa'];
+      const pmuReason = pmuHits.find((word) => text.includes(word));
+      if (pmuReason) return { classification: 'pmu', classificationReason: pmuReason };
+      const tattooReason = tattooHits.find((word) => text.includes(word));
+      if (tattooReason) return { classification: 'tattoo', classificationReason: tattooReason };
+      const nonTattooReason = nonTattooHits.find((word) => text.includes(word));
+      if (nonTattooReason) return { classification: 'non_tattoo', classificationReason: nonTattooReason };
+      return { classification: 'unknown', classificationReason: '' };
+    };
+
     const plans = Array.from(planMap.values()).map((plan: any) => ({
       ...plan,
       taskTarget: Math.max(Number(plan.taskTarget || 0), Number(plan.scheduled || 0)),
       remaining: Math.max(0, Math.max(Number(plan.taskTarget || 0), Number(plan.scheduled || 0)) - Number(plan.done || 0) - Number(plan.failed || 0)),
       taskTypes: Array.from(plan.taskTypes || []),
       states: Array.from(plan.states || []),
+      items: (plan.items || []).map((item: any) => {
+        const artist = artistByHandle.get(item.handle) || {};
+        const merged = {
+          ...item,
+          shopName: item.shopName || artist.shop_name || '',
+          city: item.city || artist.city || '',
+          state: item.state || artist.state || artist.import_region || '',
+          category: item.category || artist.category || '',
+          website: artist.website || '',
+          activity: activityByBotHandle.get(`${plan.botId}|${item.handle}`) || null,
+          comments: (draftsByHandle.get(item.handle) || []).filter((draft: any) => !draft.bot_id || draft.bot_id === plan.botId),
+        };
+        return { ...merged, ...classifyItem(merged) };
+      }),
     })).sort((a: any, b: any) => String(a.botId).localeCompare(String(b.botId)));
 
     return c.json({ ok: true, date, days, botId: botId || null, bots, totals, trend: trendRows.results || [], plans });
@@ -4402,6 +4502,7 @@ app.get('/api/automation/artists', async (c) => {
 
     // Build filter WHERE clause (shared between count + data queries)
     const wheres: string[] = [`ig_handle IS NOT NULL AND ig_handle != ''`];
+    wheres.push(`LOWER(ig_handle) NOT IN (SELECT LOWER(handle) FROM bot_exclusions)`);
     if (state) wheres.push(`import_region = '${state.replace(/'/g, "''")}'`);
     if (ownerAccount) wheres.push(`owner_account = '${ownerAccount.replace(/'/g, "''")}'`);
     if (search) {
@@ -4509,6 +4610,53 @@ app.post('/api/artists/delete', async (c) => {
       deleted += (res?.meta?.changes ?? res?.changes ?? 0);
     }
     return c.json({ ok: true, deleted, handles: handles.length, ids: ids.length });
+  } catch (e: any) {
+    return c.json({ ok: false, error: String(e?.message || e) }, 500);
+  }
+});
+
+// Exclude an invalid outreach target without erasing completed/posted audit history.
+app.post('/api/automation/bot-daily-items/exclude', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({})) as any;
+    const handle = String(body?.handle || '').replace(/^@/, '').trim().toLowerCase();
+    const reason = String(body?.reason || 'manual_exclusion').trim().slice(0, 120);
+    if (!handle) return c.json({ error: 'handle_required' }, 400);
+    const user = c.get('user') as any;
+    const excludedBy = String(user?.email || user?.uid || 'reviewer').slice(0, 160);
+    const now = Date.now();
+    await c.env.DB.prepare(`
+      INSERT INTO bot_exclusions (handle, reason, excluded_by, created_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(handle) DO UPDATE SET reason=excluded.reason, excluded_by=excluded.excluded_by, created_at=excluded.created_at
+    `).bind(handle, reason, excludedBy, now).run();
+    const cancelledResult: any = await c.env.DB.prepare(`
+      UPDATE automation_tasks
+         SET status = 'cancelled', error_reason = ?, updated_at = ?
+       WHERE LOWER(json_extract(payload, '$.artistHandle')) = ?
+         AND status = 'pending'
+    `).bind(`excluded:${reason}`, now, handle).run();
+    const inProgressRow = await c.env.DB.prepare(`
+      SELECT COUNT(*) AS n FROM automation_tasks
+       WHERE LOWER(json_extract(payload, '$.artistHandle')) = ?
+         AND status IN ('leased','running')
+    `).bind(handle).first() as any;
+    const artistResult: any = await c.env.DB.prepare('DELETE FROM artists WHERE LOWER(ig_handle) = ?').bind(handle).run();
+    await ensureDraftsTable(c.env.DB);
+    const draftResult: any = await c.env.DB.prepare(`
+      DELETE FROM comment_drafts
+       WHERE LOWER(handle) = ?
+         AND status IN ('pending','approved')
+    `).bind(handle).run();
+    return c.json({
+      ok: true,
+      handle,
+      reason,
+      cancelledTasks: Number(cancelledResult?.meta?.changes ?? cancelledResult?.changes ?? 0),
+      inProgressTasks: Number(inProgressRow?.n || 0),
+      deletedArtists: Number(artistResult?.meta?.changes ?? artistResult?.changes ?? 0),
+      deletedUnpublishedDrafts: Number(draftResult?.meta?.changes ?? draftResult?.changes ?? 0),
+    });
   } catch (e: any) {
     return c.json({ ok: false, error: String(e?.message || e) }, 500);
   }
@@ -4656,7 +4804,15 @@ app.get('/api/tasks/count', async (c) => {
     const sql = d1Sql(c.env.DB);
     const today = new Date();
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-    const rows = await sql`SELECT COUNT(*) as cnt FROM automation_tasks WHERE created_at >= ${startOfDay}`;
+    const rows = await sql`SELECT COUNT(*) as cnt FROM automation_tasks
+      WHERE created_at >= ${startOfDay}
+        AND status != 'cancelled'
+        AND (
+          ${botId} = ''
+          OR json_extract(payload, '$.targetBotId') = ${botId}
+          OR json_extract(payload, '$.botId') = ${botId}
+          OR leased_by = ${botId}
+        )`;
     const todayCount = Number(rows?.[0]?.cnt || 0);
     return c.json({ ok: true, todayCount });
   } catch (e: any) {
