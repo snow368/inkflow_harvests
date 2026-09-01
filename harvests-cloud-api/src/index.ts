@@ -6429,11 +6429,17 @@ const ensureDraftsTable = (db: any): Promise<void> => {
       lang TEXT DEFAULT 'en',
       approved_at TEXT,
       approved_by TEXT,
+      publish_attempts INTEGER DEFAULT 0,
+      next_publish_at TEXT,
+      last_publish_error TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     )`).run()
       .then(() => db.prepare('ALTER TABLE comment_drafts ADD COLUMN bot_id TEXT').run().catch(() => {}))
       .then(() => db.prepare('ALTER TABLE comment_drafts ADD COLUMN approved_at TEXT').run().catch(() => {}))
       .then(() => db.prepare('ALTER TABLE comment_drafts ADD COLUMN approved_by TEXT').run().catch(() => {}))
+      .then(() => db.prepare('ALTER TABLE comment_drafts ADD COLUMN publish_attempts INTEGER DEFAULT 0').run().catch(() => {}))
+      .then(() => db.prepare('ALTER TABLE comment_drafts ADD COLUMN next_publish_at TEXT').run().catch(() => {}))
+      .then(() => db.prepare('ALTER TABLE comment_drafts ADD COLUMN last_publish_error TEXT').run().catch(() => {}))
       .then(() => db.prepare('CREATE INDEX IF NOT EXISTS idx_comment_drafts_status_bot ON comment_drafts(status, bot_id)').run().catch(() => {}))
       .then(() => {})
       .catch(() => {});
@@ -6491,7 +6497,7 @@ app.get('/api/drafts', async (c) => {
   await ensureDraftsTable(c.env.DB);
   const where: string[] = []; const params: any[] = [];
   if (status) { where.push('status = ?'); params.push(status); }
-  const sql = `SELECT id, draft_id, bot_id, handle, post_url, post_key, proposed_comment, status, grounding_risks, safe_facts, lang, approved_at, approved_by, created_at FROM comment_drafts`
+  const sql = `SELECT id, draft_id, bot_id, handle, post_url, post_key, proposed_comment, status, grounding_risks, safe_facts, lang, approved_at, approved_by, publish_attempts, next_publish_at, last_publish_error, created_at FROM comment_drafts`
     + (where.length ? ' WHERE ' + where.join(' AND ') : '')
     + ' ORDER BY id DESC LIMIT ?';
   params.push(limit);
@@ -6538,15 +6544,16 @@ app.post('/api/drafts/claim-approved', async (c) => {
        SET status = 'publishing'
      WHERE id = (
        SELECT id FROM comment_drafts
-        WHERE status = 'approved'
-          AND bot_id = ?
-          AND approved_at IS NOT NULL
-          AND approved_by IS NOT NULL
-          AND approved_by <> ''
+         WHERE status = 'approved'
+           AND bot_id = ?
+           AND approved_at IS NOT NULL
+           AND approved_by IS NOT NULL
+           AND approved_by <> ''
+           AND (next_publish_at IS NULL OR next_publish_at <= datetime('now'))
         ORDER BY id ASC
         LIMIT 1
      )
-     RETURNING id, draft_id, bot_id, handle, post_url, post_key, proposed_comment, status, grounding_risks, safe_facts, lang, approved_at, approved_by, created_at
+     RETURNING id, draft_id, bot_id, handle, post_url, post_key, proposed_comment, status, grounding_risks, safe_facts, lang, approved_at, approved_by, publish_attempts, next_publish_at, last_publish_error, created_at
   `).bind(botId).first() as any;
   return c.json({ ok: true, item: row || null });
 });
@@ -6556,16 +6563,26 @@ app.post('/api/drafts/:id/:action', async (c) => {
   const action = c.req.param('action') || '';
   if (action !== 'approve' && action !== 'reject' && action !== 'delete' && action !== 'posted' && action !== 'release') return c.json({ error: 'bad_action' }, 400);
   await ensureDraftsTable(c.env.DB);
+  let body: any = {};
+  try { body = await c.req.json(); } catch {}
   if ((action === 'posted' || action === 'release') && !checkBotToken(c)) return c.json({ error: 'unauthorized' }, 401);
   // bot 回写 posted 时用 draft_id 匹配（bot 只知本地 id 而非 D1 数字 id）。
   if (action === 'posted' || action === 'release') {
-    const row = await c.env.DB.prepare('SELECT id FROM comment_drafts WHERE draft_id = ? OR id = ?').bind(rawId, rawId).first() as any;
+    const row = await c.env.DB.prepare('SELECT id, publish_attempts FROM comment_drafts WHERE draft_id = ? OR id = ?').bind(rawId, rawId).first() as any;
     if (!row) return c.json({ error: 'not_found' }, 404);
-    const nextStatus = action === 'posted' ? 'posted' : 'approved';
-    const res = await c.env.DB.prepare('UPDATE comment_drafts SET status = ? WHERE id = ? AND status = \'publishing\'')
-      .bind(nextStatus, row.id).run();
+    const attempts = Number(row.publish_attempts || 0) + 1;
+    const retryMinutes = attempts >= 6 ? 360 : attempts >= 3 ? 60 : 15;
+    const nextPublishAt = new Date(Date.now() + retryMinutes * 60_000).toISOString().slice(0, 19).replace('T', ' ');
+    const reason = String(body?.reason || 'publish_failed').slice(0, 300);
+    const res = action === 'posted'
+      ? await c.env.DB.prepare(`UPDATE comment_drafts
+          SET status = 'posted', next_publish_at = NULL, last_publish_error = NULL
+          WHERE id = ? AND status = 'publishing'`).bind(row.id).run()
+      : await c.env.DB.prepare(`UPDATE comment_drafts
+          SET status = 'approved', publish_attempts = ?, next_publish_at = ?, last_publish_error = ?
+          WHERE id = ? AND status = 'publishing'`).bind(attempts, nextPublishAt, reason, row.id).run();
     if (!(res as any).meta?.changes) return c.json({ error: 'not_in_publishing_state' }, 409);
-    return c.json({ ok: true, id: row.id, action, status: nextStatus });
+    return c.json({ ok: true, id: row.id, action, status: action === 'posted' ? 'posted' : 'approved', attempts, nextPublishAt: action === 'release' ? nextPublishAt : null });
   }
   if (!(await requireDraftReviewer(c))) return c.json({ error: 'not_authorized' }, 403);
   const id = parseInt(rawId, 10);
@@ -6576,8 +6593,6 @@ app.post('/api/drafts/:id/:action', async (c) => {
     return c.json({ ok: true, id, action });
   }
   const quality = action === 'approve' ? 'approved' : 'rejected';
-  let body: any = {};
-  try { body = await c.req.json(); } catch {}
   const editedComment = String(body?.proposedComment || '').trim();
   const reviewer = c.get('user') as any;
   const reviewerId = String(reviewer?.email || reviewer?.uid || '').trim();
