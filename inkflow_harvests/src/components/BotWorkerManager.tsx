@@ -562,7 +562,7 @@ function BehaviorLogSection({ searchBotId, onSearchDone }: { searchBotId?: strin
 }
 
 function BotDailyStatsSection() {
-  const [stats, setStats] = useState<any>({ bots: [], totals: {}, trend: [] });
+  const [stats, setStats] = useState<any>({ bots: [], totals: {}, trend: [], plans: [] });
   const [botIds, setBotIds] = useState<string[]>([]);
   const [selectedBot, setSelectedBot] = useState('');
   const [loading, setLoading] = useState(true);
@@ -580,6 +580,7 @@ function BotDailyStatsSection() {
           ...prev,
           ...(Array.isArray(data.bots) ? data.bots.map((b: any) => String(b.botId || '')).filter(Boolean) : []),
           ...(Array.isArray(data.trend) ? data.trend.map((b: any) => String(b.bot_id || '')).filter(Boolean) : []),
+          ...(Array.isArray(data.plans) ? data.plans.map((b: any) => String(b.botId || '')).filter(Boolean) : []),
         ])).sort());
       }
     } catch {}
@@ -602,6 +603,7 @@ function BotDailyStatsSection() {
   }, [fetchStats]);
 
   const bots = Array.isArray(stats.bots) ? stats.bots : [];
+  const plans = Array.isArray(stats.plans) ? stats.plans : [];
   const totals = stats.totals || {};
   const weakest = ['likeRate', 'followRate', 'commentRate']
     .map((key) => ({ key, value: Number(totals[key] || 0) }))
@@ -642,6 +644,97 @@ function BotDailyStatsSection() {
             className="flex items-center gap-2 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs font-bold rounded-xl transition-colors disabled:opacity-50">
             <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} /> 刷新
           </button>
+        </div>
+      </div>
+
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-3">
+          <Target className="w-4 h-4 text-cyan-400" />
+          <h5 className="text-xs font-black text-white">今日运行计划</h5>
+          <span className="text-[10px] text-zinc-500">计划、队列和实际进度按 Bot 分开</span>
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+          {plans.map((plan: any) => {
+            const target = Number(plan.taskTarget || plan.scheduled || 0);
+            const done = Number(plan.done || 0);
+            const failed = Number(plan.failed || 0);
+            const progress = target > 0 ? Math.min(100, Math.round(((done + failed) / target) * 100)) : 0;
+            const dailyPlan = plan.dailyPlan || {};
+            const dailyProgress = plan.dailyProgress || {};
+            const draftTarget = Number(dailyPlan.commentDraftTarget || 0);
+            const publishMax = Number(dailyPlan.commentPublishMax || 0);
+            const likeTarget = Number(dailyPlan.likeTarget || 0);
+            const followTarget = Number(dailyPlan.followTarget || 0);
+            return (
+              <div key={plan.botId} className="p-4 bg-zinc-900/65 border border-zinc-800 rounded-2xl">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-black text-white">{plan.botId}</span>
+                      <span className={cn(
+                        "text-[9px] font-black px-2 py-0.5 rounded-full",
+                        plan.workerRunning ? "bg-emerald-500/10 text-emerald-400" : "bg-zinc-800 text-zinc-500"
+                      )}>{plan.workerRunning ? '运行中' : '离线/暂停'}</span>
+                    </div>
+                    <p className="text-[10px] text-zinc-500 mt-1">
+                      {plan.accountIds?.length ? `IG ${plan.accountIds.join(', ')} · ` : ''}
+                      {plan.states?.length ? `区域 ${plan.states.join(', ')}` : '全部区域'}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-black text-cyan-300">{done}<span className="text-sm text-zinc-600">/{target || '-'}</span></p>
+                    <p className="text-[9px] text-zinc-500 font-bold">已处理 / 今日数据</p>
+                  </div>
+                </div>
+
+                <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden mb-3">
+                  <div className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full transition-all" style={{ width: `${progress}%` }} />
+                </div>
+
+                <div className="grid grid-cols-4 gap-2 mb-3">
+                  {[
+                    ['待跑', plan.pending || 0, 'text-amber-300'],
+                    ['运行中', plan.running || 0, 'text-blue-300'],
+                    ['完成', done, 'text-emerald-300'],
+                    ['失败', failed, 'text-red-300'],
+                  ].map(([label, value, color]) => (
+                    <div key={String(label)} className="bg-black/20 rounded-xl px-2 py-2 text-center">
+                      <p className={cn("text-sm font-black", String(color))}>{value}</p>
+                      <p className="text-[9px] text-zinc-600 font-bold">{label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+                  <div className="border border-zinc-800 rounded-xl p-2.5">
+                    <p className="text-zinc-500">点赞</p>
+                    <p className="text-rose-300 font-black mt-1">{dailyProgress.likes ?? 0}{likeTarget ? `/${likeTarget}` : ''}</p>
+                    <p className="text-zinc-600 mt-0.5">每店配置 {plan.likesPerSession || 0}</p>
+                  </div>
+                  <div className="border border-zinc-800 rounded-xl p-2.5">
+                    <p className="text-zinc-500">关注</p>
+                    <p className="text-cyan-300 font-black mt-1">{dailyProgress.follows ?? 0}{followTarget ? `/${followTarget}` : ''}</p>
+                    <p className="text-zinc-600 mt-0.5">每店配置 {plan.followsPerSession || 0}</p>
+                  </div>
+                  <div className="border border-zinc-800 rounded-xl p-2.5">
+                    <p className="text-zinc-500">生成待审评论</p>
+                    <p className="text-amber-300 font-black mt-1">{dailyProgress.commentDrafts ?? 0}{draftTarget ? `/${draftTarget}` : ''}</p>
+                    <p className="text-zinc-600 mt-0.5">范围 {dailyPlan.commentDraftMin ?? '-'}-{dailyPlan.commentDraftMax ?? '-'}</p>
+                  </div>
+                  <div className="border border-zinc-800 rounded-xl p-2.5">
+                    <p className="text-zinc-500">发布审核评论</p>
+                    <p className="text-purple-300 font-black mt-1">{dailyProgress.commentsPosted ?? 0}{publishMax ? `/${publishMax}` : ''}</p>
+                    <p className="text-zinc-600 mt-0.5">间隔 8-20 分钟</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {!loading && plans.length === 0 && (
+            <div className="xl:col-span-2 py-7 text-center border border-dashed border-zinc-800 rounded-2xl text-xs text-zinc-600">
+              今天还没有排入 Bot Worker 的任务
+            </div>
+          )}
         </div>
       </div>
 

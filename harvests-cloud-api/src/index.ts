@@ -2960,9 +2960,86 @@ app.get('/api/automation/bot-daily-stats', async (c) => {
     totals.commentRate = totals.tasksDone ? Math.round((totals.comments / totals.tasksDone) * 100) : 0;
     totals.likeSuccessRate = totals.likeAttempted ? Math.round((totals.likeReported / totals.likeAttempted) * 100) : 0;
 
-    return c.json({ ok: true, date, days, botId: botId || null, bots, totals, trend: trendRows.results || [] });
+    // Build the forward-looking plan from today's scheduled task payloads, then
+    // enrich it with the worker's persisted local caps/progress from heartbeat meta.
+    const dayStart = Date.parse(`${date}T00:00:00.000Z`);
+    const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+    const taskPlanRows = await c.env.DB.prepare(`
+      SELECT status, payload, leased_by, created_at
+        FROM automation_tasks
+       WHERE created_at >= ? AND created_at < ?
+       ORDER BY created_at DESC
+    `).bind(dayStart, dayEnd).all();
+    const planMap = new Map<string, any>();
+    for (const row of (taskPlanRows.results || []) as any[]) {
+      let payload: any = {};
+      try { payload = row.payload ? JSON.parse(row.payload) : {}; } catch {}
+      const assignedBot = String(payload.targetBotId || payload.botId || row.leased_by || 'unassigned').trim() || 'unassigned';
+      if (botId && assignedBot !== botId) continue;
+      if (!planMap.has(assignedBot)) {
+        planMap.set(assignedBot, {
+          botId: assignedBot,
+          taskTarget: 0,
+          scheduled: 0,
+          pending: 0,
+          running: 0,
+          done: 0,
+          failed: 0,
+          likesPerSession: 0,
+          commentsPerSession: 0,
+          followsPerSession: 0,
+          taskTypes: new Set<string>(),
+          states: new Set<string>(),
+        });
+      }
+      const plan = planMap.get(assignedBot);
+      plan.scheduled += 1;
+      const status = String(row.status || 'pending').toLowerCase();
+      if (status === 'done') plan.done += 1;
+      else if (status === 'failed') plan.failed += 1;
+      else if (status === 'leased' || status === 'running') plan.running += 1;
+      else plan.pending += 1;
+      plan.taskTarget = Math.max(plan.taskTarget, Number(payload.dailyTaskLimit || 0));
+      plan.likesPerSession = Number(payload.likesPerSession ?? plan.likesPerSession ?? 0);
+      plan.commentsPerSession = Number(payload.commentsPerSession ?? plan.commentsPerSession ?? 0);
+      plan.followsPerSession = Number(payload.followsPerSession ?? plan.followsPerSession ?? 0);
+      if (payload.taskType) plan.taskTypes.add(String(payload.taskType));
+      if (payload.state) plan.states.add(String(payload.state));
+    }
+
+    const workerMetaRows = await c.env.DB.prepare('SELECT bot_id, meta, status, last_heartbeat FROM bot_instances').all();
+    const now = Date.now();
+    for (const row of (workerMetaRows.results || []) as any[]) {
+      const workerBotId = String(row.bot_id || '').trim();
+      if (!workerBotId || (botId && workerBotId !== botId)) continue;
+      let meta: any = {};
+      try { meta = row.meta ? JSON.parse(row.meta) : {}; } catch {}
+      if (!planMap.has(workerBotId)) {
+        planMap.set(workerBotId, {
+          botId: workerBotId, taskTarget: 0, scheduled: 0, pending: 0, running: 0, done: 0, failed: 0,
+          likesPerSession: 0, commentsPerSession: 0, followsPerSession: 0,
+          taskTypes: new Set<string>(), states: new Set<string>(),
+        });
+      }
+      const plan = planMap.get(workerBotId);
+      plan.workerRunning = row.status === 'online' && now - Number(row.last_heartbeat || 0) < 3 * 60 * 1000;
+      plan.lastHeartbeat = Number(row.last_heartbeat || 0);
+      if (meta.dailyPlan && typeof meta.dailyPlan === 'object') plan.dailyPlan = meta.dailyPlan;
+      if (meta.dailyProgress && typeof meta.dailyProgress === 'object') plan.dailyProgress = meta.dailyProgress;
+      if (Array.isArray(meta.accountIds)) plan.accountIds = meta.accountIds;
+    }
+
+    const plans = Array.from(planMap.values()).map((plan: any) => ({
+      ...plan,
+      taskTarget: Math.max(Number(plan.taskTarget || 0), Number(plan.scheduled || 0)),
+      remaining: Math.max(0, Math.max(Number(plan.taskTarget || 0), Number(plan.scheduled || 0)) - Number(plan.done || 0) - Number(plan.failed || 0)),
+      taskTypes: Array.from(plan.taskTypes || []),
+      states: Array.from(plan.states || []),
+    })).sort((a: any, b: any) => String(a.botId).localeCompare(String(b.botId)));
+
+    return c.json({ ok: true, date, days, botId: botId || null, bots, totals, trend: trendRows.results || [], plans });
   } catch (e: any) {
-    return c.json({ ok: false, error: String(e?.message || e), bots: [], totals: {}, trend: [] }, 500);
+    return c.json({ ok: false, error: String(e?.message || e), bots: [], totals: {}, trend: [], plans: [] }, 500);
   }
 });
 
