@@ -127,9 +127,47 @@ const ensureBehaviorLogsTable = (db: any): Promise<void> => {
       event TEXT NOT NULL,
       data TEXT,
       created_at TEXT DEFAULT (datetime('now'))
-    )`).run().then(() => {}).catch(() => {});
+    )`).run()
+      .then(() => db.prepare('CREATE INDEX IF NOT EXISTS idx_bot_behavior_logs_ts ON bot_behavior_logs(ts)').run())
+      .then(() => db.prepare('CREATE INDEX IF NOT EXISTS idx_bot_behavior_logs_bot_ts ON bot_behavior_logs(bot_id, ts)').run())
+      .then(() => {})
+      .catch(() => {});
   }
   return _behaviorLogsTableReady;
+};
+
+let _botInstancesTableReady: Promise<void> | null = null;
+const ensureBotInstancesTable = (db: any): Promise<void> => {
+  if (!_botInstancesTableReady) {
+    _botInstancesTableReady = db.prepare(`CREATE TABLE IF NOT EXISTS bot_instances (
+      bot_id TEXT PRIMARY KEY, host TEXT, version TEXT, status TEXT DEFAULT 'online',
+      registered_at INTEGER, last_heartbeat INTEGER, meta TEXT
+    )`).run()
+      .then(() => db.prepare('ALTER TABLE bot_instances ADD COLUMN host TEXT').run().catch(() => {}))
+      .then(() => db.prepare('ALTER TABLE bot_instances ADD COLUMN version TEXT').run().catch(() => {}))
+      .then(() => db.prepare('ALTER TABLE bot_instances ADD COLUMN meta TEXT').run().catch(() => {}))
+      .then(() => {})
+      .catch(() => {});
+  }
+  return _botInstancesTableReady;
+};
+
+const isD1QuotaError = (error: unknown): boolean =>
+  /exceeded D1.*daily row read limit|free tier daily row read limit|\b7500\b/i.test(String((error as any)?.message || error));
+
+let _dailyStatsIndexesReady: Promise<void> | null = null;
+const ensureDailyStatsIndexes = (db: any): Promise<void> => {
+  if (!_dailyStatsIndexesReady) {
+    const statements = [
+      'CREATE INDEX IF NOT EXISTS idx_automation_tasks_created_at ON automation_tasks(created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_artists_ig_handle ON artists(ig_handle)',
+      'CREATE INDEX IF NOT EXISTS idx_comment_drafts_handle ON comment_drafts(handle)',
+    ];
+    _dailyStatsIndexesReady = Promise.all(
+      statements.map((sql) => db.prepare(sql).run().catch(() => {})),
+    ).then(() => {});
+  }
+  return _dailyStatsIndexesReady;
 };
 
 type Bindings = {
@@ -2891,6 +2929,10 @@ app.get('/api/automation/bot-daily-stats', async (c) => {
   const botId = String(c.req.query('botId') || '').trim();
   try {
     await ensureBehaviorLogsTable(c.env.DB);
+    await ensureDailyStatsIndexes(c.env.DB);
+    const dayStartIso = `${date}T00:00:00.000Z`;
+    const dayEndIso = new Date(Date.parse(dayStartIso) + 86400_000).toISOString();
+    const trendStartIso = new Date(Date.parse(dayStartIso) - (days - 1) * 86400_000).toISOString();
     const botWhere = botId ? ' AND bot_id = ?' : '';
     const botParams = botId ? [botId] : [];
     const dayRows = await c.env.DB.prepare(`
@@ -2906,10 +2948,10 @@ app.get('/api/automation/bot-daily-stats', async (c) => {
         SUM(CASE WHEN event = 'like_session_done' THEN CAST(COALESCE(json_extract(data, '$.attempted'), 0) AS INTEGER) ELSE 0 END) AS like_attempted,
         SUM(CASE WHEN event = 'like_session_done' THEN CAST(COALESCE(json_extract(data, '$.liked'), 0) AS INTEGER) ELSE 0 END) AS like_reported
       FROM bot_behavior_logs
-      WHERE substr(ts, 1, 10) = ?${botWhere}
+      WHERE ts >= ? AND ts < ?${botWhere}
       GROUP BY bot_id
       ORDER BY bot_id
-    `).bind(date, ...botParams).all();
+    `).bind(dayStartIso, dayEndIso, ...botParams).all();
 
     const trendRows = await c.env.DB.prepare(`
       SELECT
@@ -2921,10 +2963,10 @@ app.get('/api/automation/bot-daily-stats', async (c) => {
         SUM(CASE WHEN event = 'follow_done' THEN 1 ELSE 0 END) AS follows,
         SUM(CASE WHEN event = 'comment_posted' THEN 1 ELSE 0 END) AS comments
       FROM bot_behavior_logs
-      WHERE ts >= datetime(?, '-' || ? || ' days')${botWhere}
+      WHERE ts >= ? AND ts < ?${botWhere}
       GROUP BY day, bot_id
       ORDER BY day DESC, bot_id
-    `).bind(`${date}T23:59:59Z`, days - 1, ...botParams).all();
+    `).bind(trendStartIso, dayEndIso, ...botParams).all();
 
     const bots = (dayRows.results || []).map((row: any) => {
       const tasksDone = Number(row.tasks_done || 0);
@@ -3058,7 +3100,7 @@ app.get('/api/automation/bot-daily-stats', async (c) => {
       const artistRows = await c.env.DB.prepare(`
         SELECT ig_handle, shop_name, city, state, import_region, category, website
           FROM artists
-         WHERE LOWER(ig_handle) IN (${placeholders})
+         WHERE ig_handle IN (${placeholders})
          ORDER BY id DESC
       `).bind(...chunk).all();
       for (const artist of (artistRows.results || []) as any[]) {
@@ -3070,7 +3112,7 @@ app.get('/api/automation/bot-daily-stats', async (c) => {
         SELECT id, bot_id, handle, post_url, proposed_comment, status, approved_at, approved_by,
                last_publish_error, created_at
           FROM comment_drafts
-         WHERE LOWER(handle) IN (${placeholders})
+         WHERE handle IN (${placeholders})
          ORDER BY id DESC
       `).bind(...chunk).all();
       for (const draft of (draftRows.results || []) as any[]) {
@@ -3083,10 +3125,10 @@ app.get('/api/automation/bot-daily-stats', async (c) => {
     const activityRows = await c.env.DB.prepare(`
       SELECT bot_id, event, data, ts
         FROM bot_behavior_logs
-       WHERE substr(ts, 1, 10) = ?
+       WHERE ts >= ? AND ts < ?
          AND event IN ('task_start','task_done','task_failed','like_post','follow_done','comment_review_queued','comment_posted')
        ORDER BY id DESC
-    `).bind(date).all();
+    `).bind(dayStartIso, dayEndIso).all();
     for (const row of (activityRows.results || []) as any[]) {
       let data: any = {};
       try { data = row.data ? JSON.parse(row.data) : {}; } catch {}
@@ -3140,7 +3182,8 @@ app.get('/api/automation/bot-daily-stats', async (c) => {
 
     return c.json({ ok: true, date, days, botId: botId || null, bots, totals, trend: trendRows.results || [], plans });
   } catch (e: any) {
-    return c.json({ ok: false, error: String(e?.message || e), bots: [], totals: {}, trend: [], plans: [] }, 500);
+    const quota = isD1QuotaError(e);
+    return c.json({ ok: false, code: quota ? 'd1_daily_read_quota_exhausted' : 'daily_stats_failed', error: String(e?.message || e), bots: [], totals: {}, trend: [], plans: [] }, quota ? 429 : 500);
   }
 });
 
@@ -3164,29 +3207,36 @@ app.post('/api/bot/register', async (c) => {
   if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
   const { botId, host, version, meta } = await c.req.json();
   if (!botId) return c.json({ error: 'botId required' }, 400);
-  await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS bot_instances (
-    bot_id TEXT PRIMARY KEY, host TEXT, version TEXT, status TEXT DEFAULT 'online',
-    registered_at INTEGER, last_heartbeat INTEGER, meta TEXT
-  )`).run();
-  try { await c.env.DB.prepare('ALTER TABLE bot_instances ADD COLUMN meta TEXT').run(); } catch {}
-  const now = Date.now();
-  await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,host,version,status,registered_at,last_heartbeat,meta)
-    VALUES (?,?,?,'online',?,?,?) ON CONFLICT(bot_id) DO UPDATE SET
-    host=excluded.host, version=excluded.version, status='online', last_heartbeat=excluded.last_heartbeat, meta=excluded.meta
-  `).bind(botId, host||'', version||'', now, now, meta ? JSON.stringify(meta) : null).run();
-  return c.json({ ok: true, botId, online: true, staleMs: 0 });
+  try {
+    await ensureBotInstancesTable(c.env.DB);
+    const now = Date.now();
+    await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,host,version,status,registered_at,last_heartbeat,meta)
+      VALUES (?,?,?,'online',?,?,?) ON CONFLICT(bot_id) DO UPDATE SET
+      host=excluded.host, version=excluded.version, status='online', last_heartbeat=excluded.last_heartbeat, meta=excluded.meta
+    `).bind(botId, host||'', version||'', now, now, meta ? JSON.stringify(meta) : null).run();
+    return c.json({ ok: true, botId, online: true, staleMs: 0 });
+  } catch (e: any) {
+    const quota = isD1QuotaError(e);
+    return c.json({ ok: false, code: quota ? 'd1_daily_read_quota_exhausted' : 'bot_register_failed', error: String(e?.message || e) }, quota ? 429 : 500);
+  }
 });
 
 app.post('/api/bot/heartbeat', async (c) => {
   if (!checkBotToken(c)) return c.json({ error: 'Unauthorized' }, 401);
   const { botId, host, version, meta } = await c.req.json();
   if (!botId) return c.json({ error: 'botId required' }, 400);
-  const now = Date.now();
-  await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,host,version,status,registered_at,last_heartbeat,meta)
-    VALUES (?,?,?,'online',?,?,?) ON CONFLICT(bot_id) DO UPDATE SET
-    status='online', last_heartbeat=excluded.last_heartbeat, host=excluded.host, version=excluded.version, meta=excluded.meta
-  `).bind(botId, host||'', version||'', now, now, meta ? JSON.stringify(meta) : null).run();
-  return c.json({ ok: true, botId, ts: now });
+  try {
+    await ensureBotInstancesTable(c.env.DB);
+    const now = Date.now();
+    await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,host,version,status,registered_at,last_heartbeat,meta)
+      VALUES (?,?,?,'online',?,?,?) ON CONFLICT(bot_id) DO UPDATE SET
+      status='online', last_heartbeat=excluded.last_heartbeat, host=excluded.host, version=excluded.version, meta=excluded.meta
+    `).bind(botId, host||'', version||'', now, now, meta ? JSON.stringify(meta) : null).run();
+    return c.json({ ok: true, botId, ts: now });
+  } catch (e: any) {
+    const quota = isD1QuotaError(e);
+    return c.json({ ok: false, code: quota ? 'd1_daily_read_quota_exhausted' : 'bot_heartbeat_failed', error: String(e?.message || e) }, quota ? 429 : 500);
+  }
 });
 
 // ============ BOT FRONTEND READ ENDPOINTS (A-layer: light up BotWorkerManager) ============

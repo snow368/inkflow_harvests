@@ -77,7 +77,7 @@ export default function BotTaskStatus() {
   };
 
   useEffect(() => { fetchData(); }, []);
-  useEffect(() => { const iv = setInterval(fetchData, 30000); return () => clearInterval(iv); }, []);
+  useEffect(() => { const iv = setInterval(fetchData, 12 * 60 * 60 * 1000); return () => clearInterval(iv); }, []);
 
   if (loading && !dashboard) {
     return (

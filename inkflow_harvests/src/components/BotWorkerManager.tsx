@@ -188,7 +188,7 @@ function AccountSetupSection({ onViewLog }: { onViewLog?: (id: string) => void }
   useEffect(() => {
     fetchAccounts();
     fetchWorkers();
-    const interval = setInterval(fetchWorkers, 5000);
+    const interval = setInterval(fetchWorkers, 12 * 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchAccounts, fetchWorkers]);
 
@@ -600,7 +600,9 @@ function BotDailyStatsSection() {
 
   useEffect(() => {
     fetchStats();
-    const interval = setInterval(fetchStats, 30000);
+    // Load on entry and only refresh automatically twice a day. Manual refresh
+    // remains instant without repeatedly scanning D1 in an idle browser tab.
+    const interval = setInterval(fetchStats, 12 * 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchStats]);
 
@@ -938,7 +940,7 @@ function StateProgressSection() {
       setLoading(false);
     };
     fetch();
-    const interval = setInterval(fetch, 30000);
+    const interval = setInterval(fetch, 12 * 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -1197,7 +1199,7 @@ export default function BotWorkerManager() {
           setWorkers(data.workers || []);
         }
       } catch {}
-    }, 5000);
+    }, 12 * 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
