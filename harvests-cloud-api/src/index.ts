@@ -76,15 +76,18 @@ async function ensureD1Tables(db: D1Database): Promise<void> {
       await db.prepare(`CREATE TABLE IF NOT EXISTS automation_tasks (
         id TEXT PRIMARY KEY, status TEXT NOT NULL, payload TEXT,
         run_at INTEGER, lease_until INTEGER, leased_by TEXT,
+        target_bot_id TEXT, artist_handle TEXT,
         attempts INTEGER DEFAULT 0, max_attempts INTEGER DEFAULT 3, error_reason TEXT,
         created_at INTEGER, updated_at INTEGER
       )`).run().catch(() => {});
-      for (const col of ['run_at INTEGER', 'lease_until INTEGER', 'leased_by TEXT', 'attempts INTEGER DEFAULT 0', 'max_attempts INTEGER DEFAULT 3', 'error_reason TEXT']) {
+      for (const col of ['run_at INTEGER', 'lease_until INTEGER', 'leased_by TEXT', 'target_bot_id TEXT', 'artist_handle TEXT', 'attempts INTEGER DEFAULT 0', 'max_attempts INTEGER DEFAULT 3', 'error_reason TEXT']) {
         await db.prepare(`ALTER TABLE automation_tasks ADD COLUMN ${col}`).run().catch(() => {});
       }
       await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON automation_tasks(status)`).run().catch(() => {});
       await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON automation_tasks(created_at)`).run().catch(() => {});
-      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_payload ON automation_tasks(payload)`).run().catch(() => {});
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_poll ON automation_tasks(status, target_bot_id, run_at)`).run().catch(() => {});
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_lease ON automation_tasks(status, lease_until)`).run().catch(() => {});
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_tasks_handle_recent ON automation_tasks(artist_handle, updated_at, status)`).run().catch(() => {});
       await db.prepare(`CREATE TABLE IF NOT EXISTS bot_exclusions (
         handle TEXT PRIMARY KEY, reason TEXT, excluded_by TEXT, created_at INTEGER
       )`).run().catch(() => {});
@@ -4067,40 +4070,33 @@ app.get('/api/automation/poll', async (c) => {
   const limit = Math.min(10, Math.max(1, Number(c.req.query('limit')) || 1));
   if (!botId) return c.json({ error: 'botId required' }, 400);
   const now = Date.now();
-  const dedupWindow = now - 7 * 24 * 60 * 60 * 1000;
   try {
-    const sql = d1Sql(c.env.DB);
     // Recycle expired leases
-    await sql`UPDATE automation_tasks SET status = 'pending', leased_by = NULL, lease_until = NULL, updated_at = ${now}
-              WHERE status = 'leased' AND lease_until IS NOT NULL AND lease_until < ${now}`.catch(() => {});
+    await c.env.DB.prepare(`UPDATE automation_tasks
+      SET status = 'pending', leased_by = NULL, lease_until = NULL, updated_at = ?
+      WHERE status = 'leased' AND lease_until IS NOT NULL AND lease_until < ?`
+    ).bind(now, now).run().catch(() => {});
 
-    // SELECT pending tasks with dedup（多账号：只拿本 bot 账号的任务；NULL 兼容 ig-scheduler 旧任务）
-    const candidates = await sql`
+    // Dedup is enforced when tasks are created. Poll only leases indexed ready
+    // work; the former JSON NOT EXISTS self-join scanned the task table on every
+    // idle poll and exhausted D1's daily row-read allowance.
+    const candidates = await c.env.DB.prepare(`
       SELECT id, payload FROM automation_tasks
       WHERE status = 'pending' AND (run_at IS NULL OR run_at <= ${now})
-        AND (json_extract(payload, '$.targetBotId') IS NULL OR json_extract(payload, '$.targetBotId') = '' OR json_extract(payload, '$.targetBotId') = ${botId})
-        AND (json_extract(payload, '$.artistHandle') IS NULL
-          OR NOT EXISTS (
-            SELECT 1 FROM automation_tasks d
-            WHERE d.id != automation_tasks.id
-              AND d.status IN ('pending','leased') AND d.updated_at > ${dedupWindow}
-              AND json_extract(d.payload, '$.artistHandle') = json_extract(automation_tasks.payload, '$.artistHandle')
-          ))
-      ORDER BY run_at ASC LIMIT ${limit}
-    `;
-    const rows = candidates?.rows || (Array.isArray(candidates) ? candidates : []);
+        AND (target_bot_id IS NULL OR target_bot_id = '' OR target_bot_id = ?)
+      ORDER BY run_at ASC LIMIT ?
+    `).bind(botId, limit).all();
+    const rows = candidates.results || [];
     const commands: any[] = [];
     for (const r of rows) {
-      await sql`UPDATE automation_tasks SET status = 'leased', leased_by = ${botId}, lease_until = ${now + 120_000}, updated_at = ${now}
-                WHERE id = ${r.id} AND status = 'pending'`;
+      await c.env.DB.prepare(`UPDATE automation_tasks
+        SET status = 'leased', leased_by = ?, lease_until = ?, updated_at = ?
+        WHERE id = ? AND status = 'pending'`
+      ).bind(botId, now + 120_000, now, r.id).run();
       let payload: any = {};
       try { payload = typeof r.payload === 'string' ? JSON.parse(r.payload) : (r.payload || {}); } catch {}
       commands.push({ ...payload, id: r.id });
     }
-    // Update bot heartbeat
-    await c.env.DB.prepare(`INSERT INTO bot_instances (bot_id,status,registered_at,last_heartbeat)
-      VALUES (?,'online',?,?) ON CONFLICT(bot_id) DO UPDATE SET status='online', last_heartbeat=excluded.last_heartbeat
-    `).bind(botId, now, now).run().catch(() => {});
     return c.json({ ok: true, commands });
   } catch (e: any) {
     console.error('[poll] Neon error:', e?.message || e);
@@ -4890,11 +4886,12 @@ app.post('/api/tasks/create', async (c) => {
       const handle = String(payload?.artistHandle || '').trim().toLowerCase();
       if (!handle) { skipped++; continue; }
 
-      // Dedup: skip if this handle already has a non-failed task in dedup window
+      const targetBotId = String(payload?.targetBotId || payload?.botId || '').trim();
+      // Dedup uses indexed normalized columns instead of JSON extraction.
       try {
         const existing = await sql`
           SELECT id FROM automation_tasks
-          WHERE json_extract(payload, '$.artistHandle') = ${handle}
+          WHERE artist_handle = ${handle}
             AND status IN ('pending','leased','done')
             AND updated_at > ${dedupWindow}
           LIMIT 1
@@ -4908,8 +4905,8 @@ app.post('/api/tasks/create', async (c) => {
       const runAt = Number(t.runAt) || ts;
       const payloadStr = typeof t.payload === 'object' ? JSON.stringify(t.payload) : String(t.payload);
       try {
-        await sql`INSERT INTO automation_tasks (id, status, payload, run_at, created_at, updated_at)
-          VALUES (${String(t.id)}, 'pending', ${payloadStr}, ${runAt}, ${ts}, ${ts})`;
+        await sql`INSERT INTO automation_tasks (id, status, payload, run_at, target_bot_id, artist_handle, created_at, updated_at)
+          VALUES (${String(t.id)}, 'pending', ${payloadStr}, ${runAt}, ${targetBotId}, ${handle}, ${ts}, ${ts})`;
         created++;
       } catch (e: any) {
         skipped++;
