@@ -565,7 +565,8 @@ function BotDailyStatsSection() {
   const [stats, setStats] = useState<any>({ bots: [], totals: {}, trend: [], plans: [] });
   const [botIds, setBotIds] = useState<string[]>([]);
   const [selectedBot, setSelectedBot] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [hasQueried, setHasQueried] = useState(false);
   const [itemFilter, setItemFilter] = useState('all');
   const [excludingHandle, setExcludingHandle] = useState('');
 
@@ -578,6 +579,7 @@ function BotDailyStatsSection() {
       const data = await res.json();
       if (data?.ok) {
         setStats(data);
+        setHasQueried(true);
         setBotIds((prev) => Array.from(new Set([
           ...prev,
           ...(Array.isArray(data.bots) ? data.bots.map((b: any) => String(b.botId || '')).filter(Boolean) : []),
@@ -588,23 +590,6 @@ function BotDailyStatsSection() {
     } catch {}
     setLoading(false);
   }, [selectedBot]);
-
-  useEffect(() => {
-    apiFetch('/api/automation/behavior-bots')
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (Array.isArray(data?.bots)) setBotIds(data.bots.map((id: string) => String(id)).filter(Boolean).sort());
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    fetchStats();
-    // Load on entry and only refresh automatically twice a day. Manual refresh
-    // remains instant without repeatedly scanning D1 in an idle browser tab.
-    const interval = setInterval(fetchStats, 12 * 60 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchStats]);
 
   const excludeItem = async (item: any) => {
     const handle = String(item?.handle || '').trim();
@@ -651,7 +636,7 @@ function BotDailyStatsSection() {
           <BarChart3 className="w-5 h-5 text-emerald-500" />
           <div>
             <h4 className="font-black text-sm text-white">Bot 每日数据看板</h4>
-            <p className="text-[10px] text-zinc-500 mt-1">按今天 UTC 日志统计 · 每 30 秒自动刷新</p>
+            <p className="text-[10px] text-zinc-500 mt-1">按需读取行为日志 · 不自动查询</p>
           </div>
           {weakest && (
             <span className="text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-full">
@@ -670,12 +655,19 @@ function BotDailyStatsSection() {
           </select>
           <button onClick={fetchStats} disabled={loading}
             className="flex items-center gap-2 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs font-bold rounded-xl transition-colors disabled:opacity-50">
-            <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} /> 刷新
+            <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} /> {loading ? '查询中' : '查询数据'}
           </button>
         </div>
       </div>
 
-      <div className="mb-6">
+      {!hasQueried && (
+        <div className="mb-6 rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/40 px-4 py-6 text-center">
+          <p className="text-xs font-bold text-zinc-400">尚未读取行为统计</p>
+          <p className="mt-1 text-[10px] text-zinc-600">需要查看今日计划、点赞、关注和评论数据时，点击右上角“查询数据”。</p>
+        </div>
+      )}
+
+      {hasQueried && <div className="mb-6">
         <div className="flex items-center gap-2 mb-3">
           <Target className="w-4 h-4 text-cyan-400" />
           <h5 className="text-xs font-black text-white">今日运行计划</h5>
@@ -859,7 +851,7 @@ function BotDailyStatsSection() {
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-5">
         {[
