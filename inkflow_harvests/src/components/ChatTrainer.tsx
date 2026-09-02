@@ -290,7 +290,7 @@ export default function ChatTrainer() {
     void loadLlmTasks();
     const t = setInterval(() => {
       void loadLlmTasks();
-    }, 12000);
+    }, 5 * 60 * 1000);
     return () => clearInterval(t);
   }, [loadLlmTasks]);
 

@@ -25,7 +25,7 @@ export default function DataDashboard() {
 
   useEffect(() => { loadArtists(); loadTaskCounts(); }, []);
   useEffect(() => { loadArtists(); }, [page, stateFilter, search]);
-  useEffect(() => { const t = setInterval(loadTaskCounts, 5000); return () => clearInterval(t); }, []);
+  useEffect(() => { const t = setInterval(loadTaskCounts, 12 * 60 * 60 * 1000); return () => clearInterval(t); }, []);
 
   const loadTaskCounts = async () => {
     try {

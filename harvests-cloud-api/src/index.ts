@@ -71,6 +71,7 @@ async function ensureD1Tables(db: D1Database): Promise<void> {
       }
       await db.prepare(`CREATE INDEX IF NOT EXISTS idx_artists_owner_account ON artists(owner_account)`).run().catch(() => {});
       await db.prepare(`CREATE INDEX IF NOT EXISTS idx_artists_ig_handle ON artists(ig_handle)`).run().catch(() => {});
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_artists_ig_handle_nocase ON artists(ig_handle COLLATE NOCASE)`).run().catch(() => {});
       await db.prepare(`CREATE INDEX IF NOT EXISTS idx_artists_shop_name ON artists(shop_name)`).run().catch(() => {});
 
       await db.prepare(`CREATE TABLE IF NOT EXISTS automation_tasks (
@@ -4127,7 +4128,7 @@ app.post('/api/automation/report', async (c) => {
         if (typeof p === 'string') { try { handle = (JSON.parse(p) as any).artistHandle || ''; } catch {} }
         else if (p && typeof p === 'object') { handle = (p as any).artistHandle || ''; }
         if (handle) {
-          await d1All(c.env.DB, `UPDATE artists SET stage = 'engaged', last_updated = ? WHERE LOWER(ig_handle) = LOWER(?)`, [now, handle]).catch(() => {});
+          await d1All(c.env.DB, `UPDATE artists SET stage = 'engaged', last_updated = ? WHERE ig_handle = ? COLLATE NOCASE`, [now, handle]).catch(() => {});
           // 2026-08-07: 同时写入互动时间线，前台可见
           await c.env.DB.prepare(
             `INSERT INTO artist_interactions (bot_id, artist_handle, event_type, detail, created_at) VALUES (?, ?, 'engaged', ?, ?)`
@@ -4196,11 +4197,11 @@ app.post('/api/automation/interaction', async (c) => {
       ).bind(botId, handle, eventType, detail, now).run().catch(() => {});
       const stage = STAGE_BY_INTERACTION[eventType];
       if (stage) {
-        await c.env.DB.prepare(`UPDATE artists SET stage = ?, last_updated = ? WHERE LOWER(ig_handle) = ?`)
+        await c.env.DB.prepare(`UPDATE artists SET stage = ?, last_updated = ? WHERE ig_handle = ? COLLATE NOCASE`)
           .bind(stage, now, handle).run().catch(() => {});
       }
       if (eventType === 'follow_back') {
-        await c.env.DB.prepare(`UPDATE artists SET follow_back_at = ? WHERE LOWER(ig_handle) = ?`)
+        await c.env.DB.prepare(`UPDATE artists SET follow_back_at = ? WHERE ig_handle = ? COLLATE NOCASE`)
           .bind(now, handle).run().catch(() => {});
       }
     }
@@ -4328,7 +4329,7 @@ app.post('/api/bot/observe', async (c) => {
   try {
     const body = await c.req.json();
     const botId = String(body.botId || '').trim();
-    const artistHandle = String(body.artistHandle || body.artist_handle || '').replace(/^@/, '').trim();
+    const artistHandle = String(body.artistHandle || body.artist_handle || '').replace(/^@/, '').trim().toLowerCase();
     const mode = String(body.mode || '').trim();
     const commandId = String(body.commandId || body.command_id || '');
     if (!botId || !mode) return c.json({ error: 'botId and mode required' }, 400);
@@ -4348,13 +4349,13 @@ app.post('/api/bot/observe', async (c) => {
       try {
         // Add columns if not exist (safe, no-op if already there)
         // Update fields
-        if (pf.followers != null) await d1All(c.env.DB, `UPDATE artists SET followers = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.followers), artistHandle]).catch(() => {});
-        if (pf.following != null) await d1All(c.env.DB, `UPDATE artists SET "following" = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.following), artistHandle]).catch(() => {});
-        if (pf.postCount != null) await d1All(c.env.DB, `UPDATE artists SET post_count = $1 WHERE LOWER(ig_handle) = $2`, [Number(pf.postCount), artistHandle]).catch(() => {});
-        if (pf.bio) await d1All(c.env.DB, `UPDATE artists SET bio = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.bio).slice(0, 500), artistHandle]).catch(() => {});
-        if (pf.email) await d1All(c.env.DB, `UPDATE artists SET email = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.email), artistHandle]).catch(() => {});
-        if (pf.externalUrl) await d1All(c.env.DB, `UPDATE artists SET website = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.externalUrl), artistHandle]).catch(() => {});
-        if (pf.category) await d1All(c.env.DB, `UPDATE artists SET category = $1 WHERE LOWER(ig_handle) = $2`, [String(pf.category), artistHandle]).catch(() => {});
+        if (pf.followers != null) await d1All(c.env.DB, `UPDATE artists SET followers = $1 WHERE ig_handle = $2 COLLATE NOCASE`, [Number(pf.followers), artistHandle]).catch(() => {});
+        if (pf.following != null) await d1All(c.env.DB, `UPDATE artists SET "following" = $1 WHERE ig_handle = $2 COLLATE NOCASE`, [Number(pf.following), artistHandle]).catch(() => {});
+        if (pf.postCount != null) await d1All(c.env.DB, `UPDATE artists SET post_count = $1 WHERE ig_handle = $2 COLLATE NOCASE`, [Number(pf.postCount), artistHandle]).catch(() => {});
+        if (pf.bio) await d1All(c.env.DB, `UPDATE artists SET bio = $1 WHERE ig_handle = $2 COLLATE NOCASE`, [String(pf.bio).slice(0, 500), artistHandle]).catch(() => {});
+        if (pf.email) await d1All(c.env.DB, `UPDATE artists SET email = $1 WHERE ig_handle = $2 COLLATE NOCASE`, [String(pf.email), artistHandle]).catch(() => {});
+        if (pf.externalUrl) await d1All(c.env.DB, `UPDATE artists SET website = $1 WHERE ig_handle = $2 COLLATE NOCASE`, [String(pf.externalUrl), artistHandle]).catch(() => {});
+        if (pf.category) await d1All(c.env.DB, `UPDATE artists SET category = $1 WHERE ig_handle = $2 COLLATE NOCASE`, [String(pf.category), artistHandle]).catch(() => {});
       } catch {}
     }
     return c.json({ ok: true });

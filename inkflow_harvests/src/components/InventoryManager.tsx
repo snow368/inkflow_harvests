@@ -124,7 +124,7 @@ export default function InventoryManager() {
     loadAll();
   };
 
-  useEffect(() => { loadAll(); const i = setInterval(loadAll, 60000); return () => clearInterval(i); }, []);
+  useEffect(() => { loadAll(); const i = setInterval(loadAll, 15 * 60 * 1000); return () => clearInterval(i); }, []);
 
   const TABS: { key: Tab; label: string; color: string }[] = [
     { key: 'stock', label: `Stock (${products.length})`, color: '#2563eb' },

@@ -372,7 +372,7 @@ useEffect(() => {
       }
       if (statusData.status === 'completed') toast.success('抓取完成');
     }
-  }, 2000);
+  }, 30000);
 };
 
 useEffect(() => {

@@ -282,7 +282,7 @@ export default function BotReviewPanels() {
       void loadCoverage();
       void loadKeptCandidates();
       void loadSchedule();
-    }, 10000);
+    }, 12 * 60 * 60 * 1000);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
