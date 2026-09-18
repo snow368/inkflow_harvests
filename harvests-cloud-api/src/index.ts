@@ -318,6 +318,9 @@ const PUBLIC_PATHS = new Set([
   // 用户 bot 动作偏好（点赞/评论/关注次数）：前台保存/读取，ig-scheduler 生成任务时读取
   '/api/automation/bot-prefs',
   '/api/automation/comment-chain-health',
+  // 系统健康面板数据源。handler 内部自校验（bot token 或已登录用户），
+  // 因此必须绕过全局 Firebase 中间件 —— 与 comment-chain-health 同一模式。
+  '/api/system/health',
   // 互动漏斗只读聚合：bot token 校验（checkBotToken），供实验/监控测量 like->follow->follow_back->dm
   '/api/automation/funnel',
   // 评论语料库（2026-08-21）：bot 上报用 bot-token（ingest handler 校验）；
@@ -3370,6 +3373,365 @@ function inferFunctionId(meta: any): string | undefined {
   if (mode.includes('real') || mode.includes('browse') || mode.includes('ig')) return 'ig_outreach';
   return undefined;
 }
+
+// ---------------------------------------------------------------------------
+// System health board — feeds the front-end panel where any broken block is red.
+//
+// Why this exists (2026-09-18 incident): a single green light is never enough.
+// The bot reported status='online' with a fresh heartbeat for 13 hours while its
+// task loop was hung, because heartbeatLoop and pollLoop are launched together
+// under Promise.all — the heartbeat kept ticking while nothing was dispatched.
+// So the verdict for "is the bot working" comes from OUTPUT
+// (bot_behavior_logs freshness) and DISPATCH (active leases vs pending queue),
+// and "fresh heartbeat + stale output" is surfaced as its own failure mode
+// instead of looking healthy.
+//
+// Rules for this endpoint, please keep them:
+//   * one failing query must never blank the whole board — failures are collected
+//     into `errors` and shown, not swallowed (a silent error is a fake green);
+//   * query windows stay narrow (<= 30 min) so per-call D1 rows_read stays cheap,
+//     and the response is cached for HEALTH_CACHE_MS;
+//   * when there is simply no work queued the block says `idle`, not `down` —
+//     a board that cries wolf gets ignored.
+// ---------------------------------------------------------------------------
+const HEALTH_CACHE_MS = 90 * 1000;
+const HEALTH_MIN_MS = 60 * 1000;
+let _sysHealthCache: { key: string; at: number; body: any } | null = null;
+
+type SysHealthStatus = 'ok' | 'warn' | 'down' | 'idle' | 'unknown';
+type SysHealthBlock = {
+  id: string;
+  label: string;
+  status: SysHealthStatus;
+  value: string;
+  detail: string;
+  evidence?: string;
+  metrics?: Record<string, string | number | null>;
+};
+
+// 'YYYY-MM-DD HH:MM:SS' is what SQLite's datetime('now') emits; read it as UTC
+// (the worker's clock) rather than letting Date parse it as local time.
+const parseTsMs = (v: any): number => {
+  const s = String(v || '').trim();
+  if (!s) return 0;
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) return Date.parse(s.replace(' ', 'T') + 'Z');
+  const ms = Date.parse(s);
+  return Number.isFinite(ms) ? ms : 0;
+};
+
+const fmtAgeCn = (ms: number): string => {
+  if (!ms || ms < 0) return '—';
+  if (ms < 60 * 1000) return `${Math.max(1, Math.round(ms / 1000))} 秒前`;
+  const min = ms / HEALTH_MIN_MS;
+  if (min < 60) return `${min.toFixed(1)} 分钟前`;
+  return `${(min / 60).toFixed(1)} 小时前`;
+};
+
+app.get('/api/system/health', async (c) => {
+  if (!checkBotToken(c)) {
+    if (!c.get('user')) {
+      const auth = c.req.header('Authorization') || '';
+      if (auth.startsWith('Bearer ')) {
+        const user = await verifyToken(auth.slice(7));
+        if (user) c.set('user', user);
+      }
+    }
+    if (!c.get('user')) return c.json({ error: 'not_authorized' }, 403);
+  }
+
+  const botId = String(c.req.query('botId') || 'bot_ig_01').trim() || 'bot_ig_01';
+  const now = Date.now();
+  const cacheKey = botId;
+  if (c.req.query('fresh') !== '1' && _sysHealthCache && _sysHealthCache.key === cacheKey
+      && now - _sysHealthCache.at < HEALTH_CACHE_MS) {
+    return c.json({
+      ..._sysHealthCache.body,
+      cache: { hit: true, ageMs: now - _sysHealthCache.at, ttlMs: HEALTH_CACHE_MS },
+    });
+  }
+
+  const errors: string[] = [];
+  const safe = async <T,>(label: string, fn: () => Promise<T>): Promise<T | null> => {
+    try { return await fn(); } catch (e: any) {
+      errors.push(`${label}: ${String(e?.message || e).slice(0, 180)}`);
+      return null;
+    }
+  };
+
+  await safe('ensure_bot_tables', () => ensureBotTables(c.env.DB));
+  await safe('ensure_behavior_logs', () => ensureBehaviorLogsTable(c.env.DB));
+  await safe('ensure_drafts', () => ensureDraftsTable(c.env.DB));
+
+  // ---- worker row (+ its self-reported infra block, written by the heartbeat)
+  const worker: any = await safe('bot_instances', () => c.env.DB.prepare(
+    'SELECT bot_id, host, version, status, last_heartbeat, registered_at, meta FROM bot_instances WHERE bot_id = ?'
+  ).bind(botId).first());
+  let meta: any = {};
+  try { meta = worker?.meta ? JSON.parse(String(worker.meta)) : {}; } catch {}
+  const infra = meta && typeof meta === 'object' ? (meta.infra || null) : null;
+  const hbMs = Number(worker?.last_heartbeat || 0);
+  const hbAgeMs = hbMs ? now - hbMs : 0;
+  const hbFresh = hbMs > 0 && hbAgeMs < 3 * HEALTH_MIN_MS;
+  const botOffline = !hbMs || hbAgeMs > 10 * HEALTH_MIN_MS;
+
+  // ---- behaviour events, last 30 min, grouped (indexed on (bot_id, ts))
+  const evRows: any = await safe('behavior_logs', () => c.env.DB.prepare(
+    `SELECT event, COUNT(*) AS n, MAX(ts) AS last_ts
+       FROM bot_behavior_logs WHERE bot_id = ? AND ts >= ? GROUP BY event`
+  ).bind(botId, new Date(now - 30 * HEALTH_MIN_MS).toISOString()).all());
+  const ev30: Record<string, { n: number; lastTs: string }> = {};
+  for (const r of ((evRows?.results || []) as any[])) {
+    ev30[String(r.event)] = { n: Number(r.n || 0), lastTs: String(r.last_ts || '') };
+  }
+  const evN = (k: string) => Number(ev30[k]?.n || 0);
+
+  // ---- last event ever (for staleness even beyond the 30 min window)
+  const lastAny: any = await safe('behavior_logs_last', () => c.env.DB.prepare(
+    'SELECT ts, event FROM bot_behavior_logs WHERE bot_id = ? ORDER BY id DESC LIMIT 1'
+  ).bind(botId).first());
+  const lastEvMs = parseTsMs(lastAny?.ts);
+  const outAgeMs = lastEvMs ? now - lastEvMs : 0;
+
+  // ---- queue depth (both COUNTs use idx_tasks_status)
+  const leasedRow: any = await safe('tasks_leased', () => c.env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM automation_tasks WHERE status = 'leased'"
+  ).first());
+  const pendingRow: any = await safe('tasks_pending', () => c.env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM automation_tasks WHERE status = 'pending'"
+  ).first());
+  const leased = Number(leasedRow?.n || 0);
+  const pending = Number(pendingRow?.n || 0);
+
+  // ---- comment drafts
+  const draftRows: any = await safe('comment_drafts', () => c.env.DB.prepare(
+    'SELECT status, COUNT(*) AS n FROM comment_drafts GROUP BY status'
+  ).all());
+  const drafts: Record<string, number> = {};
+  for (const r of ((draftRows?.results || []) as any[])) drafts[String(r.status)] = Number(r.n || 0);
+
+  // ---------------------------------------------------------------------------
+  const blocks: SysHealthBlock[] = [];
+  const evTotal30 = Object.values(ev30).reduce((s, v) => s + v.n, 0);
+  const produced30 = evN('like_post') + evN('task_done') + evN('comment_posted') + evN('dm_sent');
+  const started30 = evN('task_start');
+  const noWork = leased === 0 && pending === 0;
+  const lastEvLabel = lastAny?.event ? String(lastAny.event) : '';
+  const outEvidence = lastEvMs
+    ? `最后事件 ${fmtAgeCn(outAgeMs)}（${lastEvLabel || 'unknown'}）`
+    : '库里没有该 bot 的任何行为事件';
+
+  // 1) bot 产出 —— the authoritative "is it actually working" signal
+  {
+    let status: SysHealthStatus = 'down';
+    let detail = '心跳与产出同时停止 —— 进程可能已退出 / Chrome 已死';
+    if (!lastEvMs) { detail = '从未收到行为事件'; }
+    else if (outAgeMs < 6 * HEALTH_MIN_MS) { status = 'ok'; detail = '正在干活'; }
+    else if (outAgeMs < 20 * HEALTH_MIN_MS) { status = 'warn'; detail = '产出变慢（正常浏览空档约几分钟）'; }
+    else if (noWork) { status = 'idle'; detail = '无待派任务，空闲属正常'; }
+    else if (hbFresh) { status = 'down'; detail = '心跳新鲜但零产出 —— 假绿灯：主循环很可能卡住'; }
+    blocks.push({
+      id: 'output', label: 'bot 产出', status,
+      value: outAgeMs ? fmtAgeCn(outAgeMs) : '无数据',
+      detail,
+      evidence: outEvidence,
+      metrics: {
+        '30 分钟事件': evTotal30,
+        '点赞': evN('like_post'),
+        '任务完成': evN('task_done'),
+        '评论发布': evN('comment_posted'),
+        '待派任务': pending,
+      },
+    });
+  }
+
+  // 2) bot 心跳 —— explicitly labelled as NOT proof of work
+  {
+    let status: SysHealthStatus = 'down';
+    let detail = '从未上报心跳';
+    if (hbMs && hbFresh) {
+      status = (outAgeMs > 20 * HEALTH_MIN_MS && !noWork) ? 'down' : 'ok';
+      detail = status === 'down'
+        ? '假绿灯：进程活着、心跳在跳，但什么都没做（见「bot 产出」）'
+        : '进程存活（只能证明进程在跑，不能证明在干活）';
+    } else if (hbMs && hbAgeMs < 10 * HEALTH_MIN_MS) {
+      status = 'warn'; detail = '心跳变慢';
+    } else if (hbMs) {
+      status = 'down'; detail = '心跳已停 —— 进程退出或 CDP 连不上';
+    }
+    blocks.push({
+      id: 'heartbeat', label: 'bot 心跳', status,
+      value: hbMs ? fmtAgeCn(hbAgeMs) : '无',
+      detail,
+      evidence: worker ? `${worker.host || '?'} · ${String(worker.version || '').slice(0, 40)}` : 'bot_instances 无该 bot',
+      metrics: { '进程状态': worker?.status || null, '启动于': Number(worker?.registered_at || 0) ? fmtAgeCn(now - Number(worker.registered_at)) : null },
+    });
+  }
+
+  // 3) 任务派发
+  {
+    let status: SysHealthStatus;
+    let detail: string;
+    if (leased > 0) { status = 'ok'; detail = `30 分钟派发 ${started30} 个`; }
+    else if (pending === 0) { status = 'idle'; detail = '没有待派任务（D1 侧队列已空）'; }
+    else if (started30 > 0) { status = 'warn'; detail = `当前无租约，但 30 分钟内派发过 ${started30} 个`; }
+    else { status = 'down'; detail = '有任务却 30 分钟一次都没派发 —— poll 循环没在跑'; }
+    blocks.push({
+      id: 'dispatch', label: '任务派发', status,
+      value: `${leased} 租约 / ${pending} 待派`,
+      detail,
+      evidence: '租约 45 分钟，poll 间隔 25 秒；活着时很少为 0',
+      metrics: { '30 分钟 task_start': started30, '30 分钟 task_done': evN('task_done'), '30 分钟失败': evN('task_failed') },
+    });
+  }
+
+  // 4) 浏览器 CDP —— self-reported by the bot heartbeat (meta.infra.browser)
+  {
+    const br = infra?.browser || null;
+    let status: SysHealthStatus = 'unknown';
+    let detail = 'bot 尚未上报浏览器状态（仍在跑旧版本，或从未启动到 CDP 连接这一步）';
+    let value = '未上报';
+    if (br) {
+      const ageMs = Number(br.lastConnectedAt || 0) ? now - Number(br.lastConnectedAt) : 0;
+      if (botOffline) {
+        detail = `bot 离线，数据为 ${fmtAgeCn(hbAgeMs)}上报（可能已过期）`;
+        value = fmtAgeCn(ageMs);
+      } else if (!br.connected) {
+        status = 'down'; value = '未连接'; detail = `CDP 未连接，最后连接 ${fmtAgeCn(ageMs)}`;
+      } else if (ageMs > 30 * HEALTH_MIN_MS) {
+        status = 'warn'; value = fmtAgeCn(ageMs); detail = 'CDP 连接已超过 30 分钟未刷新';
+      } else {
+        status = 'ok'; value = '已连接'; detail = `连接于 ${fmtAgeCn(ageMs)}`;
+      }
+    } else if (!botOffline && evN('ensure_browser_done') > 0) {
+      // Fallback for a bot that predates meta.infra: it already emits
+      // ensure_browser_done per ensure pass, so "browser is reachable" is provable
+      // from the event stream even without the self-reported detail.
+      status = 'ok'; value = '可用';
+      detail = `由 ensure_browser_done 推断（30 分钟内 ${evN('ensure_browser_done')} 次）；bot 仍是旧版本，未上报详情`;
+    }
+    const ck: any = infra?.chromeKeeper || null;
+    blocks.push({
+      id: 'browser', label: '浏览器 CDP', status, value, detail,
+      evidence: ck ? `Chrome 守护最后运行 ${fmtAgeCn(now - Number(ck.at || 0))}（${ck.result || '?'}）` : 'Chrome 守护：无上报',
+    });
+  }
+
+  // 5) Chrome 守护（chrome-keeper.ps1）
+  {
+    const ck: any = infra?.chromeKeeper || null;
+    let status: SysHealthStatus = 'unknown';
+    let value = '未上报';
+    let detail = botOffline
+      ? `bot 离线，无法确认守护脚本是否在跑（最后心跳 ${fmtAgeCn(hbAgeMs)}）`
+      : 'chrome-keeper 尚未上报状态文件';
+    if (ck && Number(ck.at || 0)) {
+      const ageMs = now - Number(ck.at);
+      const result = String(ck.result || '');
+      value = fmtAgeCn(ageMs);
+      if (botOffline) {
+        detail = `bot 离线，数据为 ${fmtAgeCn(hbAgeMs)}上报（可能已过期）`;
+      } else if (ageMs > 20 * HEALTH_MIN_MS) {
+        status = 'down'; detail = '超过 20 分钟未运行 —— 计划任务 harvests-chrome-keeper 可能被禁用';
+      } else if (result === 'alert_failed') {
+        status = 'down'; detail = `修复失败：${ck.note || ''}`;
+      } else if (result === 'alert_fixed') {
+        status = 'warn'; detail = `自查修复过 Chrome：${ck.note || ''}`;
+      } else if (result === 'ok') {
+        status = 'ok'; detail = '端口 + 协议双探活通过';
+      } else {
+        status = 'warn'; detail = `结果 ${result}${ck.note ? '：' + ck.note : ''}`;
+      }
+    }
+    blocks.push({ id: 'chrome_keeper', label: 'Chrome 守护', status, value, detail,
+      evidence: ck?.verdict ? `探针判定 ${ck.verdict}` : undefined });
+  }
+
+  // 6) 代码同步（vps-bot-autosync.ps1：每 5 分钟 git pull + 变更即重启 bot-worker）
+  {
+    const as: any = infra?.autosync || null;
+    let status: SysHealthStatus = 'unknown';
+    let value = '未上报';
+    let detail = botOffline
+      ? `bot 离线，无法确认自动同步是否在跑（最后心跳 ${fmtAgeCn(hbAgeMs)}）`
+      : 'autosync 尚未上报状态文件';
+    if (as && Number(as.at || 0)) {
+      const ageMs = now - Number(as.at);
+      const result = String(as.result || '');
+      value = fmtAgeCn(ageMs);
+      if (botOffline) {
+        detail = `bot 离线，数据为 ${fmtAgeCn(hbAgeMs)}上报（可能已过期）`;
+      } else if (ageMs > 20 * HEALTH_MIN_MS) {
+        status = 'down'; detail = '超过 20 分钟未运行 —— 计划任务 harvests-bot-autosync 可能被禁用';
+      } else if (result === 'pull-failed' || result === 'error') {
+        status = 'down'; detail = `拉取失败：${as.note || '见 vps-autosync.log'}`;
+      } else if (as.head && as.remoteHead && as.head !== as.remoteHead) {
+        status = 'warn'; detail = `VPS 代码落后远端（${as.head} → ${as.remoteHead}）`;
+      } else if (result === 'updated') {
+        status = 'ok'; detail = `已同步到 ${as.head || '?'}${as.restarted ? '，并重启了 bot-worker' : ''}`;
+      } else {
+        status = 'ok'; detail = '与远端一致（无需更新）';
+      }
+    }
+    blocks.push({ id: 'autosync', label: '代码同步', status, value, detail,
+      evidence: as?.head ? `VPS ${as.head}${as.remoteHead ? ` · 远端 ${as.remoteHead}` : ''}` : undefined });
+  }
+
+  // 7) 评论链路
+  {
+    const dPending = Number(drafts.pending || 0);
+    const dApproved = Number(drafts.approved || 0);
+    const dPosted = Number(drafts.posted || 0);
+    const queued30 = evN('comment_review_queued');
+    const posted30 = evN('comment_posted');
+    let status: SysHealthStatus = 'ok';
+    let detail = `30 分钟入队 ${queued30} 条 / 发布 ${posted30} 条`;
+    if (dPending === 0 && dApproved === 0) {
+      status = botOffline ? 'unknown' : 'warn';
+      detail = botOffline ? 'bot 离线，无法生成新草稿' : '没有待审也没有待发草稿 —— 上游生成可能断了';
+    } else if (dApproved > 0 && posted30 === 0 && hbFresh) {
+      status = 'warn';
+      detail = `有 ${dApproved} 条已批准待发，30 分钟内未发布（发布间隔 8–20 分钟属正常）`;
+    }
+    blocks.push({
+      id: 'comment', label: '评论链路', status,
+      value: `待审 ${dPending} · 待发 ${dApproved}`,
+      detail,
+      metrics: { '已发布累计': dPosted, '已驳回': Number(drafts.rejected || 0), '30 分钟入队': queued30, '30 分钟发布': posted30 },
+    });
+  }
+
+  const rank: Record<SysHealthStatus, number> = { down: 0, warn: 1, unknown: 2, idle: 3, ok: 4 };
+  const worst = blocks.reduce((a, b) => (rank[b.status] < rank[a.status] ? b : a), blocks[0]);
+  const downBlocks = blocks.filter((b) => b.status === 'down').map((b) => b.label);
+  const warnBlocks = blocks.filter((b) => b.status === 'warn').map((b) => b.label);
+
+  const body = {
+    ok: true,
+    botId,
+    checkedAt: now,
+    status: worst.status,
+    downBlocks,
+    warnBlocks,
+    blocks,
+    errors,
+    bot: {
+      host: worker?.host || '',
+      version: worker?.version || '',
+      status: worker?.status || '',
+      lastHeartbeat: hbMs,
+      heartbeatAgeSec: hbMs ? Math.round(hbAgeMs / 1000) : null,
+      registeredAt: Number(worker?.registered_at || 0),
+      dailyProgress: meta?.dailyProgress || null,
+    },
+    thresholds: {
+      outputOkMin: 6, outputWarnMin: 20, heartbeatFreshMin: 3, heartbeatDeadMin: 10,
+      keeperStaleMin: 20, autosyncStaleMin: 20,
+    },
+    cache: { hit: false, ageMs: 0, ttlMs: HEALTH_CACHE_MS },
+  };
+  _sysHealthCache = { key: cacheKey, at: now, body };
+  return c.json(body);
+});
 
 app.get('/api/bot/functions', async (c) => {
   return c.json({ ok: true, functions: BOT_FUNCTION_CATALOG });

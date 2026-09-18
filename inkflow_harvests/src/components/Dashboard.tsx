@@ -44,6 +44,7 @@ import { useCRM } from '../contexts/CRMContext';
 import { generatePersonaDMScript } from '../lib/gemini';
 import { toast } from 'sonner';
 import { apiFetch } from '../lib/api-auth';
+import SystemHealth from './SystemHealth';
 
 const data = [
   { name: 'Mon', engagement: 400, conversions: 24 },
@@ -265,6 +266,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (tab: any) => v
 
   return (
     <div className="space-y-8">
+      {/* 系统健康：坏掉的板块标红。放在最上面，是为了让"哪里坏了"在第一屏就能看到 */}
+      <SystemHealth />
       {isScanning && (
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
