@@ -3587,6 +3587,11 @@ app.get('/api/system/health', async (c) => {
   // 4) 浏览器 CDP —— self-reported by the bot heartbeat (meta.infra.browser)
   {
     const br = infra?.browser || null;
+    const upSec = Number(infra?.uptimeSec || 0);
+    // A restart is routine here: vps-bot-autosync restarts bot-worker whenever a watched
+    // file changes. For the first minutes after start there is no CDP timestamp yet, and
+    // reporting that as a failure would paint this block red on every single deploy.
+    const justStarted = upSec > 0 && upSec < 4 * 60;
     let status: SysHealthStatus = 'unknown';
     let detail = 'bot 尚未上报浏览器状态（仍在跑旧版本，或从未启动到 CDP 连接这一步）';
     let value = '未上报';
@@ -3595,12 +3600,22 @@ app.get('/api/system/health', async (c) => {
       if (botOffline) {
         detail = `bot 离线，数据为 ${fmtAgeCn(hbAgeMs)}上报（可能已过期）`;
         value = fmtAgeCn(ageMs);
-      } else if (!br.connected) {
-        status = 'down'; value = '未连接'; detail = `CDP 未连接，最后连接 ${fmtAgeCn(ageMs)}`;
-      } else if (ageMs > 30 * HEALTH_MIN_MS) {
-        status = 'warn'; value = fmtAgeCn(ageMs); detail = 'CDP 连接已超过 30 分钟未刷新';
+      } else if (br.connected) {
+        status = 'ok'; value = '已连接';
+        detail = `连接于 ${fmtAgeCn(ageMs)}${Number(br.connectCount || 0) > 1 ? ` · 本进程已连 ${br.connectCount} 次` : ''}`;
+      } else if (justStarted) {
+        status = 'unknown'; value = `启动中 ${upSec}s`;
+        detail = '进程刚启动，尚未建立 CDP 连接（正常，等 1–4 分钟）';
+      } else if (outAgeMs < 6 * HEALTH_MIN_MS) {
+        // Cross-check: the bot cannot emit behaviour events without a working page, so
+        // fresh output outranks a missing self-report.
+        status = 'ok'; value = '由产出反证';
+        detail = `未上报连接时间，但 ${fmtAgeCn(outAgeMs)}产出过事件 → 浏览器可用`;
+      } else if (br.lastFailure) {
+        status = 'down'; value = '未连接';
+        detail = `CDP 未连接：${br.lastFailure}${br.lastFailureAgeSec != null ? `（${fmtAgeCn(Number(br.lastFailureAgeSec) * 1000)}）` : ''}`;
       } else {
-        status = 'ok'; value = '已连接'; detail = `连接于 ${fmtAgeCn(ageMs)}`;
+        status = 'down'; value = '未连接'; detail = `CDP 未连接，最后连接 ${fmtAgeCn(ageMs)}`;
       }
     } else if (!botOffline && evN('ensure_browser_done') > 0) {
       // Fallback for a bot that predates meta.infra: it already emits
