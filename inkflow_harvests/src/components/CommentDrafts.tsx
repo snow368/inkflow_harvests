@@ -147,19 +147,27 @@ export default function CommentDrafts() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
           <h2 className="text-xl font-bold text-white">生成的评论草稿</h2>
           <p className="text-sm text-zinc-400 mt-1">
             bot 基于帖子视觉分析 + DeepSeek 生成的评论（未自动发布，需人工审核）
           </p>
         </div>
-        <button
-          onClick={loadList}
-          className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm text-zinc-200 border border-zinc-700"
-        >
-          刷新
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={() => { window.location.hash = '#/review-mobile'; }}
+            className="px-3 py-2 rounded-lg bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-300 text-sm border border-emerald-500/30"
+          >
+            手机审批页
+          </button>
+          <button
+            onClick={loadList}
+            className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm text-zinc-200 border border-zinc-700"
+          >
+            刷新
+          </button>
+        </div>
       </div>
 
       {/* 统计条 */}
@@ -187,7 +195,7 @@ export default function CommentDrafts() {
       )}
 
       {/* 筛选 */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {(['pending', 'approved', 'publishing', 'rejected', 'posted', 'all'] as const).map((f) => (
           <button
             key={f}
@@ -213,7 +221,7 @@ export default function CommentDrafts() {
         )}
         {items.map((it) => (
           <div key={it.id} className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 hover:border-zinc-700 transition-colors">
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-4">
               <div className="flex-1 min-w-0">
                 {/* 生成评论 */}
                 {it.status === 'pending' ? (
@@ -221,7 +229,7 @@ export default function CommentDrafts() {
                     value={draftText[it.id] ?? it.proposed_comment}
                     onChange={(e) => setDraftText((prev) => ({ ...prev, [it.id]: e.target.value }))}
                     rows={3}
-                    className="w-full rounded-lg bg-zinc-950/80 border border-emerald-500/25 px-3 py-2 text-sm leading-relaxed text-emerald-200 outline-none focus:border-emerald-400"
+                    className="w-full rounded-lg bg-zinc-950/80 border border-emerald-500/25 px-3 py-2 text-base md:text-sm leading-relaxed text-emerald-200 outline-none focus:border-emerald-400"
                   />
                 ) : (
                   <p className="text-emerald-300 text-sm leading-relaxed border-l-2 border-emerald-500/40 pl-3">
@@ -268,12 +276,12 @@ export default function CommentDrafts() {
                   </div>
                 )}
               </div>
-              <div className="flex gap-2 shrink-0">
+              <div className="grid grid-cols-2 gap-2 md:flex md:shrink-0">
                 {it.status === 'pending' && (
                   <button
                     onClick={() => saveEdit(it.id)}
                     disabled={busyId === it.id}
-                    className="px-3 py-1.5 rounded-lg text-xs bg-sky-600/15 text-sky-400 border border-sky-500/30 hover:bg-sky-600/25 disabled:opacity-50"
+                    className="px-3 py-2.5 md:py-1.5 rounded-lg text-sm md:text-xs bg-sky-600/15 text-sky-400 border border-sky-500/30 hover:bg-sky-600/25 disabled:opacity-50"
                   >
                     保存
                   </button>
@@ -282,7 +290,7 @@ export default function CommentDrafts() {
                   <button
                     onClick={() => handleAction(it.id, 'approve')}
                     disabled={busyId === it.id}
-                    className="px-3 py-1.5 rounded-lg text-xs bg-emerald-600/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/25 disabled:opacity-50"
+                    className="px-3 py-2.5 md:py-1.5 rounded-lg text-sm md:text-xs bg-emerald-600/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/25 disabled:opacity-50"
                   >
                     通过
                   </button>
@@ -291,7 +299,7 @@ export default function CommentDrafts() {
                   <button
                     onClick={() => handleAction(it.id, 'reject')}
                     disabled={busyId === it.id}
-                    className="px-3 py-1.5 rounded-lg text-xs bg-amber-600/15 text-amber-400 border border-amber-500/30 hover:bg-amber-600/25 disabled:opacity-50"
+                    className="px-3 py-2.5 md:py-1.5 rounded-lg text-sm md:text-xs bg-amber-600/15 text-amber-400 border border-amber-500/30 hover:bg-amber-600/25 disabled:opacity-50"
                   >
                     拒绝
                   </button>
@@ -299,7 +307,7 @@ export default function CommentDrafts() {
                 <button
                   onClick={() => handleAction(it.id, 'delete')}
                   disabled={busyId === it.id}
-                  className="px-3 py-1.5 rounded-lg text-xs bg-red-600/15 text-red-400 border border-red-500/30 hover:bg-red-600/25 disabled:opacity-50"
+                  className="px-3 py-2.5 md:py-1.5 rounded-lg text-sm md:text-xs bg-red-600/15 text-red-400 border border-red-500/30 hover:bg-red-600/25 disabled:opacity-50"
                 >
                   删除
                 </button>

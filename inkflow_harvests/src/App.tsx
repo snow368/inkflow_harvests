@@ -24,6 +24,9 @@ import {
   Calendar,
   Database,
   Sparkles,
+  Menu,
+  X,
+  CheckCheck,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
@@ -57,6 +60,7 @@ import ContentOperations from './components/ContentOperations';
 import CommentOps from './components/CommentOps';
 import CorpusReview from './components/CorpusReview';
 import CommentDrafts from './components/CommentDrafts';
+import ReviewMobile from './components/ReviewMobile';
 
 import InkFlowOutreach from './components/InkFlowOutreach';
 import EmailAuthForm from './components/EmailAuthForm';
@@ -64,7 +68,9 @@ import ScrapeConfig from './components/ScrapeConfig';
 import AdminUsers from './components/AdminUsers';
 
 
-type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'market-intelligence' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'comment-ops' | 'corpus' | 'comment-drafts' | 'settings' | 'publish' | 'scrape' | 'product-catalog' | 'new-arrivals' | 'sales-chat' | 'admin' | 'inkflow-outreach';
+type Tab = 'dashboard' | 'outreach' | 'analyzer' | 'training' | 'crm' | 'market-intelligence' | 'inventory' | 'orders' | 'tasks' | 'automation' | 'botworkers' | 'comment-ops' | 'corpus' | 'comment-drafts' | 'review-mobile' | 'settings' | 'publish' | 'scrape' | 'product-catalog' | 'new-arrivals' | 'sales-chat' | 'admin' | 'inkflow-outreach';
+
+const VALID_TABS: Tab[] = ['dashboard', 'outreach', 'analyzer', 'training', 'crm', 'market-intelligence', 'inventory', 'orders', 'tasks', 'automation', 'botworkers', 'comment-ops', 'corpus', 'comment-drafts', 'review-mobile', 'settings', 'publish', 'scrape', 'product-catalog', 'new-arrivals', 'sales-chat', 'admin', 'inkflow-outreach'];
 
 const DynamicLoad = ({ component: load, fallback }: { component: () => Promise<any>, fallback?: any }) => {
   const [Comp, setComp] = useState<any>(null);
@@ -72,7 +78,7 @@ const DynamicLoad = ({ component: load, fallback }: { component: () => Promise<a
   return Comp ? <Comp /> : fallback || null;
 };
 
-const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab: Tab, setActiveTab: (tab: Tab) => void, userTabs: string[] | null, setUserTabs: (tabs: string[] | null) => void }) => {
+const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs, open, onClose }: { activeTab: Tab, setActiveTab: (tab: Tab) => void, userTabs: string[] | null, setUserTabs: (tabs: string[] | null) => void, open: boolean, onClose: () => void }) => {
   const { artists, user, logout } = useCRM();
   
   const getHighIntentCount = () => {
@@ -80,6 +86,7 @@ const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab
   };
 
   const tabs = [
+    { id: 'review-mobile', label: '手机审批', icon: CheckCheck },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'outreach', label: 'Shop Outreach', icon: Search },
     { id: 'analyzer', label: 'Artist Analyzer', icon: Instagram },
@@ -126,7 +133,7 @@ const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab
     return (
       <button
         key={tab.id}
-        onClick={() => setActiveTab(tab.id as Tab)}
+        onClick={() => { setActiveTab(tab.id as Tab); onClose(); }}
         className={cn(
           "w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group relative",
           isActive 
@@ -152,24 +159,52 @@ const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab
   };
 
   return (
-    <aside className="fixed left-0 top-0 bottom-0 w-64 bg-[#111] border-r border-zinc-800/50 z-50" style={{ display: 'flex', flexDirection: 'column' }}>
-      <div className="p-6" style={{ flex: 1, overflowY: 'auto' }}>
-        <div className="flex items-center gap-3 mb-10">
-          <div className="w-10 h-10 bg-rose-600 rounded-xl flex items-center justify-center shadow-lg shadow-rose-600/20">
-            <ShoppingBag className="w-6 h-6 text-white" />
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center justify-between">
-              <h1 className="font-bold text-xl tracking-tight text-white">HarvestsAI</h1>
-              <span className="text-[10px] font-black bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full border border-zinc-700/50">
-                {artists.length}
-              </span>
+    <>
+      {/* 手机端抽屉遮罩：点空白关闭 */}
+      {open && (
+        <div
+          onClick={onClose}
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        className={cn(
+          "fixed left-0 top-0 bottom-0 w-[17rem] md:w-64 bg-[#111] border-r border-zinc-800/50 z-50 transition-transform duration-300 ease-out will-change-transform",
+          open ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        )}
+        style={{ display: 'flex', flexDirection: 'column' }}
+      >
+        <div className="p-6" style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex items-center gap-3 mb-10">
+            <div className="w-10 h-10 bg-rose-600 rounded-xl flex items-center justify-center shadow-lg shadow-rose-600/20">
+              <ShoppingBag className="w-6 h-6 text-white" />
             </div>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">Tattoo Supply Automator</p>
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <h1 className="font-bold text-xl tracking-tight text-white">HarvestsAI</h1>
+                <span className="text-[10px] font-black bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full border border-zinc-700/50">
+                  {artists.length}
+                </span>
+              </div>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">Tattoo Supply Automator</p>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="关闭菜单"
+              className="md:hidden -mr-2 flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-800 text-zinc-400 active:scale-95"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
-        </div>
 
-        <div className="space-y-6">
+          <div className="space-y-6">
+            {allTabs.some(t => t.id === 'review-mobile') && (
+              <div className="space-y-1">
+                <p className="px-4 text-[10px] font-black text-rose-600/60 uppercase tracking-widest mb-2">Review</p>
+                {allTabs.filter(t => t.id === 'review-mobile').map(renderTab)}
+              </div>
+            )}
           <div className="space-y-1">
             <p className="px-4 text-[10px] font-black text-zinc-600 uppercase tracking-widest mb-2">Main</p>
             {allTabs.filter(t => ['dashboard','outreach','analyzer'].includes(t.id)).map(renderTab)}
@@ -220,11 +255,12 @@ const Sidebar = ({ activeTab, setActiveTab, userTabs, setUserTabs }: { activeTab
           <span className="text-xs font-bold uppercase tracking-wider">Sign Out</span>
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 };
 
-const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab: (tab: Tab) => void }) => {
+const MainContent = ({ activeTab, setActiveTab, onOpenNav }: { activeTab: Tab, setActiveTab: (tab: Tab) => void, onOpenNav: () => void }) => {
   const { user, login, isAuthReady, registerStatus, registerUser } = useCRM();
   const isSnow368 = user?.email === 'snow368@gmail.com';
   const [showEmailAuth, setShowEmailAuth] = useState(false);
@@ -234,7 +270,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
 
   if (!isAuthReady) {
     return (
-      <div className="flex-1 flex items-center justify-center min-h-screen ml-64">
+      <div className="flex-1 flex items-center justify-center min-h-screen md:ml-64">
         <Loader2 className="w-10 h-10 text-rose-600 animate-spin" />
       </div>
     );
@@ -243,7 +279,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
   // Registration gate — after login, check approval
   if (user && registerStatus === 'pending') {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 min-h-screen ml-64">
+      <div className="flex-1 flex flex-col items-center justify-center p-6 min-h-screen md:ml-64">
         <div className="w-20 h-20 bg-amber-600 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-amber-600/20 mb-8">
           <Clock className="w-10 h-10 text-white" />
         </div>
@@ -260,7 +296,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
 
   if (user && registerStatus === 'none') {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 min-h-screen ml-64">
+      <div className="flex-1 flex flex-col items-center justify-center p-6 min-h-screen md:ml-64">
         <div className="w-20 h-20 bg-rose-600 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-rose-600/20 mb-8">
           <ShoppingBag className="w-10 h-10 text-white" />
         </div>
@@ -290,7 +326,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
 
   if (!user) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 min-h-screen ml-64">
+      <div className="flex-1 flex flex-col items-center justify-center p-6 min-h-screen md:ml-64">
         <div className="w-20 h-20 bg-rose-600 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-rose-600/20 mb-8">
           <ShoppingBag className="w-10 h-10 text-white" />
         </div>
@@ -343,12 +379,15 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     training: 'AI Training',
     crm: 'CRM (Lifecycle)',
     inventory: 'Inventory Manager',
+    orders: 'Orders',
+    'market-intelligence': 'Market Intelligence',
     tasks: 'Task Manager',
     automation: 'Automation Center',
     botworkers: 'Bot Workers',
     'comment-ops': '评论生产中心',
     corpus: '评论语料库',
     'comment-drafts': '生成评论审核',
+    'review-mobile': '手机审批',
     settings: 'Settings',
     publish: 'Publish Calendar',
     'inkflow-outreach': 'InkFlow 获客',
@@ -366,12 +405,15 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
     training: "Manage AI personas and chat history to refine automation.",
     crm: "Manage 'Engaged' and 'Customers' through the lifecycle funnel.",
     inventory: "Master stock management, SKU tracking, and AI-driven restocking alerts.",
+    orders: "Track supply orders and fulfilment status.",
+    'market-intelligence': "Competitor and market signals across shops and artists.",
     tasks: "View automation tasks, dispatch supply analysis, and track bot progress.",
     automation: "AdsPower & Playwright multi-account orchestration command center.",
     botworkers: "Start, stop, and manage bot worker processes...",
     'comment-ops': 'Bot 状态、任务、语料、生成评论和最近动态总览。',
     corpus: '审核 bot 采集到的公开评论，批准后作为评论生成素材。',
     'comment-drafts': 'Review and edit generated Instagram comment drafts before publishing.',
+    'review-mobile': '手机端逐条审批评论草稿：一屏一张、拇指大按钮、无逐个弹窗。',
     settings: "Configure API keys and automation safety settings.",
     publish: "Schedule and publish content to social platforms.",
     'inkflow-outreach': "Shared resource pool for InkFlow customer outreach. Only visible to dev users.",
@@ -383,19 +425,40 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
   };
 
   return (
-    <main className="ml-64 p-8">
-      <header className="flex items-center justify-between mb-10">
+    <main className="min-h-screen p-4 md:ml-64 md:p-8">
+      {/* 手机端顶栏：汉堡 + 当前页名（桌面端隐藏） */}
+      <div className="sticky top-0 z-30 -mx-4 -mt-4 mb-4 flex h-14 items-center gap-3 border-b border-zinc-800/60 bg-[#0a0a0a]/95 px-3 backdrop-blur md:hidden">
+        <button
+          onClick={onOpenNav}
+          aria-label="打开菜单"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-300 active:scale-95"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <p className="min-w-0 flex-1 truncate text-base font-bold text-white">{labels[activeTab]}</p>
+        {activeTab !== 'review-mobile' && (
+          <button
+            onClick={() => setActiveTab('review-mobile')}
+            className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 text-sm font-semibold text-emerald-300 active:scale-95"
+          >
+            <CheckCheck className="h-4 w-4" />
+            审批
+          </button>
+        )}
+      </div>
+
+      <header className="mb-5 flex flex-col gap-3 md:mb-10 md:flex-row md:items-start md:justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight mb-1 text-white">
+          <h2 className="hidden text-3xl font-bold tracking-tight mb-1 text-white md:block">
             {labels[activeTab]}
           </h2>
-          <p className="text-zinc-500">
+          <p className="hidden text-zinc-500 md:block">
             {descriptions[activeTab]}
           </p>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900/50 border border-zinc-800/50 rounded-xl">
+        <div className="flex items-center gap-3 md:gap-4">
+          <div className="hidden items-center gap-2 px-4 py-2 bg-zinc-900/50 border border-zinc-800/50 rounded-xl sm:flex">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             <span className="text-xs font-medium text-zinc-400">AI Engine Active</span>
           </div>
@@ -406,7 +469,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
                 description: "Redirecting to Automation Command Center..."
               });
             }}
-            className="px-6 py-2 bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-xl transition-colors shadow-lg shadow-rose-600/20"
+            className="flex-1 px-4 py-2.5 md:flex-none md:px-6 md:py-2 bg-rose-600 hover:bg-rose-500 text-white text-sm md:text-base font-semibold rounded-xl transition-colors shadow-lg shadow-rose-600/20"
           >
             Start Campaign
           </button>
@@ -443,6 +506,7 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
           {activeTab === 'comment-ops' && <CommentOps />}
           {activeTab === 'corpus' && <CorpusReview />}
           {activeTab === 'comment-drafts' && <CommentDrafts />}
+          {activeTab === 'review-mobile' && <ReviewMobile />}
           {activeTab === 'publish' && <ContentOperations />}
           {activeTab === 'settings' && <AutomationSettings />}
           {activeTab === 'scrape' && <ScrapeConfig />}
@@ -459,10 +523,10 @@ const MainContent = ({ activeTab, setActiveTab }: { activeTab: Tab, setActiveTab
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const hash = window.location.hash.replace(/^#\/?/, '');
-    const validTabs: Tab[] = ['dashboard','outreach','analyzer','training','crm','inventory','orders','tasks','automation','botworkers','comment-ops','corpus','comment-drafts','settings','publish','scrape','product-catalog','new-arrivals','sales-chat','admin','inkflow-outreach'];
-    return validTabs.includes(hash as Tab) ? (hash as Tab) : 'dashboard';
+    return VALID_TABS.includes(hash as Tab) ? (hash as Tab) : 'dashboard';
   });
   const [userTabs, setUserTabs] = useState<string[] | null>(null);
+  const [navOpen, setNavOpen] = useState(false);
 
   // Load user permissions from API (D1, not Firestore)
   useEffect(() => {
@@ -509,19 +573,33 @@ export default function App() {
   useEffect(() => {
     const onHashChange = () => {
       const hash = window.location.hash.replace(/^#\/?/, '');
-      const validTabs: Tab[] = ['dashboard','outreach','analyzer','training','crm','inventory','orders','tasks','automation','botworkers','comment-ops','corpus','comment-drafts','settings','publish','scrape','product-catalog','new-arrivals','sales-chat','admin','inkflow-outreach'];
-      if (validTabs.includes(hash as Tab)) setActiveTab(hash as Tab);
+      if (VALID_TABS.includes(hash as Tab)) setActiveTab(hash as Tab);
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  // 从手机窄屏拉宽到桌面时自动收起抽屉，避免残留位移状态
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const onChange = (e: MediaQueryListEvent) => { if (e.matches) setNavOpen(false); };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
   }, []);
 
   return (
     <CRMProvider>
       <div className="min-h-screen bg-[#0a0a0a] text-zinc-100 font-sans selection:bg-rose-500/30">
         <Toaster position="top-right" theme="dark" richColors />
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} userTabs={userTabs} setUserTabs={setUserTabs} />
-        <MainContent activeTab={activeTab} setActiveTab={setActiveTab} />
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          userTabs={userTabs}
+          setUserTabs={setUserTabs}
+          open={navOpen}
+          onClose={() => setNavOpen(false)}
+        />
+        <MainContent activeTab={activeTab} setActiveTab={setActiveTab} onOpenNav={() => setNavOpen(true)} />
       </div>
     </CRMProvider>
   );
