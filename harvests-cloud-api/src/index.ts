@@ -6853,25 +6853,50 @@ function requireDev(c: any): any | null {
   return u;
 }
 
-// 授权账号门禁：snow368 / role=admin / user_permissions 里被授予指定 tab 的账号。
+// admin 判定：role=admin。🔴 必须同时按 email 兜底 —— email-auth 注册的账号
+// users.user_id 写的是 `email_<邮箱>`，与 Firebase token 里的真 uid 永远不相等，
+// 只按 uid 查会把 admin 账号判成非 admin（2026-09-20 修）。
+async function isAdminUser(c: any, u: any): Promise<boolean> {
+  const uid = String(u?.uid || '').trim();
+  const email = String(u?.email || '').trim();
+  if (uid) {
+    try {
+      const byUid = await c.env.DB.prepare('SELECT role FROM users WHERE user_id = ?').bind(uid).first() as any;
+      if (byUid?.role === 'admin') return true;
+    } catch {}
+  }
+  if (!email) return false;
+  try {
+    const byEmail = await c.env.DB.prepare('SELECT role FROM users WHERE lower(email) = lower(?)').bind(email).first() as any;
+    if (byEmail?.role === 'admin') return true;
+  } catch {}
+  try {
+    const legacy = await c.env.DB.prepare('SELECT role FROM users WHERE user_id = ?').bind('email_' + email).first() as any;
+    if (legacy?.role === 'admin') return true;
+  } catch {}
+  return false;
+}
+
+// 授权账号门禁：snow368 / role=admin / user_permissions 里被授予任一指定 tab 的账号。
 // 用于「知识/内容」类端点——不是所有登录用户都能用，必须被授权过对应板块。
-async function requireTab(c: any, tab: string): Promise<any | null> {
+async function requireAnyTab(c: any, tabs: string[]): Promise<any | null> {
   const u = c.get('user');
   if (!u) return null;
   if (u.email === 'snow368@gmail.com') return u;
-  try {
-    const roleRow = await c.env.DB.prepare('SELECT role FROM users WHERE user_id = ?').bind(u.uid).first() as any;
-    if (roleRow?.role === 'admin') return u;
-  } catch {}
+  if (await isAdminUser(c, u)) return u;
   try {
     await ensurePermsTable(c.env.DB);
     const row = await c.env.DB.prepare('SELECT tabs FROM user_permissions WHERE email = ?').bind(u.email || '').first() as any;
     if (row) {
-      const tabs = JSON.parse(row.tabs || '[]');
-      if (Array.isArray(tabs) && tabs.includes(tab)) return u;
+      const granted = JSON.parse(row.tabs || '[]');
+      if (Array.isArray(granted) && tabs.some((t) => granted.includes(t))) return u;
     }
   } catch {}
   return null;
+}
+
+async function requireTab(c: any, tab: string): Promise<any | null> {
+  return requireAnyTab(c, [tab]);
 }
 
 app.post('/api/kb-intake', async (c) => {
@@ -7106,7 +7131,12 @@ const ensureDraftsTable = (db: any): Promise<void> => {
   return _draftsTableReady;
 };
 
-async function requireDraftReviewer(c: any): Promise<any | null> {
+// 审批门禁。注意 /api/drafts 在 PUBLIC_PATHS 里 ⇒ 全局 Firebase 中间件不跑，这里必须自己验 token。
+// 🔴 拒绝必须区分原因：**没有有效身份 → 401**（前端 apiFetch 只在 401 时刷新 token），
+//    身份有效但权限不足才 → 403。两者混用会让 token 过期退化成永久 not_authorized（2026-09-20 修）。
+type DraftGate = { user: any } | { deny: 'unauthenticated' | 'forbidden' };
+
+async function resolveDraftReviewer(c: any): Promise<DraftGate> {
   if (!c.get('user')) {
     const auth = c.req.header('Authorization') || '';
     if (auth.startsWith('Bearer ') && auth !== `Bearer ${BOT_SECRET}`) {
@@ -7114,7 +7144,22 @@ async function requireDraftReviewer(c: any): Promise<any | null> {
       if (user) c.set('user', user);
     }
   }
-  return requireTab(c, 'inkflow-outreach');
+  if (!c.get('user')) return { deny: 'unauthenticated' };
+  // 语义正确的板块 = comment-drafts / comment-ops / botworkers；inkflow-outreach 是历史授权值，继续放行不回归。
+  const user = await requireAnyTab(c, ['comment-drafts', 'comment-ops', 'botworkers', 'inkflow-outreach']);
+  if (!user) return { deny: 'forbidden' };
+  return { user };
+}
+
+// 通过 = null（继续走 handler）；否则返回可直接 `return` 的 JSON Response。
+async function draftReviewGate(c: any): Promise<any> {
+  const r = await resolveDraftReviewer(c);
+  if ('deny' in r) {
+    return r.deny === 'unauthenticated'
+      ? c.json({ error: 'unauthenticated', detail: 'missing or expired token' }, 401)
+      : c.json({ error: 'not_authorized' }, 403);
+  }
+  return null;
 }
 
 // bot 上报新生成的评论草稿（token 鉴权，draft_id 幂等）。
@@ -7150,7 +7195,7 @@ app.post('/api/drafts/ingest', async (c) => {
 
 // 前台列表：按 status 筛。读接口需授权 tab（与 corpus 一致）。
 app.get('/api/drafts', async (c) => {
-  if (!(await requireDraftReviewer(c))) return c.json({ error: 'not_authorized' }, 403);
+  { const gate = await draftReviewGate(c); if (gate) return gate; }
   const status = c.req.query('status') || null;
   const limit = Math.min(parseInt(c.req.query('limit') || '200', 10) || 200, 500);
   await ensureDraftsTable(c.env.DB);
@@ -7168,7 +7213,7 @@ app.get('/api/drafts', async (c) => {
 // 前台操作草稿：approve（标记可发布）/ reject / delete。板块公开，靠前端登录态保护。
 // 注：前端 delete 用 DELETE 方法，故同时注册 DELETE 路由。
 app.delete('/api/drafts/:id', async (c) => {
-  if (!(await requireDraftReviewer(c))) return c.json({ error: 'not_authorized' }, 403);
+  { const gate = await draftReviewGate(c); if (gate) return gate; }
   const id = parseInt(c.req.param('id') || '', 10);
   if (!Number.isFinite(id) || id <= 0) return c.json({ error: 'bad_id' }, 400);
   await ensureDraftsTable(c.env.DB);
@@ -7177,7 +7222,7 @@ app.delete('/api/drafts/:id', async (c) => {
   return c.json({ ok: true, id, action: 'delete' });
 });
 app.put('/api/drafts/:id', async (c) => {
-  if (!(await requireDraftReviewer(c))) return c.json({ error: 'not_authorized' }, 403);
+  { const gate = await draftReviewGate(c); if (gate) return gate; }
   const id = parseInt(c.req.param('id') || '', 10);
   if (!Number.isFinite(id) || id <= 0) return c.json({ error: 'bad_id' }, 400);
   let body: any = {};
@@ -7243,7 +7288,7 @@ app.post('/api/drafts/:id/:action', async (c) => {
     if (!(res as any).meta?.changes) return c.json({ error: 'not_in_publishing_state' }, 409);
     return c.json({ ok: true, id: row.id, action, status: action === 'posted' ? 'posted' : 'approved', attempts, nextPublishAt: action === 'release' ? nextPublishAt : null });
   }
-  if (!(await requireDraftReviewer(c))) return c.json({ error: 'not_authorized' }, 403);
+  { const gate = await draftReviewGate(c); if (gate) return gate; }
   const id = parseInt(rawId, 10);
   if (!Number.isFinite(id) || id <= 0) return c.json({ error: 'bad_id' }, 400);
   if (action === 'delete') {
