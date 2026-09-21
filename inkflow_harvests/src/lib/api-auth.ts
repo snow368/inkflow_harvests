@@ -50,9 +50,14 @@ let tokenPromise: Promise<string | null> | null = null;
  *  This avoids the browser -> identitytoolkit.googleapis.com call that is
  *  blocked behind the GFW, so tokens can be refreshed from China. */
 async function refreshTokenViaWorker(): Promise<string | null> {
-  // Source 1: Firebase SDK current user (holds a refreshToken internally)
-  const user = auth.currentUser;
-  let refreshToken: string | undefined = (user as any)?.refreshToken;
+  // Source 1: Firebase SDK current user (holds a refreshToken internally).
+  // NOTE: the public User type does NOT expose `refreshToken` — it lives on the
+  // internal `stsTokenManager`. Reading only the top-level field made Google
+  // sign-in users unable to refresh (their email_auth store is empty), so every
+  // call after the 1h token expiry came back unauthenticated.
+  const user = auth.currentUser as any;
+  let refreshToken: string | undefined =
+    user?.refreshToken || user?.stsTokenManager?.refreshToken;
   // Source 2: stored email-auth refresh token (proxy login users)
   if (!refreshToken) {
     const stored = getStoredEmailAuth();

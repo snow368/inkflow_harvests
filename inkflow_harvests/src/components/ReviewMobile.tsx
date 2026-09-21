@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiFetch } from '../lib/api-auth';
+import { apiFetch, getAuthToken } from '../lib/api-auth';
+import { clearStoredEmailAuth, logoutUser } from '../lib/firebase';
 import { toast } from 'sonner';
 import {
   Check,
@@ -63,6 +64,9 @@ export default function ReviewMobile() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // 诊断信息：手机上没有控制台，把「HTTP 状态 + 有没有带上登录令牌」直接画在页面上，
+  // 这样一眼就能区分「登录态没了」和「后端真的没有待审数据」。
+  const [diag, setDiag] = useState<{ status: number | null; tokenSent: boolean }>({ status: null, tokenSent: false });
   const [text, setText] = useState('');
   const [handled, setHandled] = useState(0);
   const [last, setLast] = useState<LastAction | null>(null);
@@ -76,10 +80,21 @@ export default function ReviewMobile() {
     setLoading(true);
     setErr(null);
     try {
+      const token = await getAuthToken();
       const res = await apiFetch(`/api/drafts?status=${mode}`);
-      const data = await res.json();
+      setDiag({ status: res.status, tokenSent: !!token });
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setErr(data?.error || '加载失败');
+        const code = data?.error || '';
+        setErr(
+          res.status === 401
+            ? `登录已过期或未登录（HTTP 401${code ? ' ' + code : ''}）`
+            : code || `加载失败（HTTP ${res.status}）`,
+        );
+        return;
+      }
+      if (!data) {
+        setErr('返回内容不是 JSON（可能是网络/代理页），请点刷新重试');
         return;
       }
       const list: DraftItem[] = Array.isArray(data.items) ? data.items.slice() : [];
@@ -90,6 +105,7 @@ export default function ReviewMobile() {
       for (const c of data.counts || []) m[c.status] = c.n;
       setCounts(m);
     } catch (e: any) {
+      setDiag((d) => ({ ...d, status: null }));
       setErr('加载出错：' + (e?.message || e));
     } finally {
       setLoading(false);
@@ -260,6 +276,13 @@ export default function ReviewMobile() {
   const pendingN = counts.pending || 0;
   const approvedN = counts.approved || 0;
 
+  // 登录态坏掉时一键重来：清掉本地保存的邮箱登录态 + 退出 Firebase，然后重载回到登录页。
+  const relogin = async () => {
+    try { clearStoredEmailAuth(); } catch { /* ignore */ }
+    try { await logoutUser(); } catch { /* ignore */ }
+    window.location.reload();
+  };
+
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 pb-2">
       {/* 模式切换 + 进度 */}
@@ -267,7 +290,7 @@ export default function ReviewMobile() {
         <div className="flex rounded-xl border border-zinc-800 bg-zinc-900/50 p-1">
           {(
             [
-              ['pending', `待审 ${pendingN}`],
+              ['pending', `待审 ${err ? '?' : pendingN}`],
               ['approved', `待发布 ${approvedN}`],
             ] as const
           ).map(([m, label]) => (
@@ -308,6 +331,17 @@ export default function ReviewMobile() {
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span className="break-all">{err}</span>
         </div>
+        <div className="mt-2 pl-6 text-[11px] leading-relaxed text-red-300/70">
+          HTTP {diag.status ?? '—'} · {diag.tokenSent ? '已带上登录令牌' : '没有登录令牌（本机无有效登录态）'}
+        </div>
+        <div className="mt-3 pl-6">
+          <button
+            onClick={relogin}
+            className="rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 active:scale-95"
+          >
+            重新登录
+          </button>
+        </div>
       </div>
 
       {/* 待审：一屏一张 */}
@@ -315,6 +349,20 @@ export default function ReviewMobile() {
         (loading && !current ? (
           <div className="flex items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900/40 p-10">
             <Loader2 className="h-6 w-6 animate-spin text-rose-500" />
+          </div>
+        ) : !current && err ? (
+          <div className="rounded-2xl border border-dashed border-red-900/60 bg-red-500/5 p-10 text-center">
+            <div className="text-2xl">⚠️</div>
+            <p className="mt-3 text-sm text-red-200">没能读到待审队列</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              具体原因见上方红框。若是登录问题，点「重新登录」再回来。
+            </p>
+            <button
+              onClick={load}
+              className="mt-5 rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm text-zinc-200 active:scale-95"
+            >
+              刷新
+            </button>
           </div>
         ) : !current ? (
           <div className="rounded-2xl border border-dashed border-zinc-800 p-10 text-center">
